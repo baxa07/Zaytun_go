@@ -1,35 +1,436 @@
-import type {Driver,DriverAssignment,MenuCategory,MenuItem,Order,OrderEvent} from './domain'
-import {createEvent,createIssue,transitionOrder} from './domain'
-import {SupabaseStore,supabaseConfigured} from './supabase'
+import type {
+  Driver,
+  DriverAssignment,
+  MenuCategory,
+  MenuItem,
+  Order,
+  OrderEvent,
+} from "./domain";
+import { createEvent, createIssue, transitionOrder } from "./domain";
+import { SupabaseStore, supabaseConfigured } from "./supabase";
 
-export interface MenuRepository {getCategories():Promise<MenuCategory[]>;getItems():Promise<MenuItem[]>}
-export interface OrderRepository {list():Promise<Order[]>;get(id:string):Promise<Order|undefined>;save(order:Order):Promise<Order>}
-export interface DriverRepository {listDrivers():Promise<Driver[]>;saveDriver(driver:Driver):Promise<Driver>}
-export interface AssignmentRepository {listAssignments():Promise<DriverAssignment[]>;assign(order:Order,driver:Driver):Promise<DriverAssignment>}
-export interface OrderEventRepository {listEvents(orderId:string):Promise<OrderEvent[]>;append(event:OrderEvent):Promise<void>}
-
-export const categories:MenuCategory[]=[{id:'grill',name:'Gril',description:'Olovda yangi tayyorlanadi'},{id:'mains',name:'Issiq taomlar',description:'Zaytun oshxonasidan'},{id:'drinks',name:'Ichimliklar',description:'Sovuq va tetiklantiruvchi'}]
-export const menuItems:MenuItem[]=[{id:'chicken',categoryId:'grill',name:'Zaytun tovuq grili',description:'Marinadlangan tovuq, kartoshka va sarimsoqli sous',price:68000,image:'🔥',available:true,modifiers:[{id:'spicy',name:'Achchiq',price:0},{id:'sauce',name:'Qo‘shimcha sous',price:5000}]},{id:'kebab',categoryId:'grill',name:'Mol go‘shtli kabob',description:'Ko‘mirda pishgan kabob, piyoz va non',price:42000,image:'🥩',available:true},{id:'plov',categoryId:'mains',name:'Navoiy oshi',description:'Lazer guruch, mol go‘shti va sabzi',price:48000,image:'🍚',available:true},{id:'salad',categoryId:'mains',name:'Zaytun salati',description:'Pomidor, bodring, zaytun va feta',price:32000,image:'🥗',available:true},{id:'ayran',categoryId:'drinks',name:'Uy ayrani',description:'Sovutilgan, 0.5 l',price:12000,image:'🥛',available:true}]
-const ago=(minutes:number)=>new Date(Date.now()-minutes*60000).toISOString()
-const item=(id:string,name:string,unitPrice:number,quantity=1)=>({id:`oi-${id}`,menuItemId:id,name,unitPrice,quantity,modifierIds:[],modifierNames:[],instructions:'',total:unitPrice*quantity})
-const customer={id:'c-seed',name:'Dilnoza Karimova',primaryPhone:'+998 90 123 45 67'}
-const fullAddress={customerName:customer.name,primaryPhone:customer.primaryPhone,district:'Karmana tumani, Yangiariq MFY',street:'Amir Temur ko‘chasi',house:'24B',entrance:'2',floor:'3',apartment:'18',landmark:'12-maktab ro‘parasida',deliveryNotes:'Ko‘k darvoza, kirishda qo‘ng‘iroq qiling',latitude:40.1039,longitude:65.3688,confidence:'COMPLETE' as const}
-function seeded(id:string,number:string,status:Order['status'],minutes:number,overrides:Partial<Order>={}):Order{const base:Order={id,number,customer,type:'DELIVERY',address:fullAddress,items:[item('chicken','Zaytun tovuq grili',68000),item('ayran','Uy ayrani',12000,2)],subtotal:92000,deliveryFee:10000,total:102000,paymentMethod:'CASH',paymentStatus:'PENDING',specialInstructions:'Sousni alohida soling',status,createdAt:ago(minutes),events:[createEvent(id,null,'NEW','CUSTOMER','guest')],issues:[]};return{...base,...overrides}}
-const history=(id:string,statuses:Order['status'][],actor:(s:Order['status'])=>[string,string])=>{let prev:Order['status']|null=null;return statuses.map(s=>{const[actorType,actorId]=actor(s);const e=createEvent(id,prev,s,actorType as Order['events'][number]['actorType'],actorId);prev=s;return e})}
-const seedOrders:Order[]=[seeded('ord-new','ZG-1042','NEW',4),seeded('ord-address','ZG-1039','CONFIRMED',25,{address:{...fullAddress,house:'Bino raqami noma’lum',confidence:'NEEDS_CLARIFICATION'},issues:[{id:'issue-address',orderId:'ord-address',type:'ADDRESS_CLARIFICATION',description:'Mijoz bino raqamini tasdiqlashi kerak',createdAt:ago(10),reportedBy:'restaurant'}],events:history('ord-address',['NEW','CONFIRMED'],s=>s==='NEW'?['CUSTOMER','guest']:['RESTAURANT','staff-1'])}),seeded('ord-ready','ZG-1037','READY',44,{events:[createEvent('ord-ready',null,'NEW','CUSTOMER','guest'),createEvent('ord-ready','NEW','CONFIRMED','RESTAURANT','staff-1'),createEvent('ord-ready','CONFIRMED','PREPARING','RESTAURANT','staff-1'),createEvent('ord-ready','PREPARING','READY','RESTAURANT','staff-1')]}),seeded('ord-active','ZG-1035','ON_THE_WAY',58,{assignedDriverId:'driver-1',issues:[{id:'issue-phone',orderId:'ord-active',type:'CUSTOMER_NOT_ANSWERING',description:'Ikki marta qo‘ng‘iroq qilindi, javob yo‘q',createdAt:ago(3),reportedBy:'driver-1'}],events:history('ord-active',['NEW','CONFIRMED','PREPARING','READY','DRIVER_ASSIGNED','PICKED_UP','ON_THE_WAY'],s=>s==='NEW'?['CUSTOMER','guest']:s==='DRIVER_ASSIGNED'?['DISPATCHER','dispatcher-1']:['PICKED_UP','ON_THE_WAY'].includes(s)?['DRIVER','driver-1']:['RESTAURANT','staff-1'])}),seeded('ord-done','ZG-1029','DELIVERED',120,{assignedDriverId:'driver-1',paymentStatus:'COLLECTED',events:history('ord-done',['NEW','CONFIRMED','PREPARING','READY','DRIVER_ASSIGNED','PICKED_UP','ON_THE_WAY','ARRIVED','DELIVERED'],s=>s==='NEW'?['CUSTOMER','guest']:s==='DRIVER_ASSIGNED'?['DISPATCHER','dispatcher-1']:['PICKED_UP','ON_THE_WAY','ARRIVED','DELIVERED'].includes(s)?['DRIVER','driver-1']:['RESTAURANT','staff-1'])})]
-export const seedDrivers:Driver[]=[{id:'driver-1',name:'Aziz Bekov',phone:'+998 93 555 12 12',vehicle:'Chevrolet Spark · 01 A 777 AA',availability:'BUSY'},{id:'driver-2',name:'Sardor Aliyev',phone:'+998 91 222 90 90',vehicle:'Skuter · 414',availability:'OFFLINE'}]
-class LocalStore implements MenuRepository,OrderRepository,DriverRepository,AssignmentRepository,OrderEventRepository{
- private orders:Order[];private drivers:Driver[];private assignments:DriverAssignment[]=[]
- constructor(){try{this.orders=JSON.parse(localStorage.getItem('zgo.orders')||'null')||seedOrders;this.drivers=JSON.parse(localStorage.getItem('zgo.drivers')||'null')||seedDrivers}catch{this.orders=seedOrders;this.drivers=seedDrivers}}
- private persist(){localStorage.setItem('zgo.orders',JSON.stringify(this.orders));localStorage.setItem('zgo.drivers',JSON.stringify(this.drivers))}
- async getCategories(){return categories}async getItems(){return menuItems}async list(){return structuredClone(this.orders)}async listDrivers(){return structuredClone(this.drivers)}async get(id:string){return structuredClone(this.orders.find(o=>o.id===id))}async save(order:Order){const i=this.orders.findIndex(o=>o.id===order.id);if(i<0)this.orders.unshift(order);else this.orders[i]=order;this.persist();return structuredClone(order)}
- async assign(order:Order,driver:Driver){if(order.status!=='READY')throw new Error('Only ready orders can be assigned');if(driver.availability!=='AVAILABLE')throw new Error('Driver is not available');const assignment={id:crypto.randomUUID(),orderId:order.id,driverId:driver.id,assignedAt:new Date().toISOString()};this.assignments.push(assignment);await this.save(transitionOrder({...order,assignedDriverId:driver.id},'DRIVER_ASSIGNED','DISPATCHER','dispatcher-1'));await this.saveDriver({...driver,availability:'BUSY'});return assignment}
- async saveDriver(driver:Driver){const i=this.drivers.findIndex(d=>d.id===driver.id);this.drivers[i]=driver;this.persist();return driver}async listAssignments(){return structuredClone(this.assignments)}async append(){return}async listEvents(orderId:string){return (this.orders.find(o=>o.id===orderId)?.events)||[]}
- async transition(id:string,to:Order['status'],actor:OrderEvent['actorType'],reason?:string){const order=await this.get(id);if(!order)throw new Error('Order not found');await this.save(transitionOrder(order,to,actor,actor.toLowerCase(),reason))}
- async acceptAssignment(id:string){const order=await this.get(id);if(!order)throw new Error('Order not found');await this.save({...order,assignmentAcceptedAt:new Date().toISOString()})}
- async setEstimate(id:string,minutes:number){const order=await this.get(id);if(!order)throw new Error('Order not found');await this.save({...order,estimatedMinutes:minutes})}
- async reportIssue(id:string,type:Order['issues'][number]['type'],description:string,reporter:string){const order=await this.get(id);if(!order)throw new Error('Order not found');await this.save({...order,issues:[...order.issues,createIssue(id,type,description,reporter)]})}
- async resolveIssue(_orderId:string,issueId:string){const order=this.orders.find(o=>o.issues.some(i=>i.id===issueId));if(order)await this.save({...order,issues:order.issues.map(i=>i.id===issueId?{...i,resolvedAt:new Date().toISOString()}:i)})}
- subscribe(refresh:()=>void){void refresh;return()=>undefined}
+export interface MenuRepository {
+  getCategories(): Promise<MenuCategory[]>;
+  getItems(): Promise<MenuItem[]>;
 }
-export const store:LocalStore|SupabaseStore=supabaseConfigured?new SupabaseStore():new LocalStore()
+export interface OrderRepository {
+  list(): Promise<Order[]>;
+  get(id: string): Promise<Order | undefined>;
+  save(order: Order): Promise<Order>;
+}
+export interface DriverRepository {
+  listDrivers(): Promise<Driver[]>;
+  saveDriver(driver: Driver): Promise<Driver>;
+}
+export interface AssignmentRepository {
+  listAssignments(): Promise<DriverAssignment[]>;
+  assign(order: Order, driver: Driver): Promise<DriverAssignment>;
+}
+export interface OrderEventRepository {
+  listEvents(orderId: string): Promise<OrderEvent[]>;
+  append(event: OrderEvent): Promise<void>;
+}
+
+export const categories: MenuCategory[] = [
+  { id: "grill", name: "Gril", description: "Olovda yangi tayyorlanadi" },
+  { id: "mains", name: "Issiq taomlar", description: "Zaytun oshxonasidan" },
+  {
+    id: "drinks",
+    name: "Ichimliklar",
+    description: "Sovuq va tetiklantiruvchi",
+  },
+];
+export const menuItems: MenuItem[] = [
+  {
+    id: "chicken",
+    categoryId: "grill",
+    name: "Zaytun tovuq grili",
+    description: "Marinadlangan tovuq, kartoshka va sarimsoqli sous",
+    price: 68000,
+    image: "🔥",
+    available: true,
+    modifiers: [
+      { id: "spicy", name: "Achchiq", price: 0 },
+      { id: "sauce", name: "Qo‘shimcha sous", price: 5000 },
+    ],
+  },
+  {
+    id: "kebab",
+    categoryId: "grill",
+    name: "Mol go‘shtli kabob",
+    description: "Ko‘mirda pishgan kabob, piyoz va non",
+    price: 42000,
+    image: "🥩",
+    available: true,
+  },
+  {
+    id: "plov",
+    categoryId: "mains",
+    name: "Navoiy oshi",
+    description: "Lazer guruch, mol go‘shti va sabzi",
+    price: 48000,
+    image: "🍚",
+    available: true,
+  },
+  {
+    id: "salad",
+    categoryId: "mains",
+    name: "Zaytun salati",
+    description: "Pomidor, bodring, zaytun va feta",
+    price: 32000,
+    image: "🥗",
+    available: true,
+  },
+  {
+    id: "ayran",
+    categoryId: "drinks",
+    name: "Uy ayrani",
+    description: "Sovutilgan, 0.5 l",
+    price: 12000,
+    image: "🥛",
+    available: true,
+  },
+];
+const ago = (minutes: number) =>
+  new Date(Date.now() - minutes * 60000).toISOString();
+const item = (id: string, name: string, unitPrice: number, quantity = 1) => ({
+  id: `oi-${id}`,
+  menuItemId: id,
+  name,
+  unitPrice,
+  quantity,
+  modifierIds: [],
+  modifierNames: [],
+  instructions: "",
+  total: unitPrice * quantity,
+});
+const customer = {
+  id: "c-seed",
+  name: "Dilnoza Karimova",
+  primaryPhone: "+998 90 123 45 67",
+};
+const fullAddress = {
+  customerName: customer.name,
+  primaryPhone: customer.primaryPhone,
+  district: "Karmana tumani, Yangiariq MFY",
+  street: "Amir Temur ko‘chasi",
+  house: "24B",
+  entrance: "2",
+  floor: "3",
+  apartment: "18",
+  landmark: "12-maktab ro‘parasida",
+  deliveryNotes: "Ko‘k darvoza, kirishda qo‘ng‘iroq qiling",
+  latitude: 40.1039,
+  longitude: 65.3688,
+  confidence: "COMPLETE" as const,
+  pinConfirmedAt: new Date().toISOString(),
+  locationProvider: "mock" as const,
+  deliveryDistanceKm: 2.4,
+  deliveryZoneResult: "ELIGIBLE" as const,
+};
+function seeded(
+  id: string,
+  number: string,
+  status: Order["status"],
+  minutes: number,
+  overrides: Partial<Order> = {},
+): Order {
+  const base: Order = {
+    id,
+    number,
+    customer,
+    type: "DELIVERY",
+    address: fullAddress,
+    items: [
+      item("chicken", "Zaytun tovuq grili", 68000),
+      item("ayran", "Uy ayrani", 12000, 2),
+    ],
+    subtotal: 92000,
+    deliveryFee: 10000,
+    total: 102000,
+    paymentMethod: "CASH",
+    paymentStatus: "PENDING",
+    specialInstructions: "Sousni alohida soling",
+    status,
+    createdAt: ago(minutes),
+    events: [createEvent(id, null, "NEW", "CUSTOMER", "guest")],
+    issues: [],
+  };
+  return { ...base, ...overrides };
+}
+const history = (
+  id: string,
+  statuses: Order["status"][],
+  actor: (s: Order["status"]) => [string, string],
+) => {
+  let prev: Order["status"] | null = null;
+  return statuses.map((s) => {
+    const [actorType, actorId] = actor(s);
+    const e = createEvent(
+      id,
+      prev,
+      s,
+      actorType as Order["events"][number]["actorType"],
+      actorId,
+    );
+    prev = s;
+    return e;
+  });
+};
+const seedOrders: Order[] = [
+  seeded("ord-new", "ZG-1042", "NEW", 4),
+  seeded("ord-address", "ZG-1039", "CONFIRMED", 25, {
+    address: {
+      ...fullAddress,
+      house: "Bino raqami noma’lum",
+      confidence: "NEEDS_CLARIFICATION",
+    },
+    issues: [
+      {
+        id: "issue-address",
+        orderId: "ord-address",
+        type: "ADDRESS_CLARIFICATION",
+        description: "Mijoz bino raqamini tasdiqlashi kerak",
+        createdAt: ago(10),
+        reportedBy: "restaurant",
+      },
+    ],
+    events: history("ord-address", ["NEW", "CONFIRMED"], (s) =>
+      s === "NEW" ? ["CUSTOMER", "guest"] : ["RESTAURANT", "staff-1"],
+    ),
+  }),
+  seeded("ord-ready", "ZG-1037", "READY", 44, {
+    events: [
+      createEvent("ord-ready", null, "NEW", "CUSTOMER", "guest"),
+      createEvent("ord-ready", "NEW", "CONFIRMED", "RESTAURANT", "staff-1"),
+      createEvent(
+        "ord-ready",
+        "CONFIRMED",
+        "PREPARING",
+        "RESTAURANT",
+        "staff-1",
+      ),
+      createEvent("ord-ready", "PREPARING", "READY", "RESTAURANT", "staff-1"),
+    ],
+  }),
+  seeded("ord-active", "ZG-1035", "ON_THE_WAY", 58, {
+    assignedDriverId: "driver-1",
+    issues: [
+      {
+        id: "issue-phone",
+        orderId: "ord-active",
+        type: "CUSTOMER_NOT_ANSWERING",
+        description: "Ikki marta qo‘ng‘iroq qilindi, javob yo‘q",
+        createdAt: ago(3),
+        reportedBy: "driver-1",
+      },
+    ],
+    events: history(
+      "ord-active",
+      [
+        "NEW",
+        "CONFIRMED",
+        "PREPARING",
+        "READY",
+        "DRIVER_ASSIGNED",
+        "PICKED_UP",
+        "ON_THE_WAY",
+      ],
+      (s) =>
+        s === "NEW"
+          ? ["CUSTOMER", "guest"]
+          : s === "DRIVER_ASSIGNED"
+            ? ["DISPATCHER", "dispatcher-1"]
+            : ["PICKED_UP", "ON_THE_WAY"].includes(s)
+              ? ["DRIVER", "driver-1"]
+              : ["RESTAURANT", "staff-1"],
+    ),
+  }),
+  seeded("ord-done", "ZG-1029", "DELIVERED", 120, {
+    assignedDriverId: "driver-1",
+    paymentStatus: "COLLECTED",
+    events: history(
+      "ord-done",
+      [
+        "NEW",
+        "CONFIRMED",
+        "PREPARING",
+        "READY",
+        "DRIVER_ASSIGNED",
+        "PICKED_UP",
+        "ON_THE_WAY",
+        "ARRIVED",
+        "DELIVERED",
+      ],
+      (s) =>
+        s === "NEW"
+          ? ["CUSTOMER", "guest"]
+          : s === "DRIVER_ASSIGNED"
+            ? ["DISPATCHER", "dispatcher-1"]
+            : ["PICKED_UP", "ON_THE_WAY", "ARRIVED", "DELIVERED"].includes(s)
+              ? ["DRIVER", "driver-1"]
+              : ["RESTAURANT", "staff-1"],
+    ),
+  }),
+];
+export const seedDrivers: Driver[] = [
+  {
+    id: "driver-1",
+    name: "Aziz Bekov",
+    phone: "+998 93 555 12 12",
+    vehicle: "Chevrolet Spark · 01 A 777 AA",
+    availability: "BUSY",
+  },
+  {
+    id: "driver-2",
+    name: "Sardor Aliyev",
+    phone: "+998 91 222 90 90",
+    vehicle: "Skuter · 414",
+    availability: "OFFLINE",
+  },
+];
+class LocalStore
+  implements
+    MenuRepository,
+    OrderRepository,
+    DriverRepository,
+    AssignmentRepository,
+    OrderEventRepository
+{
+  private orders: Order[];
+  private drivers: Driver[];
+  private assignments: DriverAssignment[] = [];
+  constructor() {
+    try {
+      this.orders =
+        JSON.parse(localStorage.getItem("zgo.orders") || "null") || seedOrders;
+      this.drivers =
+        JSON.parse(localStorage.getItem("zgo.drivers") || "null") ||
+        seedDrivers;
+    } catch {
+      this.orders = seedOrders;
+      this.drivers = seedDrivers;
+    }
+  }
+  private persist() {
+    localStorage.setItem("zgo.orders", JSON.stringify(this.orders));
+    localStorage.setItem("zgo.drivers", JSON.stringify(this.drivers));
+  }
+  async getCategories() {
+    return categories;
+  }
+  async getItems() {
+    return menuItems;
+  }
+  async list() {
+    return structuredClone(this.orders);
+  }
+  async listDrivers() {
+    return structuredClone(this.drivers);
+  }
+  async get(id: string) {
+    return structuredClone(this.orders.find((o) => o.id === id));
+  }
+  async save(order: Order) {
+    const i = this.orders.findIndex((o) => o.id === order.id);
+    if (i < 0) this.orders.unshift(order);
+    else this.orders[i] = order;
+    this.persist();
+    return structuredClone(order);
+  }
+  async assign(order: Order, driver: Driver) {
+    if (order.status !== "READY")
+      throw new Error("Only ready orders can be assigned");
+    if (driver.availability !== "AVAILABLE")
+      throw new Error("Driver is not available");
+    const assignment = {
+      id: crypto.randomUUID(),
+      orderId: order.id,
+      driverId: driver.id,
+      assignedAt: new Date().toISOString(),
+    };
+    this.assignments.push(assignment);
+    await this.save(
+      transitionOrder(
+        { ...order, assignedDriverId: driver.id },
+        "DRIVER_ASSIGNED",
+        "DISPATCHER",
+        "dispatcher-1",
+      ),
+    );
+    await this.saveDriver({ ...driver, availability: "BUSY" });
+    return assignment;
+  }
+  async saveDriver(driver: Driver) {
+    const i = this.drivers.findIndex((d) => d.id === driver.id);
+    this.drivers[i] = driver;
+    this.persist();
+    return driver;
+  }
+  async listAssignments() {
+    return structuredClone(this.assignments);
+  }
+  async append() {
+    return;
+  }
+  async listEvents(orderId: string) {
+    return this.orders.find((o) => o.id === orderId)?.events || [];
+  }
+  async transition(
+    id: string,
+    to: Order["status"],
+    actor: OrderEvent["actorType"],
+    reason?: string,
+  ) {
+    const order = await this.get(id);
+    if (!order) throw new Error("Order not found");
+    await this.save(
+      transitionOrder(order, to, actor, actor.toLowerCase(), reason),
+    );
+  }
+  async acceptAssignment(id: string) {
+    const order = await this.get(id);
+    if (!order) throw new Error("Order not found");
+    await this.save({
+      ...order,
+      assignmentAcceptedAt: new Date().toISOString(),
+    });
+  }
+  async setEstimate(id: string, minutes: number) {
+    const order = await this.get(id);
+    if (!order) throw new Error("Order not found");
+    await this.save({ ...order, estimatedMinutes: minutes });
+  }
+  async reportIssue(
+    id: string,
+    type: Order["issues"][number]["type"],
+    description: string,
+    reporter: string,
+  ) {
+    const order = await this.get(id);
+    if (!order) throw new Error("Order not found");
+    await this.save({
+      ...order,
+      issues: [...order.issues, createIssue(id, type, description, reporter)],
+    });
+  }
+  async resolveIssue(_orderId: string, issueId: string) {
+    const order = this.orders.find((o) =>
+      o.issues.some((i) => i.id === issueId),
+    );
+    if (order)
+      await this.save({
+        ...order,
+        issues: order.issues.map((i) =>
+          i.id === issueId ? { ...i, resolvedAt: new Date().toISOString() } : i,
+        ),
+      });
+  }
+  subscribe(refresh: () => void) {
+    void refresh;
+    return () => undefined;
+  }
+}
+export const store: LocalStore | SupabaseStore = supabaseConfigured
+  ? new SupabaseStore()
+  : new LocalStore();

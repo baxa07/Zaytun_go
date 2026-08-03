@@ -1,0 +1,4 @@
+import{MockMapAdapter}from'./mock';import{YandexMapAdapter}from'./yandex';import{MapProviderError,type MapAdapter,type MapProvider}from'./types'
+export const configuredMapProvider=():MapProvider=>(import.meta.env.VITE_MAP_PROVIDER||'mock')as MapProvider
+export const createMapAdapter=(provider:MapProvider=configuredMapProvider()):MapAdapter=>{if(provider==='mock')return new MockMapAdapter();if(provider==='yandex')return new YandexMapAdapter(import.meta.env.VITE_YANDEX_MAPS_API_KEY||'');throw new MapProviderError('MISSING_CONFIG',`Noma’lum xarita provayderi: ${provider}`)}
+export const defaultMapLocation=()=>({latitude:Number(import.meta.env.VITE_DEFAULT_MAP_LAT||40.1039),longitude:Number(import.meta.env.VITE_DEFAULT_MAP_LNG||65.3688),zoom:Number(import.meta.env.VITE_DEFAULT_MAP_ZOOM||14)})

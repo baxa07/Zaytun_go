@@ -11,9 +11,10 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run preview -- --port 4173',
+    command: 'npm run build && npm run preview -- --port 4173',
     port: 4173,
     reuseExistingServer: !process.env.CI,
+    env: {...process.env, VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '', VITE_MAP_PROVIDER: 'mock'},
   },
   projects: [
     {name: 'chromium', use: {...devices['Desktop Chrome']}},
