@@ -9,7 +9,9 @@ npm install
 npm run dev
 ```
 
-Use `/menu` for customers, `/restaurant` for staff, and `/driver` for drivers. Development data persists in local storage and is accessed only through repository interfaces in `src/data.ts`.
+Use `/menu` for customers, `/restaurant` for staff, and `/driver` for drivers. When Supabase environment variables are present, data uses the local Supabase stack; otherwise the repository abstraction falls back to browser-local demonstration data.
+
+For the Docker-based Supabase backend, Auth accounts, RLS model, local testing, and later production deployment, see [docs/backend.md](docs/backend.md).
 
 ## Validation
 

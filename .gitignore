@@ -4,6 +4,11 @@ dist
 .DS_Store
 coverage
 *.local
+.supabase/
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+supabase/config.local.toml
 test-results
 playwright-report
 playwright/.cache
