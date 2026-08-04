@@ -33,6 +33,7 @@ import {
 import { configuredMapProvider, defaultMapLocation } from "./maps/factory";
 import { navigationUrl } from "./maps/navigation";
 import type { MapLocationSelection } from "./maps/types";
+import { createUuid } from "./uuid";
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
 const time = (s: string) =>
@@ -247,7 +248,7 @@ function Product() {
             data-testid="add-to-cart"
             onClick={() => {
               addToCart({
-                id: crypto.randomUUID(),
+                id: createUuid(),
                 menuItemId: item.id,
                 name: item.name,
                 unitPrice: unit,
@@ -415,12 +416,12 @@ function Checkout() {
     }
     submittingRef.current = true;
     setSubmitting(true);
-    const id = crypto.randomUUID();
+    const id = createUuid();
     const order: Order = {
       id,
       number: `ZG-${String(Date.now()).slice(-4)}`,
       customer: {
-        id: crypto.randomUUID(),
+        id: createUuid(),
         name: address.customerName,
         primaryPhone: address.primaryPhone,
         secondaryPhone: address.secondaryPhone,

@@ -21,6 +21,8 @@ VITE_SUPABASE_URL=http://127.0.0.1:54321
 VITE_SUPABASE_ANON_KEY=<local anon key>
 VITE_MAP_PROVIDER=mock
 VITE_YANDEX_MAPS_API_KEY=
+VITE_YANDEX_SEARCH_API_KEY=
+VITE_YANDEX_GEOSUGGEST_API_KEY=
 VITE_DEFAULT_MAP_LAT=40.1039
 VITE_DEFAULT_MAP_LNG=65.3688
 VITE_DEFAULT_MAP_ZOOM=14
@@ -75,6 +77,8 @@ Set these frontend deployment variables in Netlify or Vercel:
 - `VITE_SUPABASE_ANON_KEY=<hosted publishable/anon key>`
 - `VITE_MAP_PROVIDER=yandex`
 - `VITE_YANDEX_MAPS_API_KEY=<domain-restricted browser key>`
+- `VITE_YANDEX_SEARCH_API_KEY=<domain-restricted Search API key>`
+- `VITE_YANDEX_GEOSUGGEST_API_KEY=<domain-restricted Geosuggest API key>`
 - `VITE_DEFAULT_MAP_LAT=<verified restaurant latitude>`
 - `VITE_DEFAULT_MAP_LNG=<verified restaurant longitude>`
 - `VITE_DEFAULT_MAP_ZOOM=<approved default zoom>`
@@ -87,7 +91,7 @@ Local CLI credentials, `.env.local`, `.supabase`, Docker volumes, database files
 
 Yandex Maps JavaScript API v3 is the first production provider because it offers an embeddable map, marker interaction, search, and geocoding for the intended Uzbekistan workflow. See the official [JavaScript API v3](https://yandex.com/maps-api/docs/js-api/) and [Geocoder API](https://yandex.com/dev/geocode/doc/en/) documentation. All provider-specific loading and globals remain in `src/maps/yandex.ts`; checkout, restaurant, and driver code use typed provider-neutral map and navigation interfaces. `mock` is an explicit deterministic provider for local development, CI, unit tests, Playwright, and screenshots. Production never silently falls back from `yandex` to `mock`.
 
-Create a browser API key in the Yandex developer console, enable JavaScript API and HTTP Geocoder access, and restrict it to the approved production domain/referrers. Yandex requires referrer restrictions for JavaScript API keys. Set `VITE_MAP_PROVIDER=yandex` and the restricted key only in the deployment environment. Missing Yandex configuration produces a visible error. Never place a Supabase service-role credential or an unrestricted secret in a Vite variable; all `VITE_*` values are browser-visible.
+Create separate browser keys in the Yandex developer console for JavaScript API, Search API, and Geosuggest API, and restrict all three to approved production domains/referrers. The core script receives only the JavaScript API key. After `ymaps3.ready`, the adapter configures Search and Geosuggest through `ymaps3.getDefaultConfig().setApikeys`; it does not call Yandex REST geocoding endpoints directly. Set `VITE_MAP_PROVIDER=yandex` and all three restricted keys only in the deployment environment. Missing service configuration produces a visible service-specific error without disabling an already loaded map. Never place a Supabase service-role credential or an unrestricted secret in a Vite variable; all `VITE_*` values are browser-visible.
 
 The development seed uses `40.1039, 65.3688` only as a clearly documented test centre. **These are not claimed to be Zaytun Cafe’s production coordinates.** Before a real delivery test, the project owner must verify the restaurant entrance coordinates and service radius in person. Update the active settings record after migrations are applied; do not edit migration history:
 

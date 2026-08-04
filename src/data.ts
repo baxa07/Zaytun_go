@@ -8,6 +8,7 @@ import type {
 } from "./domain";
 import { createEvent, createIssue, transitionOrder } from "./domain";
 import { SupabaseStore, supabaseConfigured } from "./supabase";
+import { createUuid } from "./uuid";
 
 export interface MenuRepository {
   getCategories(): Promise<MenuCategory[]>;
@@ -344,7 +345,7 @@ class LocalStore
     if (driver.availability !== "AVAILABLE")
       throw new Error("Driver is not available");
     const assignment = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       orderId: order.id,
       driverId: driver.id,
       assignedAt: new Date().toISOString(),
