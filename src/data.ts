@@ -427,8 +427,9 @@ class LocalStore
         ),
       });
   }
-  subscribe(refresh: () => void) {
+  subscribe(refresh: () => void, surface?: "restaurant" | "driver") {
     void refresh;
+    void surface;
     return () => undefined;
   }
 }

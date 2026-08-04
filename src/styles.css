@@ -421,6 +421,7 @@ h2 {
   font-size: 12px;
   font-style: normal;
 }
+.auth-signout{position:fixed;right:16px;bottom:16px;z-index:30;min-height:44px;padding:10px 16px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);font-weight:700;box-shadow:0 4px 16px #0002}
 .map-picker {
   border: 1px dashed #98a59d;
   border-radius: 12px;

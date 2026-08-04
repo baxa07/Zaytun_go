@@ -21,7 +21,7 @@ import {
   type PaymentMethod,
 } from "./domain";
 import { useApp } from "./state";
-import { supabase, supabaseConfigured } from "./supabase";
+import { supabaseConfigured } from "./supabase";
 import { MapPicker } from "./components/MapPicker";
 import {
   addressConfidence,
@@ -441,9 +441,9 @@ function Checkout() {
       issues: [],
     };
     try {
-      await submitOrder(order);
+      const saved = await submitOrder(order);
       clearCart();
-      nav(`/confirmation/${id}`);
+      nav(`/confirmation/${saved.id}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Buyurtma yuborilmadi";
       setErrors({ submit: message.includes("|") ? message.split("|").at(-1)! : message });
@@ -695,13 +695,29 @@ function Confirmation() {
 }
 function Track() {
   const { id } = useParams();
-  const { orders, loaded } = useApp();
+  const { orders, loadTrackedOrder } = useApp();
+  const [trackingReady, setTrackingReady] = useState(false);
+  const [trackingError, setTrackingError] = useState("");
   const order = orders.find((o) => o.id === id);
+  useEffect(() => {
+    let disposed = false;
+    if (!id || order) {
+      setTrackingReady(true);
+      return;
+    }
+    void loadTrackedOrder(id).catch((error: unknown) => {
+      if (!disposed) setTrackingError(error instanceof Error ? error.message : "Buyurtma kuzatuvi yuklanmadi");
+    }).finally(() => {
+      if (!disposed) setTrackingReady(true);
+    });
+    return () => { disposed = true; };
+  }, [id, loadTrackedOrder, order]);
   if (!order)
     return (
       <Shell>
         <main className="narrow">
-          <h1>{loaded ? "Buyurtma topilmadi" : "Yuklanmoqda…"}</h1>
+          <h1>{trackingReady ? "Buyurtma topilmadi" : "Yuklanmoqda…"}</h1>
+          {trackingError && <p className="error" role="alert">{trackingError}</p>}
         </main>
       </Shell>
     );
@@ -772,7 +788,7 @@ const groups: BoardGroup[] = [
   },
 ];
 function Restaurant() {
-  const { orders } = useApp();
+  const { orders, loaded, operationalError } = useApp();
   const [newSeen, setNewSeen] = useState(
     orders.filter((o) => o.status === "NEW").length,
   );
@@ -806,6 +822,8 @@ function Restaurant() {
   return (
     <Shell surface="staff">
       <main className="ops">
+        {!loaded && <div className="empty" role="status">Buyurtmalar yuklanmoqda…</div>}
+        {operationalError && <p className="error" role="alert">{operationalError}</p>}
         <div className="ops-head">
           <div>
             <p className="eyebrow">DUSHANBA · 3 AVGUST</p>
@@ -1207,7 +1225,7 @@ function OrderDetail() {
   );
 }
 function DriverApp() {
-  const { orders } = useApp();
+  const { orders, loaded, operationalError } = useApp();
   const active = orders.find(
     (o) =>
       o.assignedDriverId &&
@@ -1219,6 +1237,8 @@ function DriverApp() {
   return (
     <Shell surface="driver">
       <main className="driver-page">
+        {!loaded && <div className="empty" role="status">Topshiriqlar yuklanmoqda…</div>}
+        {operationalError && <p className="error" role="alert">{operationalError}</p>}
         <div className="driver-head">
           <div>
             <p className="eyebrow">XAYRLI KUN, AZIZ</p>
@@ -1410,27 +1430,18 @@ function DriverDelivery({ order }: { order: Order }) {
     </>
   );
 }
-function AuthGate({ children }: { children: React.ReactNode }) {
-  const [ready, setReady] = useState(!supabaseConfigured);
-  const [session, setSession] = useState(false);
-  const [email, setEmail] = useState("restaurant@zaytun.local");
+function AuthGate({ children, surface }: { children: React.ReactNode; surface: "restaurant" | "driver" }) {
+  const { authReady, session, role, authError, signIn, signOut } = useApp();
+  const [email, setEmail] = useState(surface === "driver" ? "driver@zaytun.local" : "restaurant@zaytun.local");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => {
-    if (!supabase) return;
-    void supabase.auth.getSession().then(({ data }) => {
-      setSession(Boolean(data.session));
-      setReady(true);
-    });
-    const { data } = supabase.auth.onAuthStateChange((_event, current) =>
-      setSession(Boolean(current)),
-    );
-    return () => data.subscription.unsubscribe();
-  }, []);
-  if (!ready) return <div className="empty">Yuklanmoqda…</div>;
-  if (!supabaseConfigured || session) return <>{children}</>;
+  const permitted = surface === "driver" ? role === "DRIVER" : role === "RESTAURANT" || role === "DISPATCHER";
+  if (!authReady) return <div className="empty" role="status">Sessiya tekshirilmoqda…</div>;
+  if (!supabaseConfigured) return <>{children}</>;
+  if (session && permitted) return <>{children}<button className="auth-signout" type="button" onClick={() => void signOut().catch((failure: unknown) => setError(failure instanceof Error ? failure.message : "Chiqish amalga oshmadi"))}>Chiqish</button></>;
+  if (session && !permitted) return <Shell surface={surface === "driver" ? "driver" : "staff"}><main className="narrow"><section className="form-card"><h1>Ruxsat yo‘q</h1><p>Bu hisob ushbu operatsion bo‘limga kira olmaydi.</p><button className="button secondary" onClick={() => void signOut()}>Boshqa hisob bilan kirish</button></section></main></Shell>;
   return (
-    <Shell surface="staff">
+    <Shell surface={surface === "driver" ? "driver" : "staff"}>
       <main className="narrow">
         <section className="form-card">
           <p className="eyebrow">XODIMLAR UCHUN</p>
@@ -1443,15 +1454,16 @@ function AuthGate({ children }: { children: React.ReactNode }) {
             onSubmit={async (e) => {
               e.preventDefault();
               setError("");
-              const { error: authError } =
-                await supabase!.auth.signInWithPassword({ email, password });
-              if (authError) setError(authError.message);
-              else window.location.reload();
+              try {
+                await signIn(email, password);
+              } catch (failure) {
+                setError(failure instanceof Error ? failure.message : "Kirish amalga oshmadi");
+              }
             }}
           >
             <Field label="Email" value={email} onChange={setEmail} />
             <Field label="Parol" value={password} onChange={setPassword} />
-            {error && <p className="error">{error}</p>}
+            {(error || authError) && <p className="error" role="alert">{error || authError}</p>}
             <button className="button primary wide">Kirish</button>
           </form>
           <small>
@@ -1476,7 +1488,7 @@ export default function App() {
       <Route
         path="/restaurant"
         element={
-          <AuthGate>
+          <AuthGate surface="restaurant">
             <Restaurant />
           </AuthGate>
         }
@@ -1484,7 +1496,7 @@ export default function App() {
       <Route
         path="/restaurant/orders/:id"
         element={
-          <AuthGate>
+          <AuthGate surface="restaurant">
             <OrderDetail />
           </AuthGate>
         }
@@ -1492,7 +1504,7 @@ export default function App() {
       <Route
         path="/driver"
         element={
-          <AuthGate>
+          <AuthGate surface="driver">
             <DriverApp />
           </AuthGate>
         }

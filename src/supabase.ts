@@ -177,24 +177,19 @@ export class SupabaseStore {
       .from("orders")
       .select(orderSelect)
       .order("created_at", { ascending: false });
-    if (!error) {
-      const rows = (data || []).map((r) => mapOrder(r as Row));
-      if (rows.length) return rows;
-    }
-    const tokens = JSON.parse(
-      localStorage.getItem("zgo.tracking") || "{}",
-    ) as Record<string, string>;
-    return (
-      await Promise.all(Object.keys(tokens).map((id) => this.get(id)))
-    ).filter(Boolean) as Order[];
+    fail(error);
+    return (data || []).map((r) => mapOrder(r as Row));
   }
   async get(id: string) {
-    const { data } = await supabase!
+    const { data, error } = await supabase!
       .from("orders")
       .select(orderSelect)
       .eq("id", id)
       .maybeSingle();
-    if (data) return mapOrder(data as Row);
+    fail(error);
+    return data ? mapOrder(data as Row) : undefined;
+  }
+  async getTracked(id: string) {
     const token = (
       JSON.parse(localStorage.getItem("zgo.tracking") || "{}") as Record<
         string,
@@ -210,46 +205,12 @@ export class SupabaseStore {
     return tracked.data ? mapOrder(tracked.data as Row) : undefined;
   }
   async save(order: Order) {
-    let existing: Order | undefined;
-    try {
-      existing = await this.get(order.id);
-    } catch {
-      existing = undefined;
-    }
-    if (!existing) {
-      const { data, error } = await supabase!.rpc("create_order", {
-        p_order: order,
-      });
-      fail(error);
-      const tokens = JSON.parse(localStorage.getItem("zgo.tracking") || "{}");
-      tokens[data.id] = data.trackingToken;
-      localStorage.setItem("zgo.tracking", JSON.stringify(tokens));
-      return {
-        ...order,
-        id: data.id,
-        number: data.number,
-        deliveryFee: data.deliveryFee,
-        total: data.total,
-      };
-    }
-    if (existing.status !== order.status) {
-      await this.transition(
-        order.id,
-        order.status,
-        "SYSTEM",
-        order.rejectionReason || order.cancellationReason,
-      );
-    } else if (
-      order.estimatedMinutes !== existing.estimatedMinutes &&
-      order.estimatedMinutes
-    ) {
-      const { error } = await supabase!.rpc("set_preparation_estimate", {
-        p_order_id: order.id,
-        p_minutes: order.estimatedMinutes,
-      });
-      fail(error);
-    }
-    return (await this.get(order.id))!;
+    const { data, error } = await supabase!.rpc("create_public_order", { p_order: order });
+    fail(error);
+    const tokens = JSON.parse(localStorage.getItem("zgo.tracking") || "{}");
+    tokens[data.id] = data.trackingToken;
+    localStorage.setItem("zgo.tracking", JSON.stringify(tokens));
+    return { ...order, id: data.id, number: data.number, deliveryFee: data.deliveryFee, total: data.total };
   }
   async listDrivers() {
     const { data, error } = await supabase!
@@ -339,21 +300,18 @@ export class SupabaseStore {
     });
     fail(error);
   }
-  async resolveIssue(issueId: string) {
+  async resolveIssue(_orderId: string, issueId: string) {
     const { error } = await supabase!.rpc("resolve_delivery_issue", {
       p_issue_id: issueId,
     });
     fail(error);
   }
-  subscribe(refresh: () => void) {
+  subscribe(refresh: () => void, surface: "restaurant" | "driver" = "restaurant") {
     const channel = supabase!.channel("zaytun-operations");
-    for (const table of [
-      "orders",
-      "order_events",
-      "driver_assignments",
-      "delivery_issues",
-      "drivers",
-    ])
+    const tables = surface === "restaurant"
+      ? ["orders", "order_events", "driver_assignments", "delivery_issues", "drivers"]
+      : ["orders", "order_events", "driver_assignments", "delivery_issues"];
+    for (const table of tables)
       channel.on(
         "postgres_changes",
         { event: "*", schema: "public", table },
