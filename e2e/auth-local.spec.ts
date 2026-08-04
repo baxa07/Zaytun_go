@@ -31,8 +31,10 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await page.getByLabel("Pin to‘g‘ri joyda").check();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
+    await expect(page.getByTestId("server-confirmed-total")).toContainText(/78.?000/);
     await page.getByTestId("track-link").click();
     await expect(page.getByTestId("order-status")).toHaveText("Yangi");
+    await expect(page.locator(".track .form-card")).toContainText(/78.?000/);
     expect(anonymousOperationalFailures).toEqual([]);
   });
 
@@ -47,6 +49,7 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await expect(page.getByTestId(`order-card-${orderId}`)).toBeVisible();
     await page.getByTestId(`order-card-${orderId}`).click();
     orderNumber = (await page.locator(".detail-head .eyebrow").textContent()) || "";
+    await expect(page.locator(".panel").first()).toContainText(/78.?000/);
     await page.getByTestId("action-confirm").click();
     await page.getByTestId("action-start-prep").click();
     await page.getByTestId("action-mark-ready").click();

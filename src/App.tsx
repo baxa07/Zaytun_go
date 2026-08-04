@@ -623,10 +623,11 @@ function Checkout() {
               <span>Yetkazish</span>
               <b>{type === "DELIVERY" ? money(estimatedFee) : "Bepul"}</b>
             </div>
-            <div className="total">
-              <span>Jami</span>
+            <div className="total" data-testid="estimated-total">
+              <span>Taxminiy jami</span>
               <b>{money(total)}</b>
             </div>
+            <small>Yakuniy narx menyu va yetkazish sozlamalari asosida serverda tasdiqlanadi.</small>
           </section>
           <button
             className="button primary wide"
@@ -669,6 +670,8 @@ function Field({
 }
 function Confirmation() {
   const { id } = useParams();
+  const { orders } = useApp();
+  const order = orders.find((entry) => entry.id === id);
   return (
     <Shell>
       <main className="success">
@@ -679,6 +682,7 @@ function Confirmation() {
           Restoran buyurtmangizni hozir tekshiradi. Holat o‘zgarganda shu
           sahifada ko‘rasiz.
         </p>
+        {order && <p data-testid="server-confirmed-total"><b>Server tasdiqlagan jami:</b> {money(order.total)}</p>}
         <Link
           className="button primary"
           to={`/track/${id}`}

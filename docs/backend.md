@@ -95,6 +95,12 @@ Create separate browser keys in the Yandex developer console for JavaScript API,
 
 The development seed uses `40.1039, 65.3688` only as a clearly documented test centre. **These are not claimed to be Zaytun Cafe’s production coordinates.** Before a real delivery test, the project owner must verify the restaurant entrance coordinates and service radius in person. Update the active settings record after migrations are applied; do not edit migration history:
 
+### Authoritative order pricing
+
+Public checkout sends only menu-item IDs, quantities, selected modifier IDs, and instructions. `create_public_order` locks and reads the active menu and modifier rows, snapshots their names and combined unit prices into `order_items`, and calculates subtotal and total inside one database transaction. Client price, line-total, subtotal, delivery-fee, or grand-total fields are rejected. Historical order-item snapshots do not change when menu prices change.
+
+The current delivery rule is server-authoritative straight-line radius pricing: pickup has no delivery fee and bypasses delivery minimum/radius checks; delivery must be enabled, meet the configured minimum order, and fall within `maximum_delivery_radius_km` using the Haversine distance from the configured restaurant coordinate. Delivery costs `base_delivery_fee` unless the authoritative subtotal meets `free_delivery_threshold`. Straight-line distance is not road or driving distance, so the owner must verify the real restaurant coordinate and choose a conservative service radius before production.
+
 ```sql
 update public.delivery_settings
 set restaurant_display_name = 'Zaytun Cafe',

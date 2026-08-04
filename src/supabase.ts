@@ -138,6 +138,41 @@ const mapOrder = (r: Row): Order => {
 };
 const orderSelect =
   "*,customer_addresses(*),order_items(*),order_events(*),delivery_issues(*)";
+export const toPublicOrderPayload = (order: Order) => ({
+  id: order.id,
+  idempotencyKey: order.id,
+  customer: {
+    name: order.customer.name,
+    primaryPhone: order.customer.primaryPhone,
+    secondaryPhone: order.customer.secondaryPhone,
+  },
+  type: order.type,
+  paymentMethod: order.paymentMethod,
+  specialInstructions: order.specialInstructions,
+  address: order.address ? {
+    district: order.address.district,
+    street: order.address.street,
+    house: order.address.house,
+    entrance: order.address.entrance,
+    floor: order.address.floor,
+    apartment: order.address.apartment,
+    landmark: order.address.landmark,
+    deliveryNotes: order.address.deliveryNotes,
+    latitude: order.address.latitude,
+    longitude: order.address.longitude,
+    confidence: order.address.confidence,
+    pinConfirmedAt: order.address.pinConfirmedAt,
+    locationProvider: order.address.locationProvider,
+    providerPlaceId: order.address.providerPlaceId,
+    providerFormattedAddress: order.address.providerFormattedAddress,
+  } : undefined,
+  items: order.items.map((item) => ({
+    menuItemId: item.menuItemId,
+    quantity: item.quantity,
+    modifierIds: item.modifierIds,
+    instructions: item.instructions,
+  })),
+});
 export class SupabaseStore {
   async getCategories() {
     const { data, error } = await supabase!
@@ -205,12 +240,20 @@ export class SupabaseStore {
     return tracked.data ? mapOrder(tracked.data as Row) : undefined;
   }
   async save(order: Order) {
-    const { data, error } = await supabase!.rpc("create_public_order", { p_order: order });
+    const { data, error } = await supabase!.rpc("create_public_order", { p_order: toPublicOrderPayload(order) });
     fail(error);
     const tokens = JSON.parse(localStorage.getItem("zgo.tracking") || "{}");
     tokens[data.id] = data.trackingToken;
     localStorage.setItem("zgo.tracking", JSON.stringify(tokens));
-    return { ...order, id: data.id, number: data.number, deliveryFee: data.deliveryFee, total: data.total };
+    return {
+      ...order,
+      id: data.id,
+      number: data.number,
+      items: data.items,
+      subtotal: data.subtotal,
+      deliveryFee: data.deliveryFee,
+      total: data.total,
+    };
   }
   async listDrivers() {
     const { data, error } = await supabase!
