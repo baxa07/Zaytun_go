@@ -1,6 +1,6 @@
 # ZAYTUN GO production pilot runbook
 
-This runbook prepares a pilot; it does not authorize a deployment. Development seed coordinates, contacts, accounts and prices are not production values.
+This runbook prepares a pilot; it does not authorize a deployment. The entrance coordinates `40.087274, 65.402551` and zoom `17` are owner-verified; development contacts, accounts, address text and prices are not production values.
 
 ## Configuration authority
 
@@ -17,7 +17,7 @@ Never put a service-role key, database password or access token in a `VITE_` var
 
 ## Required production environment
 
-Copy variable names from `.env.example` into the hosting dashboard. Set `VITE_DATA_PROVIDER=supabase`, `VITE_MAP_PROVIDER=yandex`, an HTTPS `VITE_SUPABASE_URL`, a Supabase publishable key, three domain-restricted Yandex browser/service keys, verified default coordinates/zoom, and the HTTPS public origin. Do not upload `.env.local`.
+Copy variable names from `.env.example` into the hosting dashboard. Set `VITE_DATA_PROVIDER=supabase`, `VITE_MAP_PROVIDER=yandex`, an HTTPS `VITE_SUPABASE_URL`, a Supabase publishable key, three domain-restricted Yandex browser/service keys, the verified defaults `40.087274`, `65.402551`, zoom `17`, and the HTTPS public origin. Do not upload `.env.local`.
 
 Run `npm run validate:production-env` in the build environment. It reports only presence and format, never values. `VITE_SUPABASE_ANON_KEY` remains accepted temporarily as the legacy public-key name; new deployments should use `VITE_SUPABASE_PUBLISHABLE_KEY`. `VITE_YANDEX_GEOCODER_API_KEY` is obsolete and makes validation fail.
 
@@ -64,8 +64,9 @@ update public.delivery_settings set
   restaurant_display_name = '<OWNER VERIFY>',
   restaurant_address = '<OWNER VERIFY>',
   restaurant_phone = '<OWNER VERIFY>',
-  restaurant_latitude = <OWNER_VERIFY_LATITUDE>,
-  restaurant_longitude = <OWNER_VERIFY_LONGITUDE>,
+  restaurant_latitude = 40.087274,
+  restaurant_longitude = 65.402551,
+  default_map_zoom = 17,
   operating_hours = '<OWNER VERIFY JSON>'::jsonb,
   delivery_enabled = <OWNER_VERIFY_BOOLEAN>,
   maximum_delivery_radius_km = <OWNER_VERIFY_KM>,
@@ -80,7 +81,7 @@ update public.delivery_settings set
 where id = true;
 ```
 
-The owner must verify the exact customer-reachable restaurant entrance coordinate in Navoiy, written address, phone, hours, service radius, minimum order, fees, payment methods and time estimates. Straight-line distance is not road distance; perform edge-of-zone road tests before opening orders.
+The owner verified the customer-reachable restaurant entrance coordinate as `40.087274, 65.402551` with zoom `17` on 2026-08-04. The written address, phone, hours, service radius, minimum order, fees, payment methods and time estimates remain owner decisions. Straight-line distance is not road distance; perform edge-of-zone road tests before opening orders.
 
 ## Hosting and external dashboards
 
@@ -99,7 +100,7 @@ For the pilot, use Supabase project logs, hosting access/build logs, browser err
 
 ## Real delivery pilot checklist
 
-Owner verifies and signs off each item: exact entrance pin; written address; service radius; minimum subtotal; base fee; free threshold; hours; phone; payment methods; expected preparation time; expected delivery time; named admin/dispatcher/drivers; customer privacy handling; incident owner.
+Verified: exact entrance pin `40.087274, 65.402551` and default zoom `17`. Owner still verifies and signs off: written address; service radius; minimum subtotal; base fee; free threshold; hours; phone; payment methods; expected preparation time; expected delivery time; named admin/dispatcher/drivers; customer privacy handling; incident owner.
 
 Perform witnessed scenarios: address next to the restaurant; apartment with entrance/floor/unit; landmark-dependent address; radius edge; outside radius; wrong pin corrected and reconfirmed; map unavailable with manual details retained (delivery still requires a confirmed pin); customer not answering; no available driver; restaurant rejection; cancellation; driver payment/address issue; failed delivery and return.
 

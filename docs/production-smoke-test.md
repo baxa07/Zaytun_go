@@ -2,12 +2,15 @@
 
 Record date, release commit, domain, Supabase project reference (not credentials), tester and evidence for every result.
 
+Verified pilot entrance configuration: latitude `40.087274`, longitude `65.402551`, default zoom `17`. Confirm these exact values in the public configuration response and authoritative `delivery_settings` row before testing; delivery radius and pricing remain separate owner decisions.
+
 ## Customer
 
 - Open the home page and direct-refresh `/menu`; menu/categories load anonymously.
 - Select items/modifiers, adjust quantities within the configured maximum and retain the cart after refresh/map failure.
 - Checkout shows the verified restaurant configuration and server-estimate distinction.
 - Yandex loads on the final HTTPS domain; search, pin click/drag, reverse result, suggestion application, confirmation and reconfirmation work.
+- Initial map centering uses `40.087274, 65.402551` at zoom `17`; it does not override a customer-selected destination.
 - Submit an in-zone order. Confirmation and token tracking show the server-confirmed total.
 - Confirm delivery fee/free threshold/minimum subtotal against database settings.
 - Invalid/expired tracking token displays safe recovery guidance and no private data.
@@ -18,6 +21,7 @@ Record date, release commit, domain, Supabase project reference (not credentials
 - A restaurant/dispatcher signs in and receives the new order through refresh/Realtime.
 - Accept, estimate, prepare, ready and assign a permitted available driver.
 - Verify address, confidence, coordinates, distance and navigation links.
+- Verify the distance calculation uses the authoritative restaurant entrance `40.087274, 65.402551`.
 - Exercise rejection/cancellation/address-issue handling and sign out; protected data and subscriptions clear.
 
 ## Driver

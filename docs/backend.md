@@ -25,9 +25,9 @@ VITE_MAP_PROVIDER=mock
 VITE_YANDEX_MAPS_API_KEY=
 VITE_YANDEX_SEARCH_API_KEY=
 VITE_YANDEX_GEOSUGGEST_API_KEY=
-VITE_DEFAULT_MAP_LAT=40.1039
-VITE_DEFAULT_MAP_LNG=65.3688
-VITE_DEFAULT_MAP_ZOOM=14
+VITE_DEFAULT_MAP_LAT=40.087274
+VITE_DEFAULT_MAP_LNG=65.402551
+VITE_DEFAULT_MAP_ZOOM=17
 ```
 
 Run `npm run dev`. Local Auth accounts all use password `zaytun-local-2026`:
@@ -81,9 +81,9 @@ Set these frontend deployment variables in Netlify or Vercel:
 - `VITE_YANDEX_MAPS_API_KEY=<domain-restricted browser key>`
 - `VITE_YANDEX_SEARCH_API_KEY=<domain-restricted Search API key>`
 - `VITE_YANDEX_GEOSUGGEST_API_KEY=<domain-restricted Geosuggest API key>`
-- `VITE_DEFAULT_MAP_LAT=<verified restaurant latitude>`
-- `VITE_DEFAULT_MAP_LNG=<verified restaurant longitude>`
-- `VITE_DEFAULT_MAP_ZOOM=<approved default zoom>`
+- `VITE_DEFAULT_MAP_LAT=40.087274`
+- `VITE_DEFAULT_MAP_LNG=65.402551`
+- `VITE_DEFAULT_MAP_ZOOM=17`
 
 Configure the hosted Auth Site URL and redirect allow-list for the production domain. Never expose the service-role key in Vite or browser code. If server-side administration is added later, store `SUPABASE_SERVICE_ROLE_KEY` only in protected server-function environment variables.
 
@@ -95,7 +95,7 @@ Yandex Maps JavaScript API v3 is the first production provider because it offers
 
 Create separate browser keys in the Yandex developer console for JavaScript API, Search API, and Geosuggest API, and restrict all three to approved production domains/referrers. The core script receives only the JavaScript API key. After `ymaps3.ready`, the adapter configures Search and Geosuggest through `ymaps3.getDefaultConfig().setApikeys`; it does not call Yandex REST geocoding endpoints directly. Set `VITE_MAP_PROVIDER=yandex` and all three restricted keys only in the deployment environment. Missing service configuration produces a visible service-specific error without disabling an already loaded map. Never place a Supabase service-role credential or an unrestricted secret in a Vite variable; all `VITE_*` values are browser-visible.
 
-The development seed uses `40.1039, 65.3688` only as a clearly documented test centre. **These are not claimed to be Zaytun Cafe’s production coordinates.** Before a real delivery test, the project owner must verify the restaurant entrance coordinates and service radius in person. Update the active settings record after migrations are applied; do not edit migration history:
+The owner verified the customer-reachable Zaytun Kafe entrance at latitude `40.087274`, longitude `65.402551`, with default zoom `17` on 2026-08-04. These public map defaults are duplicated in Vite only for initial centering; `delivery_settings` remains authoritative for radius eligibility and fees. The service radius and pricing still require separate owner approval. Update other active settings after migrations are applied; do not edit migration history:
 
 ### Authoritative order pricing
 
@@ -106,14 +106,14 @@ The current delivery rule is server-authoritative straight-line radius pricing: 
 ```sql
 update public.delivery_settings
 set restaurant_display_name = 'Zaytun Cafe',
-    restaurant_latitude = <verified_latitude>,
-    restaurant_longitude = <verified_longitude>,
-    default_map_zoom = 14,
+    restaurant_latitude = 40.087274,
+    restaurant_longitude = 65.402551,
+    default_map_zoom = 17,
     delivery_enabled = true,
     maximum_delivery_radius_km = <approved_radius_km>,
-    base_delivery_fee_uzs = <fee_in_integer_uzs>,
-    free_delivery_threshold_uzs = <integer_uzs_or_null>,
-    minimum_delivery_order_uzs = <integer_uzs>,
+    base_delivery_fee = <fee_in_integer_uzs>,
+    free_delivery_threshold = <integer_uzs_or_null>,
+    minimum_delivery_order = <integer_uzs>,
     updated_at = now()
 where id = true;
 ```
@@ -130,4 +130,4 @@ Customer tracking intentionally omits exact coordinates, full private addresses,
 - Delivery settings unavailable: verify the migration, the single `singleton=true` record, and database logs. Do not bypass server validation in the browser.
 - Offline customer: retain the cart locally, restore connectivity, then submit once. The idempotency key prevents a retry from creating a duplicate.
 
-Before production launch: verify the physical restaurant pin; confirm radius, minimum, base fee and free threshold with the owner; restrict the Yandex key to every approved production hostname; test search, click, drag, suggestion and reconfirmation on a real phone; submit one inside-zone and one outside-zone order; verify authoritative totals in staff view; verify restaurant and driver navigation links at the actual entrance; verify public tracking leaks no private location data; test a provider outage and retry; and test address-problem reporting end to end.
+Before production launch: re-confirm the verified entrance pin on the final-domain map; confirm radius, minimum, base fee and free threshold with the owner; restrict the Yandex key to every approved production hostname; test search, click, drag, suggestion and reconfirmation on a real phone; submit one inside-zone and one outside-zone order; verify authoritative totals in staff view; verify restaurant and driver navigation links at the actual entrance; verify public tracking leaks no private location data; test a provider outage and retry; and test address-problem reporting end to end.

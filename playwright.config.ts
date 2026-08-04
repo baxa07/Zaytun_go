@@ -15,7 +15,7 @@ export default defineConfig({
     command: 'npm run build && npm run preview -- --port 4173',
     port: 4173,
     reuseExistingServer: !process.env.CI,
-    env: {...process.env, VITE_DATA_PROVIDER:'local', VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '', VITE_MAP_PROVIDER: 'mock', VITE_DEFAULT_MAP_LAT:'40.1039', VITE_DEFAULT_MAP_LNG:'65.3688', VITE_DEFAULT_MAP_ZOOM:'14'},
+    env: {...process.env, VITE_DATA_PROVIDER:'local', VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '', VITE_MAP_PROVIDER: 'mock', VITE_DEFAULT_MAP_LAT:'40.087274', VITE_DEFAULT_MAP_LNG:'65.402551', VITE_DEFAULT_MAP_ZOOM:'17'},
   },
   projects: [
     {name: 'chromium', use: {...devices['Desktop Chrome']}},
