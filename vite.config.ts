@@ -10,7 +10,11 @@ export default defineConfig({
     env: {
       VITE_SUPABASE_URL: "",
       VITE_SUPABASE_ANON_KEY: "",
+      VITE_DATA_PROVIDER: "local",
       VITE_MAP_PROVIDER: "mock",
+      VITE_DEFAULT_MAP_LAT: "40.1039",
+      VITE_DEFAULT_MAP_LNG: "65.3688",
+      VITE_DEFAULT_MAP_ZOOM: "14",
     },
   },
   server: {

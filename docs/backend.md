@@ -1,5 +1,7 @@
 # Local Supabase backend
 
+Production setup, migration safety, staff bootstrap and deployment preparation are documented in [production-readiness.md](production-readiness.md). Everything below is local-development-only.
+
 ZAYTUN GO uses the Supabase CLI stack locally. No hosted project or `supabase link` is required.
 
 ## Prerequisites and startup

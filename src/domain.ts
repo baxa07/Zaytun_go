@@ -7,6 +7,7 @@ export type PaymentCollectionStatus='NOT_REQUIRED'|'PENDING'|'COLLECTED'|'FAILED
 export type AddressConfidence='COMPLETE'|'NEEDS_CLARIFICATION'|'CUSTOMER_CONFIRMATION_REQUIRED'
 export type DriverAvailability='AVAILABLE'|'BUSY'|'OFFLINE'
 export type DeliveryIssueType='ADDRESS_INCORRECT'|'CUSTOMER_NOT_ANSWERING'|'PAYMENT_PROBLEM'|'ADDRESS_CLARIFICATION'
+export interface RestaurantConfig {restaurantName:string;restaurantAddress:string;restaurantPhone:string;restaurantLatitude:number;restaurantLongitude:number;operatingHours:Record<string,string>;deliveryEnabled:boolean;deliveryRadiusKm:number;minimumDeliverySubtotal:number;baseDeliveryFee:number;freeDeliveryThreshold:number|null;maximumItemQuantity:number;supportedPaymentMethods:PaymentMethod[];estimatedPreparationMinutes:number;estimatedDeliveryMinutes:number;defaultMapZoom:number}
 
 export interface MenuModifier {id:string;name:string;price:number}
 export interface MenuItem {id:string;categoryId:string;name:string;description:string;price:number;image:string;modifiers?:MenuModifier[];available:boolean}

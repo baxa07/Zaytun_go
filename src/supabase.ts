@@ -8,6 +8,7 @@ import type {
   DriverAssignment,
   MenuCategory,
   MenuItem,
+  RestaurantConfig,
   Order,
   OrderEvent,
   OrderStatus,
@@ -16,7 +17,7 @@ import type {
 } from "./domain";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY||import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabaseConfigured = Boolean(url && key);
 export const supabase = supabaseConfigured
   ? createClient(url, key, {
@@ -27,8 +28,12 @@ export const supabase = supabaseConfigured
       },
     })
   : null;
-const fail = (error: { message: string } | null) => {
-  if (error) throw new Error(error.message);
+const fail = (error: { message: string; code?: string } | null) => {
+  if (!error) return;
+  const [machineCode, customerMessage] = error.message.split("|", 2);
+  const structured = /^[A-Z][A-Z0-9_]+$/.test(machineCode) && customerMessage?.trim();
+  if (import.meta.env.DEV) console.error("[ZAYTUN data error]", { code: error.code || (structured ? machineCode : "SUPABASE_REQUEST_FAILED") });
+  throw new Error(structured ? customerMessage.trim() : "Xizmat bilan bog‘lanib bo‘lmadi. Internetni tekshirib, qayta urinib ko‘ring.");
 };
 type Row = Record<string, unknown>;
 const mapOrder = (r: Row): Order => {
@@ -174,6 +179,7 @@ export const toPublicOrderPayload = (order: Order) => ({
   })),
 });
 export class SupabaseStore {
+  async getRestaurantConfig(){const{data,error}=await supabase!.rpc('get_public_restaurant_config');fail(error);if(!data)throw new Error('Restoran sozlamalari topilmadi');return data as RestaurantConfig}
   async getCategories() {
     const { data, error } = await supabase!
       .from("menu_categories")
@@ -349,7 +355,7 @@ export class SupabaseStore {
     });
     fail(error);
   }
-  subscribe(refresh: () => void, surface: "restaurant" | "driver" = "restaurant") {
+  subscribe(refresh: () => void, surface: "restaurant" | "driver" = "restaurant", disconnected?: () => void) {
     const channel = supabase!.channel("zaytun-operations");
     const tables = surface === "restaurant"
       ? ["orders", "order_events", "driver_assignments", "delivery_issues", "drivers"]
@@ -360,7 +366,9 @@ export class SupabaseStore {
         { event: "*", schema: "public", table },
         refresh,
       );
-    channel.subscribe();
+    channel.subscribe((status) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") disconnected?.();
+    });
     return () => void supabase!.removeChannel(channel as RealtimeChannel);
   }
   async signIn(email: string, password: string) {

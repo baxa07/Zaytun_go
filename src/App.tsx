@@ -8,7 +8,6 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { categories, menuItems } from "./data";
 import {
   calculateOrderTotal,
   canTransition,
@@ -30,10 +29,11 @@ import {
   initialSelection,
   materialAddressChange,
 } from "./maps/core";
-import { configuredMapProvider, defaultMapLocation } from "./maps/factory";
+import { configuredMapProvider } from "./maps/factory";
 import { navigationUrl } from "./maps/navigation";
 import type { MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
+import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
 const time = (s: string) =>
@@ -78,6 +78,7 @@ const Badge = ({ status }: { status: OrderStatus }) => (
     {statusLabels[status]}
   </span>
 );
+function UpdateNotice(){const[ready,setReady]=useState(false);useEffect(()=>{const show=()=>setReady(true);window.addEventListener(UPDATE_EVENT,show);return()=>window.removeEventListener(UPDATE_EVENT,show)},[]);return ready?<div className="update-notice" role="status"><span>Ilovaning yangi xavfsiz versiyasi tayyor.</span><button type="button" onClick={requestApplicationUpdate}>Yangilash</button></div>:null}
 function Shell({
   children,
   surface = "customer",
@@ -105,6 +106,7 @@ function Shell({
   );
 }
 function Home() {
+  const { publicConfig } = useApp();
   return (
     <Shell>
       <main className="home">
@@ -112,7 +114,7 @@ function Home() {
           <p className="eyebrow">NAVOIY · TEZ YETKAZIB BERISH</p>
           <h1>Sevimli taomlaringiz, aniq va tez.</h1>
           <p>
-            Zaytun Cafe taomlarini onlayn buyurtma qiling va har bir bosqichni
+            {publicConfig?.restaurantName || "Zaytun Cafe"} taomlarini onlayn buyurtma qiling va har bir bosqichni
             kuzating.
           </p>
           <div className="actions">
@@ -125,7 +127,7 @@ function Home() {
           </div>
         </section>
         <div className="hero-food">
-          🫒<span>35–50 min</span>
+          🫒<span>{publicConfig ? `${publicConfig.estimatedPreparationMinutes}–${publicConfig.estimatedPreparationMinutes+publicConfig.estimatedDeliveryMinutes} min` : "Vaqt aniqlanmoqda"}</span>
         </div>
       </main>
     </Shell>
@@ -133,7 +135,8 @@ function Home() {
 }
 function Menu() {
   const [active, setActive] = useState("grill");
-  const { cart } = useApp();
+  const { cart, categories, menuItems, publicDataReady, publicDataError } = useApp();
+  useEffect(()=>{if(categories.length&&!categories.some(category=>category.id===active))setActive(categories[0].id)},[active,categories]);
   return (
     <Shell>
       <main className="page">
@@ -157,6 +160,8 @@ function Menu() {
             </button>
           ))}
         </div>
+        {!publicDataReady && <div className="empty" role="status">Menyu yuklanmoqda…</div>}
+        {publicDataError && <div className="map-error" role="alert"><b>Menyu vaqtincha mavjud emas</b><span>{publicDataError}</span><button type="button" onClick={()=>window.location.reload()}>Qayta yuklash</button></div>}
         <div className="menu-grid">
           {menuItems
             .filter((i) => i.categoryId === active)
@@ -193,12 +198,13 @@ function MenuCard({ item }: { item: MenuItem }) {
 }
 function Product() {
   const { id } = useParams();
+  const { menuItems, publicDataReady, addToCart, publicConfig } = useApp();
   const item = menuItems.find((i) => i.id === id);
-  const { addToCart } = useApp();
   const nav = useNavigate();
   const [q, setQ] = useState(1);
   const [mods, setMods] = useState<string[]>([]);
   const [note, setNote] = useState("");
+  if (!publicDataReady) return <Shell><main className="narrow"><div className="empty">Taom yuklanmoqda…</div></main></Shell>;
   if (!item) return <Navigate to="/menu" />;
   const unit =
     item.price +
@@ -241,7 +247,7 @@ function Product() {
           <div className="stepper">
             <button onClick={() => setQ(Math.max(1, q - 1))}>−</button>
             <b>{q}</b>
-            <button onClick={() => setQ(q + 1)}>+</button>
+            <button onClick={() => setQ(Math.min(publicConfig?.maximumItemQuantity||50,q + 1))}>+</button>
           </div>
           <button
             className="button primary"
@@ -270,7 +276,7 @@ function Product() {
   );
 }
 function Cart() {
-  const { cart, updateQuantity } = useApp();
+  const { cart, updateQuantity, publicConfig } = useApp();
   const subtotal = calculateOrderTotal(cart);
   return (
     <Shell>
@@ -300,7 +306,7 @@ function Cart() {
                   <div className="stepper">
                     <button onClick={() => updateQuantity(i.id, -1)}>−</button>
                     <b>{i.quantity}</b>
-                    <button onClick={() => updateQuantity(i.id, 1)}>+</button>
+                    <button disabled={i.quantity>=(publicConfig?.maximumItemQuantity||50)} onClick={() => updateQuantity(i.id, 1)}>+</button>
                   </div>
                 </article>
               ))}
@@ -341,7 +347,7 @@ const blankAddress: CustomerAddress = {
   confidence: "CUSTOMER_CONFIRMATION_REQUIRED",
 };
 function Checkout() {
-  const { cart, submitOrder, clearCart } = useApp();
+  const { cart, submitOrder, clearCart, publicConfig } = useApp();
   const nav = useNavigate();
   const [type, setType] = useState<"DELIVERY" | "PICKUP">("DELIVERY");
   const [address, setAddress] = useState(blankAddress);
@@ -352,9 +358,10 @@ function Checkout() {
   const [mapSelection, setMapSelection] = useState<MapLocationSelection>(() =>
     initialSelection(configuredMapProvider()),
   );
+  useEffect(()=>{if(publicConfig&&!publicConfig.supportedPaymentMethods.includes(payment))setPayment(publicConfig.supportedPaymentMethods[0])},[payment,publicConfig]);
   const submittingRef = useRef(false);
   const subtotal = calculateOrderTotal(cart);
-  const estimatedFee = type === "DELIVERY" && subtotal < 150000 ? 10000 : 0;
+  const estimatedFee = type === "DELIVERY" && publicConfig && (publicConfig.freeDeliveryThreshold == null || subtotal < publicConfig.freeDeliveryThreshold) ? publicConfig.baseDeliveryFee : 0;
   const total = calculateOrderTotal(cart, estimatedFee);
   const clearError = (key: string) =>
     setErrors((er) =>
@@ -377,9 +384,9 @@ function Checkout() {
   };
   const updateMapSelection = (selection: MapLocationSelection) => {
     const coordinate = selection.coordinate;
-    const center = defaultMapLocation();
-    const distance = coordinate ? haversineKm(center, coordinate) : undefined;
-    const zone = distance === undefined ? undefined : distance <= 8 ? "ELIGIBLE" : "OUTSIDE_ZONE";
+    const center = publicConfig ? {latitude:publicConfig.restaurantLatitude,longitude:publicConfig.restaurantLongitude} : undefined;
+    const distance = coordinate && center ? haversineKm(center, coordinate) : undefined;
+    const zone = distance === undefined || !publicConfig ? undefined : distance <= publicConfig.deliveryRadiusKm ? "ELIGIBLE" : "OUTSIDE_ZONE";
     setMapSelection(selection);
     setAddress((a) => ({
       ...a,
@@ -465,6 +472,7 @@ function Checkout() {
               <button
                 type="button"
                 data-testid="type-delivery"
+                disabled={publicConfig?.deliveryEnabled===false}
                 className={type === "DELIVERY" ? "active" : ""}
                 onClick={() => setType("DELIVERY")}
               >
@@ -479,6 +487,7 @@ function Checkout() {
                 Olib ketish
               </button>
             </div>
+            {publicConfig?.deliveryEnabled===false&&<p className="warning">Yetkazib berish vaqtincha o‘chirilgan. Olib ketishni tanlang.</p>}
           </section>
           <section className="form-card">
             <h2>Aloqa</h2>
@@ -578,7 +587,7 @@ function Checkout() {
               )}
               {(errors.deliveryZone || address.deliveryZoneResult === "OUTSIDE_ZONE") && (
                 <em className="error" data-testid="delivery-zone-error">
-                  {errors.deliveryZone || "Bu manzil 8 km yetkazish hududidan tashqarida."}
+                  {errors.deliveryZone || "Bu manzil yetkazish hududidan tashqarida."}
                 </em>
               )}
             </section>
@@ -586,7 +595,7 @@ function Checkout() {
           <section className="form-card">
             <h2>To‘lov</h2>
             <label className="radio">
-              <input
+              <input disabled={Boolean(publicConfig&&!publicConfig.supportedPaymentMethods.includes("CASH"))}
                 type="radio"
                 checked={payment === "CASH"}
                 onChange={() => {
@@ -597,7 +606,7 @@ function Checkout() {
               Naqd pul
             </label>
             <label className="radio">
-              <input
+              <input disabled={Boolean(publicConfig&&!publicConfig.supportedPaymentMethods.includes("CARD_ON_DELIVERY"))}
                 type="radio"
                 checked={payment === "CARD_ON_DELIVERY"}
                 onChange={() => {
@@ -720,7 +729,7 @@ function Track() {
     return (
       <Shell>
         <main className="narrow">
-          <h1>{trackingReady ? "Buyurtma topilmadi" : "Yuklanmoqda…"}</h1>
+          <h1>{trackingReady ? "Kuzatuv havolasi noto‘g‘ri yoki mavjud emas" : "Yuklanmoqda…"}</h1>
           {trackingError && <p className="error" role="alert">{trackingError}</p>}
         </main>
       </Shell>
@@ -1273,7 +1282,7 @@ function DriverApp() {
   );
 }
 function DriverDelivery({ order }: { order: Order }) {
-  const { transition, acceptAssignment, reportIssue } = useApp();
+  const { transition, acceptAssignment, reportIssue, publicConfig } = useApp();
   const [issueOpen, setIssueOpen] = useState(false);
   const [issue, setIssue] = useState("");
   const next: Partial<Record<OrderStatus, OrderStatus>> = {
@@ -1304,8 +1313,8 @@ function DriverDelivery({ order }: { order: Order }) {
           <i>R</i>
           <div>
             <small>OLIB KETISH</small>
-            <b>Zaytun Cafe</b>
-            <span>Islom Karimov ko‘chasi, 17</span>
+            <b>{publicConfig?.restaurantName||"Zaytun Cafe"}</b>
+            <span>{publicConfig?.restaurantAddress||"Restoran manzili yuklanmoqda"}</span>
           </div>
         </div>
         <div className="route-line"></div>
@@ -1436,7 +1445,7 @@ function DriverDelivery({ order }: { order: Order }) {
 }
 function AuthGate({ children, surface }: { children: React.ReactNode; surface: "restaurant" | "driver" }) {
   const { authReady, session, role, authError, signIn, signOut } = useApp();
-  const [email, setEmail] = useState(surface === "driver" ? "driver@zaytun.local" : "restaurant@zaytun.local");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const permitted = surface === "driver" ? role === "DRIVER" : role === "RESTAURANT" || role === "DISPATCHER";
@@ -1481,7 +1490,7 @@ function AuthGate({ children, surface }: { children: React.ReactNode; surface: "
 }
 export default function App() {
   return (
-    <Routes>
+    <><UpdateNotice/><Routes>
       <Route path="/" element={<Home />} />
       <Route path="/menu" element={<Menu />} />
       <Route path="/menu/:id" element={<Product />} />
@@ -1514,6 +1523,6 @@ export default function App() {
         }
       />
       <Route path="*" element={<Navigate to="/" />} />
-    </Routes>
+    </Routes></>
   );
 }

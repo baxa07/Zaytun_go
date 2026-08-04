@@ -3,7 +3,26 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { AppProvider, useApp, type AppRole } from "./state";
-import type { Order } from "./domain";
+import type { Order, RestaurantConfig } from "./domain";
+
+const publicConfig: RestaurantConfig = {
+  restaurantName: "Test Zaytun",
+  restaurantAddress: "Test address",
+  restaurantPhone: "+998000000000",
+  restaurantLatitude: 40.1,
+  restaurantLongitude: 65.3,
+  operatingHours: { monday: "09:00-22:00" },
+  deliveryEnabled: true,
+  deliveryRadiusKm: 8,
+  minimumDeliverySubtotal: 0,
+  baseDeliveryFee: 10000,
+  freeDeliveryThreshold: null,
+  maximumItemQuantity: 20,
+  supportedPaymentMethods: ["CASH", "CARD_ON_DELIVERY"],
+  estimatedPreparationMinutes: 25,
+  estimatedDeliveryMinutes: 45,
+  defaultMapZoom: 14,
+};
 
 const mocks = vi.hoisted(() => ({
   session: null as { user: { id: string } } | null,
@@ -20,6 +39,9 @@ vi.mock("./data", () => ({
   categories: [],
   menuItems: [],
   store: {
+    getCategories: vi.fn(async () => []),
+    getItems: vi.fn(async () => []),
+    getRestaurantConfig: vi.fn(async () => publicConfig),
     list: mocks.list,
     listDrivers: mocks.listDrivers,
     subscribe: mocks.subscribe,
@@ -108,7 +130,7 @@ describe("route-aware Supabase loading", () => {
     renderAt("/restaurant", <OperationalProbe />);
     await waitFor(() => expect(mocks.list).toHaveBeenCalledOnce());
     expect(mocks.listDrivers).toHaveBeenCalledOnce();
-    expect(mocks.subscribe).toHaveBeenCalledWith(expect.any(Function), "restaurant");
+    expect(mocks.subscribe).toHaveBeenCalledWith(expect.any(Function), "restaurant", expect.any(Function));
   });
 
   it("loads only RLS-filtered orders and no roster for an authenticated driver", async () => {
@@ -118,7 +140,7 @@ describe("route-aware Supabase loading", () => {
     renderAt("/driver", <OperationalProbe />);
     expect(await screen.findByText("loaded:1")).toBeTruthy();
     expect(mocks.listDrivers).not.toHaveBeenCalled();
-    expect(mocks.subscribe).toHaveBeenCalledWith(expect.any(Function), "driver");
+    expect(mocks.subscribe).toHaveBeenCalledWith(expect.any(Function), "driver", expect.any(Function));
   });
 
   it("turns rejected operational loads into a recoverable state", async () => {

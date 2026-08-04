@@ -5,6 +5,7 @@ import type {
   MenuItem,
   Order,
   OrderEvent,
+  RestaurantConfig,
 } from "./domain";
 import { createEvent, createIssue, transitionOrder } from "./domain";
 import { SupabaseStore, supabaseConfigured } from "./supabase";
@@ -14,6 +15,7 @@ export interface MenuRepository {
   getCategories(): Promise<MenuCategory[]>;
   getItems(): Promise<MenuItem[]>;
 }
+export interface ConfigurationRepository { getRestaurantConfig():Promise<RestaurantConfig> }
 export interface OrderRepository {
   list(): Promise<Order[]>;
   get(id: string): Promise<Order | undefined>;
@@ -290,6 +292,7 @@ export const seedDrivers: Driver[] = [
     availability: "OFFLINE",
   },
 ];
+export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Cafe — DEVELOPMENT',restaurantAddress:'Development placeholder — owner must replace',restaurantPhone:'+998 00 000 00 00',restaurantLatitude:40.1039,restaurantLongitude:65.3688,operatingHours:{everyday:'OWNER_DECISION_REQUIRED'},deliveryEnabled:true,deliveryRadiusKm:8,minimumDeliverySubtotal:40000,baseDeliveryFee:10000,freeDeliveryThreshold:150000,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_ON_DELIVERY'],estimatedPreparationMinutes:35,estimatedDeliveryMinutes:45,defaultMapZoom:14}
 class LocalStore
   implements
     MenuRepository,
@@ -323,6 +326,7 @@ class LocalStore
   async getItems() {
     return menuItems;
   }
+  async getRestaurantConfig(){return structuredClone(developmentRestaurantConfig)}
   async list() {
     return structuredClone(this.orders);
   }
@@ -427,12 +431,13 @@ class LocalStore
         ),
       });
   }
-  subscribe(refresh: () => void, surface?: "restaurant" | "driver") {
+  subscribe(refresh: () => void, surface?: "restaurant" | "driver", disconnected?: () => void) {
+    void disconnected;
     void refresh;
     void surface;
     return () => undefined;
   }
 }
-export const store: LocalStore | SupabaseStore = supabaseConfigured
+export const store: LocalStore | SupabaseStore = import.meta.env.VITE_DATA_PROVIDER==='supabase'&&supabaseConfigured
   ? new SupabaseStore()
   : new LocalStore();

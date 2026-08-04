@@ -19,6 +19,9 @@ let resolveDelivered
 const deliveredEvent=new Promise((resolve,reject)=>{resolveDelivered=resolve;setTimeout(()=>reject(new Error('Timed out waiting for delivered Realtime update')),10000)})
 const channel=restaurant.channel('integration-workflow').on('postgres_changes',{event:'UPDATE',schema:'public',table:'orders',filter:`id=eq.${orderId}`},event=>{if(event.new.status==='DELIVERED')resolveDelivered()})
 await new Promise((resolve,reject)=>channel.subscribe(status=>{if(status==='SUBSCRIBED')resolve();if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')reject(new Error(`Realtime ${status}`))}))
+// Realtime can report SUBSCRIBED just before the replication listener is ready
+// after a local database restart. Give that listener a bounded settling window.
+await new Promise(resolve=>setTimeout(resolve,250))
 const transition=(c,status,reason=null)=>transitionOrder(c,orderId,status,reason)
 await transition(restaurant,'CONFIRMED');const estimate=await restaurant.rpc('set_preparation_estimate',{p_order_id:orderId,p_minutes:20});assert.ifError(estimate.error);await transition(restaurant,'PREPARING');await transition(restaurant,'READY')
 const available=await dispatcher.from('drivers').select('id').eq('availability','AVAILABLE').limit(1).single();assert.ifError(available.error);const assigned=await dispatcher.rpc('assign_driver',{p_order_id:orderId,p_driver_id:available.data.id});assert.ifError(assigned.error)

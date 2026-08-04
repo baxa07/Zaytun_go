@@ -16,8 +16,11 @@ import type {
   CartItem,
   DeliveryIssueType,
   Driver,
+  MenuCategory,
+  MenuItem,
   Order,
   OrderStatus,
+  RestaurantConfig,
 } from "./domain";
 import { supabase, supabaseConfigured } from "./supabase";
 
@@ -49,6 +52,11 @@ type State = {
   cart: CartItem[];
   loaded: boolean;
   operationalError: string;
+  categories: MenuCategory[];
+  menuItems: MenuItem[];
+  publicConfig: RestaurantConfig | null;
+  publicDataReady: boolean;
+  publicDataError: string;
   authReady: boolean;
   session: Session | null;
   role: AppRole | null;
@@ -79,11 +87,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [operationalError, setOperationalError] = useState("");
+  const [categories, setCategories] = useState<MenuCategory[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [publicConfig, setPublicConfig] = useState<RestaurantConfig | null>(null);
+  const [publicDataReady, setPublicDataReady] = useState(false);
+  const [publicDataError, setPublicDataError] = useState("");
   const [authReady, setAuthReady] = useState(!supabaseConfigured);
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
   const [authError, setAuthError] = useState("");
   const refreshInFlight = useRef<Promise<void> | null>(null);
+  const publicLoadStarted = useRef(false);
+
+  useEffect(() => {
+    if (publicLoadStarted.current) return;
+    publicLoadStarted.current = true;
+    void Promise.all([store.getCategories(), store.getItems(), store.getRestaurantConfig()])
+      .then(([nextCategories,nextItems,nextConfig]) => {
+        setCategories(nextCategories);
+        setMenuItems(nextItems);
+        setPublicConfig(nextConfig);
+        setPublicDataError("");
+      })
+      .catch(() => setPublicDataError("Menyu yoki restoran ma’lumotlari yuklanmadi. Internetni tekshirib, qayta urinib ko‘ring."))
+      .finally(() => setPublicDataReady(true));
+  }, []);
 
   const applySession = useCallback(async (nextSession: Session | null) => {
     setSession(nextSession);
@@ -178,7 +206,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     });
     void safeRefresh();
-    const unsubscribe = store.subscribe(() => void safeRefresh(), surface);
+    const unsubscribe = store.subscribe(
+      () => void safeRefresh(),
+      surface,
+      () => {
+        if (!disposed) setOperationalError("Jonli yangilanish uzildi. Ma’lumotlarni yangilash uchun sahifani qayta oching.");
+      },
+    );
     return () => {
       disposed = true;
       unsubscribe();
@@ -207,6 +241,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     cart,
     loaded,
     operationalError,
+    categories,
+    menuItems,
+    publicConfig,
+    publicDataReady,
+    publicDataError,
     authReady,
     session,
     role,
@@ -259,7 +298,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setEstimate: async (orderId, minutes) => runOperation(() => store.setEstimate(orderId, minutes)),
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
-  }), [authError, authReady, cart, drivers, loadTrackedOrder, loaded, operationalError, orders, refresh, role, runOperation, session]);
+  }), [authError, authReady, cart, categories, drivers, loadTrackedOrder, loaded, menuItems, operationalError, orders, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }
