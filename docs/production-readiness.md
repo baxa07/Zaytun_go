@@ -57,6 +57,10 @@ An ordinary browser user cannot assign roles because profile/driver writes are p
 
 ## Restaurant setup (owner decisions)
 
+The production bootstrap migration creates the verified restaurant configuration when the table is empty and updates the deterministic singleton `id=true` when it already exists. Because the current eligibility engine is radius-based, it records the verified “Navoiy shahri” policy but leaves delivery disabled and the radius null until the owner approves an enforceable radius or a separately reviewed city-boundary implementation. It does not create menu, user, driver, order, or customer records. Use [production-menu-template.md](production-menu-template.md) for the later owner-approved menu import.
+
+Bootstrapped facts are: `Zaytun Kafe`; `Guliston mavzesi 649, Navoiy shahri`; `+998507440005`; entrance `40.087274, 65.402551`; zoom `17`; daily hours `10:00–00:00`; minimum order `100000` UZS; delivery fee `0`; and `CASH` as the only active payment method. Click and Payme remain unavailable until real payment integrations and their operational settlement procedures are implemented. Fixed preparation and delivery estimates are null because timing is product- and location-dependent; the UI states this instead of inventing minutes.
+
 Update the single `delivery_settings` row through an authenticated SQL-editor/operator session; migration history must not be edited:
 
 ```sql

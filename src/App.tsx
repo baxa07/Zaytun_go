@@ -12,6 +12,7 @@ import {
   calculateOrderTotal,
   canTransition,
   createEvent,
+  publicMenuState,
   validateOrderInput,
   type CustomerAddress,
   type MenuItem,
@@ -107,6 +108,9 @@ function Shell({
 }
 function Home() {
   const { publicConfig } = useApp();
+  const timing = publicConfig?.estimatedPreparationMinutes != null && publicConfig.estimatedDeliveryMinutes != null
+    ? `${publicConfig.estimatedPreparationMinutes}–${publicConfig.estimatedPreparationMinutes + publicConfig.estimatedDeliveryMinutes} min`
+    : "Vaqt taom va manzilga qarab aniqlanadi";
   return (
     <Shell>
       <main className="home">
@@ -117,6 +121,7 @@ function Home() {
             {publicConfig?.restaurantName || "Zaytun Cafe"} taomlarini onlayn buyurtma qiling va har bir bosqichni
             kuzating.
           </p>
+          {publicConfig?.operatingHours.everyday && <p className="muted">Har kuni: {publicConfig.operatingHours.everyday}</p>}
           <div className="actions">
             <Link className="button primary" to="/menu">
               Menyuni ochish
@@ -127,7 +132,7 @@ function Home() {
           </div>
         </section>
         <div className="hero-food">
-          🫒<span>{publicConfig ? `${publicConfig.estimatedPreparationMinutes}–${publicConfig.estimatedPreparationMinutes+publicConfig.estimatedDeliveryMinutes} min` : "Vaqt aniqlanmoqda"}</span>
+          🫒<span>{publicConfig ? timing : "Vaqt aniqlanmoqda"}</span>
         </div>
       </main>
     </Shell>
@@ -136,6 +141,7 @@ function Home() {
 function Menu() {
   const [active, setActive] = useState("grill");
   const { cart, categories, menuItems, publicDataReady, publicDataError } = useApp();
+  const menuState=publicMenuState(publicDataReady,publicDataError,categories.length,menuItems.length);
   useEffect(()=>{if(categories.length&&!categories.some(category=>category.id===active))setActive(categories[0].id)},[active,categories]);
   return (
     <Shell>
@@ -160,8 +166,9 @@ function Menu() {
             </button>
           ))}
         </div>
-        {!publicDataReady && <div className="empty" role="status">Menyu yuklanmoqda…</div>}
-        {publicDataError && <div className="map-error" role="alert"><b>Menyu vaqtincha mavjud emas</b><span>{publicDataError}</span><button type="button" onClick={()=>window.location.reload()}>Qayta yuklash</button></div>}
+        {menuState==='LOADING' && <div className="empty" role="status">Menyu yuklanmoqda…</div>}
+        {menuState==='UNPUBLISHED' && <div className="empty" role="status" data-testid="menu-unpublished"><b>Menyu hali e’lon qilinmagan.</b><span>Taomlar tayyor bo‘lgach shu yerda ko‘rinadi.</span></div>}
+        {menuState==='ERROR' && <div className="map-error" role="alert"><b>Menyuni yuklab bo‘lmadi</b><span>{publicDataError}</span><button type="button" onClick={()=>window.location.reload()}>Qayta yuklash</button></div>}
         <div className="menu-grid">
           {menuItems
             .filter((i) => i.categoryId === active)
@@ -358,7 +365,7 @@ function Checkout() {
   const [mapSelection, setMapSelection] = useState<MapLocationSelection>(() =>
     initialSelection(configuredMapProvider()),
   );
-  useEffect(()=>{if(publicConfig&&!publicConfig.supportedPaymentMethods.includes(payment))setPayment(publicConfig.supportedPaymentMethods[0])},[payment,publicConfig]);
+  useEffect(()=>{if(publicConfig&&!publicConfig.supportedPaymentMethods.includes(payment))setPayment(publicConfig.supportedPaymentMethods[0]);if(publicConfig?.deliveryEnabled===false)setType('PICKUP')},[payment,publicConfig]);
   const submittingRef = useRef(false);
   const subtotal = calculateOrderTotal(cart);
   const estimatedFee = type === "DELIVERY" && publicConfig && (publicConfig.freeDeliveryThreshold == null || subtotal < publicConfig.freeDeliveryThreshold) ? publicConfig.baseDeliveryFee : 0;
@@ -386,7 +393,7 @@ function Checkout() {
     const coordinate = selection.coordinate;
     const center = publicConfig ? {latitude:publicConfig.restaurantLatitude,longitude:publicConfig.restaurantLongitude} : undefined;
     const distance = coordinate && center ? haversineKm(center, coordinate) : undefined;
-    const zone = distance === undefined || !publicConfig ? undefined : distance <= publicConfig.deliveryRadiusKm ? "ELIGIBLE" : "OUTSIDE_ZONE";
+    const zone = distance === undefined || !publicConfig || publicConfig.deliveryRadiusKm==null ? undefined : distance <= publicConfig.deliveryRadiusKm ? "ELIGIBLE" : "OUTSIDE_ZONE";
     setMapSelection(selection);
     setAddress((a) => ({
       ...a,

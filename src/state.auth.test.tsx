@@ -14,6 +14,7 @@ const publicConfig: RestaurantConfig = {
   operatingHours: { monday: "09:00-22:00" },
   deliveryEnabled: true,
   deliveryRadiusKm: 8,
+  deliveryAreaDescription: "Test area",
   minimumDeliverySubtotal: 0,
   baseDeliveryFee: 10000,
   freeDeliveryThreshold: null,
@@ -101,6 +102,12 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe("route-aware Supabase loading", () => {
+  it("describes an empty published menu as not yet published rather than a network failure", async () => {
+    renderAt("/menu");
+    expect((await screen.findByTestId("menu-unpublished")).textContent).toContain("Menyu hali e’lon qilinmagan");
+    expect(screen.queryByText("Menyuni yuklab bo‘lmadi")).toBeNull();
+  });
+
   it("does not query orders or drivers on an anonymous customer route", async () => {
     renderAt("/checkout", <div>customer checkout</div>);
     await screen.findByText("customer checkout");

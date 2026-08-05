@@ -292,7 +292,7 @@ export const seedDrivers: Driver[] = [
     availability: "OFFLINE",
   },
 ];
-export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Cafe — DEVELOPMENT',restaurantAddress:'Development placeholder — owner must replace',restaurantPhone:'+998 00 000 00 00',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'OWNER_DECISION_REQUIRED'},deliveryEnabled:true,deliveryRadiusKm:8,minimumDeliverySubtotal:40000,baseDeliveryFee:10000,freeDeliveryThreshold:150000,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_ON_DELIVERY'],estimatedPreparationMinutes:35,estimatedDeliveryMinutes:45,defaultMapZoom:17}
+export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Cafe — DEVELOPMENT',restaurantAddress:'Development placeholder — owner must replace',restaurantPhone:'+998 00 000 00 00',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'OWNER_DECISION_REQUIRED'},deliveryEnabled:true,deliveryRadiusKm:8,deliveryAreaDescription:'Development radius',minimumDeliverySubtotal:40000,baseDeliveryFee:10000,freeDeliveryThreshold:150000,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_ON_DELIVERY'],estimatedPreparationMinutes:35,estimatedDeliveryMinutes:45,defaultMapZoom:17}
 class LocalStore
   implements
     MenuRepository,
