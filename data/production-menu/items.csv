@@ -1,2 +1,141 @@
 record_type,id,category_id,name,description,price,image,available,sort_order
 EXAMPLE,<item-slug>,<category-slug>,<OWNER APPROVED PRODUCT NAME>,<OPTIONAL DESCRIPTION>,100000,<OPTIONAL HTTPS IMAGE URL>,false,1
+DATA,zakuski-myasnoe-assorti-bolshoe,zakuski,Мясное ассорти (большое),"Говядина копч., казы, язык говяжий, индейка, говяжий рулет, горчица, помидоры",110000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z1_1780591368621.jpg,true,10
+DATA,zakuski-myasnoe-assorti-maloe,zakuski,Мясное ассорти (малое),"Говядина копч., казы, язык говяжий, индейка, говяжий рулет, горчица, помидоры",90000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z2_1780591389288.jpg,true,20
+DATA,zakuski-govyazhiy-yazyk-v-slivochnom-gribnom-souse,zakuski,Говяжий язык в сливочном грибном соусе,"Говяжий язык, шампиньоны, лук, каймак",85000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z3_1780591448788.webp,true,30
+DATA,zakuski-solyonoe-assorti,zakuski,Солёное ассорти,"Огурцы бочковые, помидоры бочковые, капуста бочковая",25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z4_1780591463538.jpg,true,40
+DATA,zakuski-ovoshchnaya-narezka,zakuski,Овощная нарезка,"Огурцы, зелень, чеснок, помидоры, перец болгар., лимон, перец стручковый острый, чакка",40000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z5_1780591482504.jpg,true,50
+DATA,zakuski-marinovannoe-assorti,zakuski,Маринованное ассорти,"Огурцы марин., помидоры марин., вещенки марин., анзур марин.",60000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z6_1780591812809.jpg,true,60
+DATA,zakuski-gribnaya-polyana,zakuski,Грибная поляна,"Вещенки марин., шампиньоны марин., лук репчатый, масло растительное",40000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z7_1780591827824.jpg,true,70
+DATA,zakuski-seledka-po-russki,zakuski,Селедка по-русски,"Селедка марин., картофель, лук репча., лимон",35000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z8_1780591950694.jpeg,true,80
+DATA,zakuski-olivki,zakuski,Оливки,Маринованные оливки,25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z9_1780592034544.jpeg,true,90
+DATA,zakuski-suzma-chakka,zakuski,Сузма (чакка),,15000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z10_1780592054726.jpg,true,100
+DATA,zakuski-garliki,zakuski,Гарлики,"Хлеб бородинский, масло растительное, чеснок",16000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z11_1780592199082.JPG,true,110
+DATA,zakuski-garliki-s-syrom,zakuski,Гарлики с сыром,"Хлеб бородинский, масло растительное, чеснок, майонез, сыр твердый",22000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/z12_1780592101126.jpg,true,120
+DATA,salaty-edem,salaty,Эдем,"Куриная грудка, индейка, сухари, сыр твердый, майонез, чеснок, зелень",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s1_1780592222916.jpg,true,10
+DATA,salaty-zaytun,salaty,Зайтун,"Куриная грудка, айсберг, помидоры черри, брынза с зеленью, маслины и оливки без косточек",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s2_1780592237732.jpg,true,20
+DATA,salaty-tsezar,salaty,Цезар,"Куриная грудка, сыр твердый, помидоры свежие, сухари, майонез",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s3_1780592248681.jpg,true,30
+DATA,salaty-vesenniy,salaty,Весенний,"Капуста свежая, зелень, помидоры, огурцы",20000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s4_1780592363734.jpg,true,40
+DATA,salaty-gurman-s-yazykom,salaty,Гурман с языком,"Язык говяжий, шампиньоны марин., огурцы марин., зеленый горошек, масло растительное, лимон, говядина",65000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s5_1780592333065.jpg,true,50
+DATA,salaty-muzhskie-slyozy,salaty,Мужские слёзы,"Лук репч., огурцы марин., яйцо куриное, майонез, гранат, говядина",50000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s6_1780592347932.jpg,true,60
+DATA,salaty-svezhiy,salaty,Свежий,"Лук репч., помидоры, огурцы, зелень",25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s7_1780592378382.jpg,true,70
+DATA,salaty-muzhskoy-kapriz,salaty,Мужской каприз,"Сыр твердый, индейка, майонез, казы, говядина",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s8_1780592394349.jpg,true,80
+DATA,salaty-pekin,salaty,Пекин,"Зелень, чеснок, масло растительное, огурцы свеж., соевый соус, говядина",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s9_1780592443249.jpg,true,90
+DATA,salaty-smak,salaty,Смак,"Сыр твердый, помидоры, сухари, майонез, чеснок",35000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s10_1780592471733.jpg,true,100
+DATA,salaty-chirokchi,salaty,Чирокчи,"Помидоры свеж., лук репча., чакка",25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s11_1780592546600.jpg,true,110
+DATA,salaty-grecheskiy,salaty,Греческий,"Фетакса, огурцы свеж., маслины и оливки без косточек, перец болгар., лимон, помидоры свеж.",35000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s12_1780592569350.jpg,true,120
+DATA,salaty-achchik-chuchuk,salaty,Аччик-чучук,"Помидоры свеж., перец болгар., перец стручковый острый, лук репч., зелень",25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s13_1780592595099.jpg,true,130
+DATA,salaty-myasnoy-salat,salaty,Мясной салат,"Курица, индейка, огурцы марин., майонез, зеленый горош., говядина",50000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s14_1780592617950.jpg,true,140
+DATA,salaty-gurman,salaty,Гурман,"Майонез, куриная грудка, шампиньоны марин., огурцы марин., зеленый горошек, яйцо куриное, говядина",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s15_1780592632183.jpg,true,150
+DATA,salaty-hrustyashchiy-baklazhany,salaty,Хрустящий Баклажаны,"Баклажан, помидоры, зелень",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s16_1780592642684.jpg,true,160
+DATA,salaty-yaponskiy-salat,salaty,Японский салат,"Зелень, чеснок, масло растительное, огурцы свеж., соевый соус, говядина, болгарс. перец, помидоры",40000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/s17_1780592686283.jpeg,true,170
+DATA,pervye-shurpa-kaynatma,pervye,Шурпа (кайнатма),"Лук репчатый, морковь, картофель, помидоры свежие, говядина",35000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/p1_1780592701217.jpg,true,10
+DATA,pervye-tushenka-shurpa,pervye,Тушенка шурпа,Говядина,45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/p2_1780592714017.jpg,true,20
+DATA,pervye-pelmen-shurpa,pervye,Пельмен шурпа,"Морковь, картофель, мука, лук репч., помидоры свеж., фарш",35000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/p3_1780592735218.jpg,true,30
+DATA,pervye-mastava,pervye,Мастава,"Лук репч., морковь, чеснок, картофель, рис, говядина, перец болгарский, томат, топленое масло",35000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/p4_1780592745501.jpg,true,40
+DATA,pervye-gilak-shurpa,pervye,Гилак шурпа,"Лук репч., морковь, картофель, помидоры свеж., фарш",35000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/p5_1780592762051.jpg,true,50
+DATA,evropa-myaso-s-gribami,evropa,Мясо с грибами,"Шампиньоны свеж., масло раст., сметана, каймак, лук репч., картофель, говядина",65000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/e1_1780592797384.png,true,10
+DATA,evropa-myaso-po-frantsuzski,evropa,Мясо по-французски,"Сыр твердый, майонез, масло раст., помидоры свеж., шампиньоны свеж., говядина",60000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/e2_1780586465483.jpg,true,20
+DATA,evropa-chikken-sheyk,evropa,Чиккен шейк,"Масло раст., яйцо куриное, сухари, каймак, куриная грудка",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/e3_1780592817851.jpg,true,30
+DATA,evropa-kuritsa-po-amerikanski,evropa,Курица по-американски,"Курица, масло сливоч., масло раст., чеснок, зелень, каймак",70000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/e4_1780593021518.jpeg,true,40
+DATA,evropa-kotlety-po-domashnemu,evropa,Котлеты по-домашнему,"Серый хлеб, лук репч., яйцо куриное, масло раст., сухари, говядина",55000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/e5_1780593118664.jpg,true,50
+DATA,evropa-kurinye-krylyshki-ostrye,evropa,Куриные крылышки (острые),"Куриные крылышки, чеснок, острый соус, соевый соус, мед, оливковое масло, перец, чили-порошок",90000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/e6_1780593331736.jpg,true,60
+DATA,evropa-kuritsa-s-kremovym-supom,evropa,Курица с кремовым супом,"Куриные крылышки, чеснок, острый соус, соевый соус, мед, оливковое масло, перец, чили-порошок",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/e7_1780593401337.jpg,true,70
+DATA,evropa-myaso-s-gribami-po-domashnemu,evropa,Мясо с грибами по-домашнему,"Шампиньоны свеж., масло раст., лук репч., картофель, говядина",60000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/e9_1780593425587.jpg,true,80
+DATA,nacional-zhiz-file,nacional,Жиз (филе),"Говядина, помидоры, огурцы, лимон, лук, кунжут",260000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n1_1780586241089.jpg,true,10
+DATA,nacional-zhiz-po-uygurskiy,nacional,Жиз по уйгурский,"Перец болгарский, чеснок, масло растительное, говядина",260000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n2_1780593441638.jpg,true,20
+DATA,nacional-zhiz-karshi,nacional,Жиз Карши,"Баранина, помидоры, огурцы, лимон, лук",250000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n3_1780593452571.jpg,true,30
+DATA,nacional-baranya-sheyka,nacional,Баранья шейка,"Баранья шейка, картошку, помидоры, огурцы, лимон",250000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n4_1780593465654.jpg,true,40
+DATA,nacional-zhiz-vaguri,nacional,Жиз Вагури,"Баранина, помидоры, огурцы, лимон, лук",270000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n5_1780586617107.jpg,true,50
+DATA,nacional-zhiz-vaguri-koreyka,nacional,Жиз Вагури Корейка,"Баранина корейка, помидоры, огурцы, лимон, лук",300000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n6_1780593584357.JPG,true,60
+DATA,nacional-kazan-kabab-1-kg,nacional,Казан кабаб (1 кг),"Баранина, картофел., помидоры, огурцы, лимон, лук",250000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n7_1780593593056.jpg,true,70
+DATA,nacional-kazan-kabab-1-portsiya,nacional,Казан кабаб (1 порция),"Баранина, картофел., помидоры, огурцы, лимон, лук",70000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n8_1780593604156.jpg,true,80
+DATA,nacional-somsa-obychnyy-i-ostryy,nacional,Сомса обычный и острый,"Мука, лук репч., говядина, курдюк",12000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n9_1780593633357.jpg,true,90
+DATA,nacional-olot-somsa,nacional,Олот сомса,,10000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n10_1780593726675.jpg,true,100
+DATA,nacional-somsa-baranina,nacional,Сомса баранина,"Мука, лук репч., баранина, курдюк",15000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n11_1780593768442.jpg,true,110
+DATA,nacional-kurtoba-1-portsiya,nacional,Куртоба (1 порция),,70000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/n12_1780593777526.jpg,true,120
+DATA,shashlyk-shashlyk-iz-koreyki,shashlyk,Шашлык из корейки,"Мясо баранина, лук репч.",50000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh1_1780586397687.jpg,true,10
+DATA,shashlyk-shashlyk-govyadina,shashlyk,Шашлык говядина,"Мясо говядина, помидоры, лук репч.",27000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh2_1780586638455.jpg,true,20
+DATA,shashlyk-kavkazskiy-govyadina,shashlyk,Кавказский говядина,"Мясо говядина, помидоры, лук репч.",50000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh3_1780586841741.jpg,true,30
+DATA,shashlyk-shashlyk-iz-pozvonochnika-baranina,shashlyk,Шашлык из позвоночника (баранина),,60000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh4_1780586593141.jpg,true,40
+DATA,shashlyk-napaleon,shashlyk,Напалеон,"Лук репчатый, фарш, курдюк",30000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh5_1780593802094.jpg,true,50
+DATA,shashlyk-farsh,shashlyk,Фарш,"Лук репчатый, фарш",25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh6_1780586735681.jpg,true,60
+DATA,shashlyk-farsh-kavkazskiy,shashlyk,Фарш кавказский,"Лук репчатый, фарш",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh7_1780593847794.jpg,true,70
+DATA,shashlyk-shashlyk-krylyshki,shashlyk,Шашлык Крылышки,"Куриная крылышки, лук репч.",25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh8_1780586679819.jpg,true,80
+DATA,shashlyk-shashlyk-baranina,shashlyk,Шашлык баранина,"Баранина, лук репч.",28000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh9_1780586703316.jpg,true,90
+DATA,shashlyk-shashlyk-baranina-kavkaz,shashlyk,Шашлык баранина Кавказ,"Баранина, помидор., лук репч.",55000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh10_1780586777696.JPG,true,100
+DATA,shashlyk-bbq-baranina-1kg,shashlyk,BBQ Баранина 1кг,"Баранина, помидор., лук, огурец",280000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh11_1780586445218.jpg,true,110
+DATA,shashlyk-vyrezka,shashlyk,Вырезка,"Мясо говядина, лук репчатый",45000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh12_1780593961267.jpg,true,120
+DATA,shashlyk-ovoshchnoy,shashlyk,Овощной,"Помидоры, перец болгарский, баклажаны, кабачки",20000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh13_1780586493096.jpg,true,130
+DATA,shashlyk-dumba-kurdyuk-shashlyk,shashlyk,Думба (курдюк) шашлык,"Думба, лук репчатый",25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh14_1780586515463.jpg,true,140
+DATA,shashlyk-zhigar,shashlyk,Жигар,"Жигар, лук репчатый",25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh15_1780594000001.jpg,true,150
+DATA,shashlyk-pomidor,shashlyk,Помидор,Помидор,15000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh16_1780594023352.jpg,true,160
+DATA,shashlyk-shashlyk-iz-kurinogo-file,shashlyk,Шашлык из куриного филе,"Курица, лук репч.",23000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh17_1780594083803.avif,true,170
+DATA,shashlyk-shashlyk-assorti,shashlyk,Шашлык ассорти,"Говядина 2 пал., баранина 2 пал., фарш 4 пал., куриное 2 пал., крылышки 2 пал., овощной 2 пал., кукуруз 1 пал., наполеон 2 пал., картофел. 2 порц.",449000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh18_1780586904706.jpg,true,180
+DATA,shashlyk-milliy-assorti,shashlyk,Миллий ассорти,"Жиз филе 0.5кг, жиз вагури 1кг, BBQ баранина 0.5кг, картофел. фри 2 порция, помидор, огурцы, лук репч., лимон",549000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh19_1780594120820.jpg,true,190
+DATA,shashlyk-zaytun-assorti,shashlyk,Зайтун ассорти,"Жиз филе 1кг, жиз вагури 1кг, шашлык говядина 2 пал., шашлык баранина 2 пал., фарш 4 пал., наполеон 2 пал., шашлыки 2 пал., овощной шашлик 1 пал., картофель фри",819000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sh20_1780594147871.jpg,true,200
+DATA,garniry-kartofel-fri,garniry,Картофель Фри,Картофель,15000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/g1_1780594171704.jpg,true,10
+DATA,garniry-pyure,garniry,Пюре,"Картофель, сливочное масло, молоко",25000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/g2_1780594187904.jpg,true,20
+DATA,garniry-kartoshka-po-derevyanskiy,garniry,Картошка по деревянский,"Картофель, растительное масло",15000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/g3_1780594209754.webp,true,30
+DATA,garniry-slozhnyy-garnir,garniry,Сложный гарнир,"Картофель, рис, зеленый горошек, кукуруза",35000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/g4_1780594244240.png,true,40
+DATA,garniry-chipsy,garniry,Чипсы,,15000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/g5_1780594268555.jpg,true,50
+DATA,garniry-zelyonyy-goroshek,garniry,Зелёный горошек,,10000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/g6_1780594298106.jpg,true,60
+DATA,garniry-kukuruza,garniry,Кукуруза,,10000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/g7_1780594325721.jpg,true,70
+DATA,garniry-ris,garniry,Рис,,10000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/g8_1780594342973.jpg,true,80
+DATA,sousy-sous-bbq,sousy,Соус BBQ,"Томатная паста, кетчуп, уксус, сахар, специи",10000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sc1_1780594359140.jpg,true,10
+DATA,sousy-tar-tar,sousy,Тар-тар,"Сметана, майонез, чеснок, укроп, перец свеж.",10000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sc2_1780594375874.jpg,true,20
+DATA,sousy-chesnochnyy-sous,sousy,Чесночный соус,"Майонез, чеснок, укроп",10000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sc3_1780594390091.jpg,true,30
+DATA,sousy-sous-hienz,sousy,Соус Hienz,"Растительное масло, сахар, уксус, томатная паста, специи",10000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sc4_1780594406758.jpg,true,40
+DATA,sousy-syrnyy-sous,sousy,Сырный соус,,10000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/sc5_1780594415957.png,true,50
+DATA,desert-fruktovyy-assorti-bolshoe,desert,Фруктовый ассорти (большое),,100000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/d1_1780594488326.jpg,true,10
+DATA,desert-fruktovyy-assorti-srednee,desert,Фруктовый ассорти (среднее),,60000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/d2_1780594494943.jpg,true,20
+DATA,desert-arbuz,desert,Арбуз,,30000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/d3_1780594501460.jpg,true,30
+DATA,desert-dynya,desert,Дыня,,40000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/d4_1780594509776.png,true,40
+DATA,desert-morozhennoe,desert,Мороженное,,15000,https://buqhmdhdcdbjkgomsoor.supabase.co/storage/v1/object/public/photos/d5_1780594533794.jpg,true,50
+DATA,napitki-coca-cola-1-l,napitki,Coca Cola 1 L,,15000,,true,10
+DATA,napitki-coca-cola-1-5-l,napitki,Coca Cola 1.5 L,,18000,,true,20
+DATA,napitki-fanta-1-l,napitki,Fanta 1 L,,15000,,true,30
+DATA,napitki-fanta-1-5-l,napitki,Fanta 1.5 L,,18000,,true,40
+DATA,napitki-sprite-1-l,napitki,Sprite 1 L,,15000,,true,50
+DATA,napitki-sprite-1-5-l,napitki,Sprite 1.5 L,,18000,,true,60
+DATA,napitki-chortoq-0-5-l,napitki,Chortoq 0.5 L,,15000,,true,70
+DATA,napitki-chortoq-0-75-l,napitki,Chortoq 0.75 L,,18000,,true,80
+DATA,napitki-borjomi-0-5-l,napitki,Borjomi 0.5 L,,20000,,true,90
+DATA,napitki-borjomi-1-l,napitki,Borjomi 1 L,,25000,,true,100
+DATA,napitki-bonaqua-1-l,napitki,Bonaqua 1 L,,8000,,true,110
+DATA,napitki-bonaqua-1-5-l,napitki,Bonaqua 1.5 L,,10000,,true,120
+DATA,napitki-chernogolovka-0-5-l,napitki,Черноголовка 0.5 L,,12000,,true,130
+DATA,napitki-chernogolovka-1-l,napitki,Черноголовка 1 L,,16000,,true,140
+DATA,napitki-viko,napitki,Viko,,25000,,true,150
+DATA,napitki-bliss,napitki,Bliss,,18000,,true,160
+DATA,napitki-sochna-dolina,napitki,Сочна долина,,18000,,true,170
+DATA,napitki-energetik,napitki,Энергетик,,15000,,true,180
+DATA,napitki-mohita-grafin,napitki,Мохита (графин),,35000,,true,190
+DATA,alkohol-baltika-3-ban,alkohol,Балтика 3 бан.,,18000,,true,10
+DATA,alkohol-baltika-7-ban,alkohol,Балтика 7 бан.,,18000,,true,20
+DATA,alkohol-baltika-8-ban,alkohol,Балтика 8 бан.,,20000,,true,30
+DATA,alkohol-baltika-3-but,alkohol,Балтика 3 бут.,,20000,,true,40
+DATA,alkohol-baltika-6-but,alkohol,Балтика 6 бут.,,22000,,true,50
+DATA,alkohol-baltika-7-but,alkohol,Балтика 7 бут.,,20000,,true,60
+DATA,alkohol-sarbast-but,alkohol,Сарбаст бут.,,16000,,true,70
+DATA,alkohol-sarbast-ban,alkohol,Сарбаст бан.,,16000,,true,80
+DATA,alkohol-tuborg-ban,alkohol,Туборг бан.,,20000,,true,90
+DATA,alkohol-tuborg-but,alkohol,Туборг бут.,,18000,,true,100
+DATA,alkohol-sarbast-filtr-razliv,alkohol,Сарбаст фильтр (разлив),,12000,,true,110
+DATA,alkohol-sarbast-bez-filtr-razliv,alkohol,Сарбаст без фильтр (разлив),,12000,,true,120
+DATA,alkohol-tuborg-razliv,alkohol,Туборг (разлив),,14000,,true,130
+DATA,alkohol-pivnaya-assorti,alkohol,Пивная ассорти,"Сырные пал., курт, костички, чипсы, гренки",40000,,true,140
+DATA,alkohol-medovaya-0-5,alkohol,Медовая 0.5,Водка,60000,,true,150
+DATA,alkohol-medovaya-0-7,alkohol,Медовая 0.7,Водка,90000,,true,160
+DATA,alkohol-new-uzbekistam-0-5,alkohol,New Uzbekistam 0.5,Водка,90000,,true,170
+DATA,alkohol-new-uzbekistam-0-7,alkohol,New Uzbekistam 0.7,Водка,110000,,true,180
+DATA,alkohol-baykal-0-5,alkohol,Байкал 0.5,Водка,80000,,true,190
+DATA,alkohol-baykal-0-7,alkohol,Байкал 0.7,Водка,100000,,true,200
+DATA,alkohol-kazak-0-5,alkohol,Казак 0.5,Водка,55000,,true,210
+DATA,alkohol-konyak-uzbekistan,alkohol,Коньяк Узбекистан,,110000,,true,220
+DATA,alkohol-vino,alkohol,Вино,,90000,,true,230
+DATA,alkohol-syrnye-palochki,alkohol,Сырные палочки,,15000,,true,240
+DATA,alkohol-kurt,alkohol,курт,,15000,,true,250
+DATA,alkohol-kostichki,alkohol,костички,,15000,,true,260
+DATA,alkohol-chipsy,alkohol,чипсы,,15000,,true,270
+DATA,alkohol-grenki,alkohol,гренки,,15000,,true,280

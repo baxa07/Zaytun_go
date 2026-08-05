@@ -108,7 +108,7 @@ export function validateMenuRows(raw) {
     item.sort_order = parseInteger(item.sort_order, `${location}.sort_order`, 1, errors);
     item.available = parseBoolean(item.available, `${location}.available`, errors);
     if (item.image && !/^https:\/\/[^\s]+$/i.test(item.image)) errors.push(`${location}.image: bo‘sh yoki https:// URL bo‘lishi kerak`);
-    const name = normalizeName(item.name);
+    const name = `${item.category_id}:${normalizeName(item.name)}`;
     if (name && names.has(name)) errors.push(`${location}.name: takrorlangan mahsulot “${item.name}”`);
     names.add(name);
     const orderKey = `${item.category_id}:${item.sort_order}`;

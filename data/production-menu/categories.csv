@@ -1,2 +1,14 @@
 record_type,id,name,description,sort_order,active
 EXAMPLE,<category-slug>,<OWNER APPROVED UZBEK NAME>,<OPTIONAL DESCRIPTION>,1,false
+DATA,zakuski,Закуски,,10,true
+DATA,salaty,Салаты,,20,true
+DATA,pervye,Первые блюда,,30,true
+DATA,evropa,Европейские блюда,,40,true
+DATA,nacional,Национальные блюда,,50,true
+DATA,shashlyk,Шашлыки и BBQ,,60,true
+DATA,garniry,Гарниры,,70,true
+DATA,sousy,Соусы,,80,true
+DATA,desert,Десерт,,90,true
+DATA,deti,Для детей,,100,true
+DATA,napitki,Напитки,,110,true
+DATA,alkohol,Алкоголь / Пиво,,120,true
