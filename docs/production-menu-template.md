@@ -35,20 +35,51 @@ No production menu rows are bootstrapped automatically. Obtain owner-approved na
 | `price` | integer | yes | Authoritative integer UZS increment, zero or greater |
 | `available` | boolean | yes | Only available modifiers can be selected |
 
-Structured handoff template:
+## Owner input files
 
-```json
-{
-  "categories": [
-    {"id":"<category-slug>","name":"<OWNER VALUE>","description":"<OWNER VALUE OR EMPTY>","sort_order":1,"active":true}
-  ],
-  "items": [
-    {"id":"<item-slug>","category_id":"<category-slug>","name":"<OWNER VALUE>","description":"<OWNER VALUE OR EMPTY>","price":0,"image":"<APPROVED URL/PATH OR EMPTY>","available":false,"sort_order":1}
-  ],
-  "modifiers": [
-    {"id":"<modifier-slug>","menu_item_id":"<item-slug>","name":"<OWNER VALUE>","price":0,"available":false}
-  ]
-}
+Fill these UTF-8, spreadsheet-compatible files:
+
+- `data/production-menu/categories.csv`
+- `data/production-menu/items.csv`
+- `data/production-menu/modifiers.csv`
+
+Every file contains one `EXAMPLE` row. It is formatting documentation only and
+is never imported. Add approved records as `DATA` rows. Keep the example row and
+headers unchanged. If there are no modifiers, leave that file with only its
+example row.
+
+`description` and `image` are optional owner content, but their CSV columns must
+remain. An image must be blank or an approved `https://` URL. Item prices must be
+positive integer UZS. A modifier may have a zero increment because the database
+explicitly supports free choices. IDs are deterministic lowercase slugs and
+must not be renamed after launch.
+
+## Validation and reviewed import
+
+```bash
+npm run menu:validate
+npm run menu:generate -- --output supabase/migrations/YYYYMMDDHHMMSS_production_menu.sql
 ```
 
-The zero prices above are schema examples, not production prices, and `available:false` prevents accidental sale. Import categories, then items, then modifiers inside one reviewed transaction. Verify row counts and the anonymous public menu before changing approved rows to active/available. Never import `supabase/seed.sql` into production.
+Validation checks headers, required fields, deterministic and unique IDs,
+references, positive item prices, non-negative modifier prices, display order,
+HTTPS image URLs, booleans and duplicate product/options. Generation refuses
+invalid data, refuses to overwrite an existing file, and only writes an SQL
+migration; it never connects to a database.
+
+The generated forward-only migration upserts categories, then items, then
+modifiers by their stable IDs. It contains no deletes and does not touch orders,
+order items, price snapshots, users, drivers, tracking tokens, delivery settings
+or payment configuration. Review the generated diff and run a clean local reset,
+database lint, pgTAP and customer tests before applying it to production with the
+documented production migration procedure. Never import `supabase/seed.sql` into
+production.
+
+Omitting an already-imported product does not remove or unpublish it. Include
+that stable ID with `available=false` (or a category with `active=false`) in a
+later reviewed import when the owner wants to hide it. This preserves historical
+references and makes deactivation explicit.
+
+`delivery_settings` remains the authority for delivery eligibility and pricing.
+This workflow does not enable delivery or change the production `CASH`-only
+payment setting.

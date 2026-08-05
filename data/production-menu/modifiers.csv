@@ -1,0 +1,2 @@
+record_type,id,menu_item_id,name,price,available
+EXAMPLE,<modifier-slug>,<item-slug>,<OWNER APPROVED MODIFIER NAME>,0,false

@@ -1,0 +1,2 @@
+record_type,id,category_id,name,description,price,image,available,sort_order
+EXAMPLE,<item-slug>,<category-slug>,<OWNER APPROVED PRODUCT NAME>,<OPTIONAL DESCRIPTION>,100000,<OPTIONAL HTTPS IMAGE URL>,false,1
