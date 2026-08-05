@@ -23,6 +23,7 @@ import {
 import { useApp } from "./state";
 import { supabaseConfigured } from "./supabase";
 import { MapPicker } from "./components/MapPicker";
+import { ProductImage } from "./components/ProductImage";
 import {
   addressConfidence,
   applySuggestion,
@@ -180,11 +181,11 @@ function Menu() {
     </Shell>
   );
 }
-function MenuCard({ item }: { item: MenuItem }) {
+export function MenuCard({ item }: { item: MenuItem }) {
   return (
     <article className="menu-card">
       <Link to={`/menu/${item.id}`} className="food-img">
-        {item.image}
+        <ProductImage image={item.image} name={item.name} />
       </Link>
       <div>
         <h3>{item.name}</h3>
@@ -224,7 +225,7 @@ function Product() {
         <Link to="/menu" className="back">
           ← Menyu
         </Link>
-        <div className="product-hero">{item.image}</div>
+        <div className="product-hero"><ProductImage image={item.image} name={item.name} /></div>
         <h1>{item.name}</h1>
         <p>{item.description}</p>
         {item.modifiers?.map((m) => (

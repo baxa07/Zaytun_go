@@ -255,6 +255,28 @@ h2 {
   place-items: center;
   background: #ece5d2;
   font-size: 80px;
+  overflow: hidden;
+  min-width: 0;
+}
+.product-image-element {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.product-image-symbol {
+  line-height: 1;
+}
+.product-image-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--green);
+  font-size: clamp(28px, 5vw, 54px);
+  font-weight: 800;
+  letter-spacing: -0.08em;
+  background: linear-gradient(145deg, #f4f0e4, #e4dcc5);
 }
 .menu-card > div {
   padding: 24px;
