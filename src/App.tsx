@@ -35,6 +35,7 @@ import { configuredMapProvider } from "./maps/factory";
 import { navigationUrl } from "./maps/navigation";
 import type { MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
+import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
@@ -109,19 +110,14 @@ function Shell({
 }
 function Home() {
   const { publicConfig } = useApp();
-  const timing = publicConfig?.estimatedPreparationMinutes != null && publicConfig.estimatedDeliveryMinutes != null
-    ? `${publicConfig.estimatedPreparationMinutes}–${publicConfig.estimatedPreparationMinutes + publicConfig.estimatedDeliveryMinutes} min`
-    : "Vaqt taom va manzilga qarab aniqlanadi";
+  const copy = homeFulfillmentCopy(publicConfig);
   return (
     <Shell>
       <main className="home">
         <section>
-          <p className="eyebrow">NAVOIY · TEZ YETKAZIB BERISH</p>
+          <p className="eyebrow">{copy.eyebrow}</p>
           <h1>Sevimli taomlaringiz, aniq va tez.</h1>
-          <p>
-            {publicConfig?.restaurantName || "Zaytun Cafe"} taomlarini onlayn buyurtma qiling va har bir bosqichni
-            kuzating.
-          </p>
+          <p>{copy.supporting}</p>
           {publicConfig?.operatingHours.everyday && <p className="muted">Har kuni: {publicConfig.operatingHours.everyday}</p>}
           <div className="actions">
             <Link className="button primary" to="/menu">
@@ -133,7 +129,7 @@ function Home() {
           </div>
         </section>
         <div className="hero-food">
-          🫒<span>{publicConfig ? timing : "Vaqt aniqlanmoqda"}</span>
+          🫒<span>{publicConfig ? copy.timing : "Vaqt aniqlanmoqda"}</span>
         </div>
       </main>
     </Shell>
@@ -286,6 +282,7 @@ function Product() {
 function Cart() {
   const { cart, updateQuantity, publicConfig } = useApp();
   const subtotal = calculateOrderTotal(cart);
+  const fulfillment = fulfillmentSummary(publicConfig?.deliveryEnabled === true ? "DELIVERY" : "PICKUP");
   return (
     <Shell>
       <main className="narrow">
@@ -322,8 +319,8 @@ function Cart() {
             <div className="summary">
               <span>Taomlar</span>
               <b>{money(subtotal)}</b>
-              <span>Yetkazish</span>
-              <b>Manzilga qarab</b>
+              <span>{fulfillment.label}</span>
+              <b>{fulfillment.value}</b>
             </div>
             <Link
               className="button primary wide"
@@ -371,6 +368,7 @@ function Checkout() {
   const subtotal = calculateOrderTotal(cart);
   const estimatedFee = type === "DELIVERY" && publicConfig && (publicConfig.freeDeliveryThreshold == null || subtotal < publicConfig.freeDeliveryThreshold) ? publicConfig.baseDeliveryFee : 0;
   const total = calculateOrderTotal(cart, estimatedFee);
+  const fulfillment = fulfillmentSummary(type);
   const clearError = (key: string) =>
     setErrors((er) =>
       er[key]
@@ -637,14 +635,16 @@ function Checkout() {
               </div>
             ))}
             <div>
-              <span>Yetkazish</span>
-              <b>{type === "DELIVERY" ? money(estimatedFee) : "Bepul"}</b>
+              <span>{fulfillment.label}</span>
+              <b>{type === "DELIVERY" ? money(estimatedFee) : fulfillment.value}</b>
             </div>
             <div className="total" data-testid="estimated-total">
               <span>Taxminiy jami</span>
               <b>{money(total)}</b>
             </div>
-            <small>Yakuniy narx menyu va yetkazish sozlamalari asosida serverda tasdiqlanadi.</small>
+            <small>{type === "DELIVERY"
+              ? "Yakuniy narx menyu va yetkazish sozlamalari asosida serverda tasdiqlanadi."
+              : "Yakuniy narx menyu narxlari asosida serverda tasdiqlanadi."}</small>
           </section>
           <button
             className="button primary wide"
