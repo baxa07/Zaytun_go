@@ -20,6 +20,8 @@ const publicConfig: RestaurantConfig = {
   freeDeliveryThreshold: null,
   maximumItemQuantity: 20,
   supportedPaymentMethods: ["CASH", "CARD_ON_DELIVERY"],
+  pickupPaymentMethods: ["CASH", "CARD_AT_PICKUP"],
+  deliveryPaymentMethods: ["CASH"],
   estimatedPreparationMinutes: 25,
   estimatedDeliveryMinutes: 45,
   defaultMapZoom: 14,

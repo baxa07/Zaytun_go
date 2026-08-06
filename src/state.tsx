@@ -42,6 +42,7 @@ export const roleCanAccess = (role: AppRole | null, surface: OperationalSurface)
 
 const terminalStatuses: OrderStatus[] = [
   "DELIVERED",
+  "COLLECTED",
   "DELIVERY_FAILED",
   "RETURNED",
   "CANCELLED",

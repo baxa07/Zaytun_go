@@ -17,6 +17,8 @@ const configuration = (deliveryEnabled: boolean): RestaurantConfig => ({
   freeDeliveryThreshold: null,
   maximumItemQuantity: 50,
   supportedPaymentMethods: ["CASH"],
+  pickupPaymentMethods: ["CASH", "CARD_AT_PICKUP"],
+  deliveryPaymentMethods: ["CASH"],
   estimatedPreparationMinutes: 25,
   estimatedDeliveryMinutes: 45,
   defaultMapZoom: 17,
