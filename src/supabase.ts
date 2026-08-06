@@ -119,6 +119,8 @@ const mapOrder = (r: Row): Order => {
     assignmentAcceptedAt: r.assignment_accepted_at
       ? String(r.assignment_accepted_at)
       : undefined,
+    deliveryReviewStatus: r.delivery_review_status as Order["deliveryReviewStatus"],
+    deliveryReviewReason: r.delivery_review_reason ? String(r.delivery_review_reason) : undefined,
     events: ((r.order_events || []) as Row[]).map((e) => ({
       id: String(e.id),
       orderId: String(e.order_id),
@@ -259,7 +261,8 @@ export class SupabaseStore {
       subtotal: data.subtotal,
       deliveryFee: data.deliveryFee,
       total: data.total,
-    };
+      deliveryReviewStatus: order.type === "DELIVERY" ? "REVIEW_REQUIRED" : "NOT_REQUIRED",
+    } satisfies Order;
   }
   async listDrivers() {
     const { data, error } = await supabase!
@@ -339,6 +342,10 @@ export class SupabaseStore {
       p_order_id: id,
       p_minutes: minutes,
     });
+    fail(error);
+  }
+  async reviewDelivery(id: string, approved: boolean, reason?: string) {
+    const { error } = await supabase!.rpc("review_delivery_request", {p_order_id:id,p_approved:approved,p_reason:reason||null});
     fail(error);
   }
   async reportIssue(id: string, type: DeliveryIssueType, description: string) {

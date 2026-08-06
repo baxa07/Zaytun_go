@@ -52,9 +52,9 @@ update public.menu_items set price=99000 where id='chicken';
 select is((select unit_price from public.order_items where order_id='40000000-0000-4000-8000-000000000016'),68000,'order-item price snapshot survives menu price change');
 update public.menu_items set price=68000 where id='chicken';
 
-select lives_ok($$select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000017','[{"menuItemId":"chicken","quantity":1,"modifierIds":[]}]','DELIVERY'))$$,'delivery order accepted');
-select is((select delivery_fee from public.orders where id='40000000-0000-4000-8000-000000000017'),10000,'delivery receives server base fee below free threshold');
-select is((select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000017','[{"menuItemId":"chicken","quantity":1,"modifierIds":[]}]','DELIVERY'))->>'total'),'78000','response returns confirmed grand total');
+select lives_ok($$select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000017','[{"menuItemId":"chicken","quantity":2,"modifierIds":[]}]','DELIVERY'))$$,'delivery order accepted for manual review');
+select is((select delivery_fee from public.orders where id='40000000-0000-4000-8000-000000000017'),0,'delivery fee remains zero');
+select is((select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000017','[{"menuItemId":"chicken","quantity":2,"modifierIds":[]}]','DELIVERY'))->>'total'),'136000','response returns confirmed grand total');
 
 set local role anon;
 select throws_ok($$insert into public.orders(number,customer_name,primary_phone,order_type,payment_method,subtotal) values('ZG-HACK','X','+998901234567','PICKUP','CASH',1)$$,'42501',null,'anonymous direct order insert remains denied');

@@ -18,9 +18,10 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
   });
 
   await test.step("anonymous customer creates and tracks an order without staff queries", async () => {
-    await page.goto("/menu/chicken");
-    await page.getByTestId("add-to-cart").click();
-    await page.getByTestId("go-to-checkout").click();
+    await page.goto("/menu");
+    await page.getByRole("link", { name: /Zaytun tovuq grili tanlash/ }).click();
+    await page.getByRole("button", { name: "+" }).click();
+    await page.getByTestId("buy-now").click();
     await page.getByLabel("Ism *").fill("Auth RLS Mijoz");
     await page.getByLabel("Telefon *").fill("+998901234567");
     await page.getByLabel("Mahalla yoki tuman *").fill("Navoiy shahar");
@@ -31,10 +32,10 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await page.getByLabel("Pin to‘g‘ri joyda").check();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
-    await expect(page.getByTestId("server-confirmed-total")).toContainText(/78.?000/);
+    await expect(page.getByTestId("server-confirmed-total")).toContainText(/136.?000/);
     await page.getByTestId("track-link").click();
-    await expect(page.getByTestId("order-status")).toHaveText("Yangi");
-    await expect(page.locator(".track .form-card")).toContainText(/78.?000/);
+    await expect(page.getByTestId("order-status")).toHaveText("Manzil tasdiqlanmoqda");
+    await expect(page.locator(".track .form-card")).toContainText(/136.?000/);
     expect(anonymousOperationalFailures).toEqual([]);
   });
 
@@ -49,7 +50,8 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await expect(page.getByTestId(`order-card-${orderId}`)).toBeVisible();
     await page.getByTestId(`order-card-${orderId}`).click();
     orderNumber = (await page.locator(".detail-head .eyebrow").textContent()) || "";
-    await expect(page.locator(".panel").first()).toContainText(/78.?000/);
+    await expect(page.locator(".panel").first()).toContainText(/136.?000/);
+    await page.getByTestId("approve-delivery").click();
     await page.getByTestId("action-confirm").click();
     await page.getByTestId("action-start-prep").click();
     await page.getByTestId("action-mark-ready").click();

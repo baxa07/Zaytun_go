@@ -155,6 +155,7 @@ function seeded(
     paymentStatus: "PENDING",
     specialInstructions: "Sousni alohida soling",
     status,
+    deliveryReviewStatus: "APPROVED",
     createdAt: ago(minutes),
     events: [createEvent(id, null, "NEW", "CUSTOMER", "guest")],
     issues: [],
@@ -292,7 +293,7 @@ export const seedDrivers: Driver[] = [
     availability: "OFFLINE",
   },
 ];
-export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Cafe — DEVELOPMENT',restaurantAddress:'Development placeholder — owner must replace',restaurantPhone:'+998 00 000 00 00',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'OWNER_DECISION_REQUIRED'},deliveryEnabled:true,deliveryRadiusKm:8,deliveryAreaDescription:'Development radius',minimumDeliverySubtotal:40000,baseDeliveryFee:10000,freeDeliveryThreshold:150000,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_ON_DELIVERY'],estimatedPreparationMinutes:35,estimatedDeliveryMinutes:45,defaultMapZoom:17}
+export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Kafe — LOCAL PILOT',restaurantAddress:'Guliston mavzesi 649, Navoiy shahri',restaurantPhone:'+998507440005',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'10:00–00:00'},deliveryEnabled:true,deliveryPolicyMode:'MANUAL_CITY_REVIEW',deliveryReviewMessage:'Navoiy shahri bo‘ylab yetkazib berish bepul. Manzil operator tomonidan tasdiqlanadi.',deliveryRadiusKm:null,deliveryAreaDescription:'Navoiy shahri',minimumDeliverySubtotal:100000,baseDeliveryFee:0,freeDeliveryThreshold:null,maximumItemQuantity:50,supportedPaymentMethods:['CASH'],estimatedPreparationMinutes:null,estimatedDeliveryMinutes:null,defaultMapZoom:17}
 class LocalStore
   implements
     MenuRepository,
@@ -346,6 +347,7 @@ class LocalStore
   async assign(order: Order, driver: Driver) {
     if (order.status !== "READY")
       throw new Error("Only ready orders can be assigned");
+    if(order.type==="DELIVERY"&&order.deliveryReviewStatus!=="APPROVED")throw new Error("Delivery review is required");
     if (driver.availability !== "AVAILABLE")
       throw new Error("Driver is not available");
     const assignment = {
@@ -389,6 +391,7 @@ class LocalStore
   ) {
     const order = await this.get(id);
     if (!order) throw new Error("Order not found");
+    if(order.type==="DELIVERY"&&order.deliveryReviewStatus==="REVIEW_REQUIRED"&&!['REJECTED','CANCELLED'].includes(to))throw new Error("Delivery review is required");
     await this.save(
       transitionOrder(order, to, actor, actor.toLowerCase(), reason),
     );
@@ -406,6 +409,7 @@ class LocalStore
     if (!order) throw new Error("Order not found");
     await this.save({ ...order, estimatedMinutes: minutes });
   }
+  async reviewDelivery(id:string,approved:boolean,reason?:string){const order=await this.get(id);if(!order||order.type!=="DELIVERY"||order.deliveryReviewStatus!=="REVIEW_REQUIRED")throw new Error("Delivery review is not required");if(!approved&&!reason?.trim())throw new Error("Review reason is required");if(approved){await this.save({...order,deliveryReviewStatus:"APPROVED",deliveryReviewReason:undefined,events:[...order.events,createEvent(id,order.status,order.status,"DISPATCHER","dispatcher-1",undefined,"DELIVERY_REVIEW_APPROVED")]})}else{await this.save({...order,status:"REJECTED",deliveryReviewStatus:"REJECTED",deliveryReviewReason:reason,rejectionReason:reason,events:[...order.events,createEvent(id,order.status,"REJECTED","DISPATCHER","dispatcher-1",reason,"DELIVERY_REVIEW_REJECTED")]})}}
   async reportIssue(
     id: string,
     type: Order["issues"][number]["type"],

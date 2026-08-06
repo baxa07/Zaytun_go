@@ -31,14 +31,12 @@ test.describe('canonical order lifecycle', () => {
       await customer.getByRole('textbox').fill('Sousni alohida soling')
       await customer.getByRole('button', {name: '+'}).click() // quantity -> 2
       await customer.getByTestId('add-to-cart').click()
-      await customer.waitForURL('**/cart')
-
-      await customer.getByRole('link', {name: 'Buyurtma'}).click()
       await customer.waitForURL('**/menu')
       await customer.getByRole('link', {name: /Mol go‘shtli kabob tanlash/}).click()
       await customer.waitForURL('**/menu/kebab')
       await customer.getByTestId('add-to-cart').click()
-      await customer.waitForURL('**/cart')
+      await customer.waitForURL('**/menu')
+      await customer.getByTestId('cart-pill').click()
 
       await expect(customer.locator('.line-item')).toHaveCount(2)
       await customer.locator('.line-item').nth(1).locator('.stepper button').last().click()
@@ -56,7 +54,6 @@ test.describe('canonical order lifecycle', () => {
       await customer.getByLabel('Mo‘ljal', {exact: true}).fill('Maktab yonida')
       await customer.getByTestId('map-picker-set').click()
       await customer.getByLabel('Pin to‘g‘ri joyda').check()
-      await customer.getByLabel('Yetkazilganda karta orqali').check()
       await customer.getByTestId('checkout-submit').click()
       await customer.waitForURL('**/confirmation/**')
       orderId = customer.url().split('/confirmation/')[1]
@@ -64,7 +61,7 @@ test.describe('canonical order lifecycle', () => {
 
       await customer.getByTestId('track-link').click()
       await customer.waitForURL(`**/track/${orderId}`)
-      await expect(customer.getByTestId('order-status')).toHaveText('Yangi')
+      await expect(customer.getByTestId('order-status')).toHaveText('Manzil tasdiqlanmoqda')
     })
 
     await test.step('restaurant confirms, sets an estimate, prepares and marks ready', async () => {
@@ -73,6 +70,8 @@ test.describe('canonical order lifecycle', () => {
       await staff.getByTestId(`order-card-${orderId}`).click()
       await staff.waitForURL(`**/restaurant/orders/${orderId}`)
 
+      await staff.getByTestId('approve-delivery').click()
+      await expect(staff.getByTestId('delivery-review-approved')).toBeVisible()
       await staff.getByTestId('action-confirm').click()
       await staff.getByLabel('Taxminiy tayyorlash vaqti').fill('40')
       await staff.getByTestId('action-set-estimate').click()

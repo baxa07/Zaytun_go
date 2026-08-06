@@ -4,8 +4,8 @@ const evidence = (name: string) => `qa/screenshots/${name}.png`;
 
 async function openCheckout(page: Page) {
   await page.goto("/menu/chicken");
-  await page.getByTestId("add-to-cart").click();
-  await page.getByTestId("go-to-checkout").click();
+  await page.getByRole("button", { name: "+" }).click();
+  await page.getByTestId("buy-now").click();
   await page.waitForURL("**/checkout");
 }
 
@@ -45,7 +45,7 @@ test.describe("precise delivery location", () => {
     await page.screenshot({ path: evidence("05-reconfirmation-required") });
   });
 
-  test("submits in-zone and clearly blocks an outside-zone pin", async ({ page }) => {
+  test("submits valid pins into manual operator review without claiming a radius", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openCheckout(page);
     await fillRequiredAddress(page);
@@ -62,7 +62,11 @@ test.describe("precise delivery location", () => {
     await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Tashqaridagi");
     await page.getByRole("button", { name: "Qidirish" }).click();
     await page.getByRole("button", { name: /Tashqaridagi test manzili/ }).click();
-    await expect(page.getByTestId("delivery-zone-error")).toBeVisible();
+    await expect(page.getByTestId("delivery-review-notice")).toContainText("operator tomonidan tasdiqlanadi");
+    await page.getByRole("button", { name: "Tavsiya maydonlarini qo‘llash" }).click();
+    await page.getByLabel("Pin to‘g‘ri joyda").check();
+    await page.getByTestId("checkout-submit").click();
+    await expect(page).toHaveURL(/\/confirmation\//);
     await page.screenshot({ path: evidence("06-outside-delivery-zone") });
   });
 

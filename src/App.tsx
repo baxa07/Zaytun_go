@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import {
   Link,
   NavLink,
@@ -6,6 +7,7 @@ import {
   Route,
   Routes,
   useNavigate,
+  useLocation,
   useParams,
 } from "react-router-dom";
 import {
@@ -136,7 +138,9 @@ function Home() {
   );
 }
 function Menu() {
-  const [active, setActive] = useState("grill");
+  const location = useLocation();
+  const menuNavigation = location.state as { categoryId?: string; cartNotice?: string } | null;
+  const [active, setActive] = useState(menuNavigation?.categoryId || "grill");
   const { cart, categories, menuItems, publicDataReady, publicDataError } = useApp();
   const menuState=publicMenuState(publicDataReady,publicDataError,categories.length,menuItems.length);
   useEffect(()=>{if(categories.length&&!categories.some(category=>category.id===active))setActive(categories[0].id)},[active,categories]);
@@ -163,6 +167,7 @@ function Menu() {
             </button>
           ))}
         </div>
+        {menuNavigation?.cartNotice && <p className="success-notice" role="status">{menuNavigation.cartNotice}</p>}
         {menuState==='LOADING' && <div className="empty" role="status">Menyu yuklanmoqda…</div>}
         {menuState==='UNPUBLISHED' && <div className="empty" role="status" data-testid="menu-unpublished"><b>Menyu hali e’lon qilinmagan.</b><span>Taomlar tayyor bo‘lgach shu yerda ko‘rinadi.</span></div>}
         {menuState==='ERROR' && <div className="map-error" role="alert"><b>Menyuni yuklab bo‘lmadi</b><span>{publicDataError}</span><button type="button" onClick={()=>window.location.reload()}>Qayta yuklash</button></div>}
@@ -208,6 +213,8 @@ function Product() {
   const [q, setQ] = useState(1);
   const [mods, setMods] = useState<string[]>([]);
   const [note, setNote] = useState("");
+  const [adding, setAdding] = useState(false);
+  const addingRef = useRef(false);
   if (!publicDataReady) return <Shell><main className="narrow"><div className="empty">Taom yuklanmoqda…</div></main></Shell>;
   if (!item) return <Navigate to="/menu" />;
   const unit =
@@ -215,6 +222,13 @@ function Product() {
     (item.modifiers || [])
       .filter((m) => mods.includes(m.id))
       .reduce((s, m) => s + m.price, 0);
+  const addConfiguredItem = (destination: "/menu" | "/checkout") => {
+    if (addingRef.current) return;
+    addingRef.current = true;
+    setAdding(true);
+    flushSync(() => addToCart({id:createUuid(),menuItemId:item.id,name:item.name,unitPrice:unit,quantity:q,modifierIds:mods,modifierNames:(item.modifiers||[]).filter(m=>mods.includes(m.id)).map(m=>m.name),instructions:note}));
+    nav(destination,destination==="/menu"?{state:{categoryId:item.categoryId,cartNotice:"Savatga qo‘shildi."}}:undefined);
+  };
   return (
     <Shell>
       <main className="narrow">
@@ -253,27 +267,10 @@ function Product() {
             <b>{q}</b>
             <button onClick={() => setQ(Math.min(publicConfig?.maximumItemQuantity||50,q + 1))}>+</button>
           </div>
-          <button
-            className="button primary"
-            data-testid="add-to-cart"
-            onClick={() => {
-              addToCart({
-                id: createUuid(),
-                menuItemId: item.id,
-                name: item.name,
-                unitPrice: unit,
-                quantity: q,
-                modifierIds: mods,
-                modifierNames: (item.modifiers || [])
-                  .filter((m) => mods.includes(m.id))
-                  .map((m) => m.name),
-                instructions: note,
-              });
-              nav("/cart");
-            }}
-          >
-            Savatga · {money(unit * q)}
-          </button>
+          <div className="product-action-buttons">
+            <button className="button secondary" type="button" data-testid="add-to-cart" disabled={adding} onClick={() => addConfiguredItem("/menu")}>Savatga qo‘shish</button>
+            <button className="button primary" type="button" data-testid="buy-now" disabled={adding} onClick={() => addConfiguredItem("/checkout")}>Hozir buyurtma berish · {money(unit*q)}</button>
+          </div>
         </div>
       </main>
     </Shell>
@@ -392,7 +389,11 @@ function Checkout() {
     const coordinate = selection.coordinate;
     const center = publicConfig ? {latitude:publicConfig.restaurantLatitude,longitude:publicConfig.restaurantLongitude} : undefined;
     const distance = coordinate && center ? haversineKm(center, coordinate) : undefined;
-    const zone = distance === undefined || !publicConfig || publicConfig.deliveryRadiusKm==null ? undefined : distance <= publicConfig.deliveryRadiusKm ? "ELIGIBLE" : "OUTSIDE_ZONE";
+    const zone = publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && coordinate
+      ? "ELIGIBLE"
+      : distance === undefined || !publicConfig || publicConfig.deliveryRadiusKm == null
+        ? undefined
+        : distance <= publicConfig.deliveryRadiusKm ? "ELIGIBLE" : "OUTSIDE_ZONE";
     setMapSelection(selection);
     setAddress((a) => ({
       ...a,
@@ -419,6 +420,9 @@ function Checkout() {
     e.preventDefault();
     if (submittingRef.current) return;
     const found = validateOrderInput(type, address, payment);
+    if (type === "DELIVERY" && publicConfig && subtotal < publicConfig.minimumDeliverySubtotal) {
+      found.deliveryMinimum = `Yetkazib berish uchun eng kam buyurtma ${money(publicConfig.minimumDeliverySubtotal)}.`;
+    }
     setErrors(found);
     if (Object.keys(found).length || !cart.length) {
       document
@@ -449,6 +453,7 @@ function Checkout() {
       paymentStatus: "PENDING",
       specialInstructions: notes,
       status: "NEW",
+      deliveryReviewStatus: type === "DELIVERY" ? "REVIEW_REQUIRED" : "NOT_REQUIRED",
       createdAt: new Date().toISOString(),
       events: [createEvent(id, null, "NEW", "CUSTOMER", "guest")],
       issues: [],
@@ -494,6 +499,12 @@ function Checkout() {
               </button>
             </div>
             {publicConfig?.deliveryEnabled===false&&<p className="warning">Yetkazib berish vaqtincha o‘chirilgan. Olib ketishni tanlang.</p>}
+            {type === "DELIVERY" && publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && (
+              <p className="pilot-notice" data-testid="delivery-review-notice">
+                {publicConfig.deliveryReviewMessage || "Navoiy shahri bo‘ylab yetkazib berish bepul. Manzil operator tomonidan tasdiqlanadi."}
+              </p>
+            )}
+            {errors.deliveryMinimum && <em className="error">{errors.deliveryMinimum}</em>}
           </section>
           <section className="form-card">
             <h2>Aloqa</h2>
@@ -743,16 +754,20 @@ function Track() {
       </Shell>
     );
   const current = statusProgress.indexOf(order.status);
+  const reviewRequired = order.type === "DELIVERY" && order.deliveryReviewStatus === "REVIEW_REQUIRED";
   return (
     <Shell>
       <main className="track">
         <div className="page-title">
           <div>
             <p className="eyebrow">{order.number}</p>
-            <h1 data-testid="order-status">{statusLabels[order.status]}</h1>
+            <h1 data-testid="order-status">{reviewRequired ? "Manzil tasdiqlanmoqda" : statusLabels[order.status]}</h1>
           </div>
           <Badge status={order.status} />
         </div>
+        {reviewRequired && <p className="pilot-notice" data-testid="tracking-delivery-review">Operator manzil va yetkazish imkoniyatini tekshirmoqda. Zarur bo‘lsa siz bilan telefon orqali bog‘lanamiz.</p>}
+        {order.deliveryReviewStatus === "APPROVED" && <p className="success-notice">✓ Yetkazish manzili operator tomonidan tasdiqlandi.</p>}
+        {order.deliveryReviewStatus === "REJECTED" && <p className="warning" role="alert">Yetkazish tasdiqlanmadi. {order.deliveryReviewReason || "Restoran bilan bog‘laning."}</p>}
         <div className="eta">
           <b>
             {order.estimatedMinutes || 35}–{(order.estimatedMinutes || 35) + 10}{" "}
@@ -956,10 +971,12 @@ function OrderDetail() {
     setEstimate,
     reportIssue,
     resolveIssue,
+    reviewDelivery,
   } = useApp();
   const order = orders.find((o) => o.id === id);
   const [reason, setReason] = useState("");
   const [estimate, setEstimateValue] = useState("35");
+  const [reviewReason, setReviewReason] = useState("");
   if (!order)
     return loaded ? (
       <Navigate to="/restaurant" />
@@ -1056,6 +1073,7 @@ function OrderDetail() {
                   <p>
                     <b>Mo‘ljal:</b> {order.address.landmark}
                   </p>
+                  <p><b>Yetkazish izohi:</b> {order.address.deliveryNotes || "Yo‘q"}</p>
                   <p>
                     <b>Koordinata:</b> {order.address.latitude},{" "}
                     {order.address.longitude}
@@ -1113,11 +1131,26 @@ function OrderDetail() {
           </div>
           <aside className="panel action-panel">
             <h2>Keyingi amal</h2>
+            {order.type === "DELIVERY" && order.deliveryReviewStatus === "REVIEW_REQUIRED" && (
+              <section className="delivery-review-panel" data-testid="delivery-review-required">
+                <b>Manzilni tasdiqlash kerak</b>
+                <p>Mijoz manzilini, pinini va masofani tekshiring. Buyurtma tasdiqlanmaguncha haydovchiga berilmaydi.</p>
+                <button className="button primary" data-testid="approve-delivery" onClick={() => void reviewDelivery(order.id, true)}>
+                  Yetkazishni tasdiqlash
+                </button>
+                <input value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Rad etish yoki aloqa sababi" />
+                <button className="button danger" data-testid="reject-delivery" disabled={!reviewReason.trim()} onClick={() => void reviewDelivery(order.id, false, reviewReason)}>
+                  Rad etish / mijoz bilan bog‘lanish
+                </button>
+              </section>
+            )}
+            {order.type === "DELIVERY" && order.deliveryReviewStatus === "APPROVED" && <p className="success-notice" data-testid="delivery-review-approved">✓ Yetkazish manzili tasdiqlangan</p>}
             {order.status === "NEW" && (
               <>
                 <button
                   className="button primary"
                   data-testid="action-confirm"
+                  disabled={order.type === "DELIVERY" && order.deliveryReviewStatus !== "APPROVED"}
                   onClick={() => void action("CONFIRMED")}
                 >
                   Qabul qilish

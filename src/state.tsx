@@ -11,6 +11,7 @@ import {
 import { useLocation } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { store } from "./data";
+import { addCartLine } from "./domain";
 import type {
   ActorType,
   CartItem,
@@ -73,6 +74,7 @@ type State = {
   assign: (orderId: string, driverId: string) => Promise<void>;
   acceptAssignment: (orderId: string) => Promise<void>;
   setEstimate: (orderId: string, minutes: number) => Promise<void>;
+  reviewDelivery: (orderId:string,approved:boolean,reason?:string)=>Promise<void>;
   reportIssue: (orderId: string, type: DeliveryIssueType, description: string, reporter: string) => Promise<void>;
   resolveIssue: (orderId: string, issueId: string) => Promise<void>;
 };
@@ -266,13 +268,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDrivers([]);
       setLoaded(false);
     },
-    addToCart: (item) => setCart((current) => {
-      const old = current.find((entry) => entry.menuItemId === item.menuItemId && entry.modifierIds.join() === item.modifierIds.join());
-      return old
-        ? current.map((entry) => entry.id === old.id ? { ...entry, quantity: entry.quantity + item.quantity } : entry)
-        : [...current, item];
-    }),
-    updateQuantity: (id, delta) => setCart((current) => current.map((entry) => entry.id === id ? { ...entry, quantity: entry.quantity + delta } : entry).filter((entry) => entry.quantity > 0)),
+    addToCart: (item) => setCart((current) => addCartLine(current,item,publicConfig?.maximumItemQuantity||50)),
+    updateQuantity: (id, delta) => setCart((current) => current.map((entry) => entry.id === id ? { ...entry, quantity: Math.min(entry.quantity + delta,publicConfig?.maximumItemQuantity||50) } : entry).filter((entry) => entry.quantity > 0)),
     clearCart: () => setCart([]),
     submitOrder: async (order) => {
       const saved = await store.save(order);
@@ -296,6 +293,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     acceptAssignment: async (orderId) => runOperation(() => store.acceptAssignment(orderId)),
     setEstimate: async (orderId, minutes) => runOperation(() => store.setEstimate(orderId, minutes)),
+    reviewDelivery: async(orderId,approved,reason)=>runOperation(()=>store.reviewDelivery(orderId,approved,reason)),
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
   }), [authError, authReady, cart, categories, drivers, loadTrackedOrder, loaded, menuItems, operationalError, orders, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session]);

@@ -5,9 +5,8 @@ test.describe('checkout validation', () => {
     await page.goto('/menu')
     await page.getByRole('link', {name: /Zaytun tovuq grili tanlash/}).click()
     await page.waitForURL('**/menu/chicken')
-    await page.getByTestId('add-to-cart').click()
-    await page.waitForURL('**/cart')
-    await page.getByTestId('go-to-checkout').click()
+    await page.getByRole('button', {name: '+'}).click()
+    await page.getByTestId('buy-now').click()
     await page.waitForURL('**/checkout')
 
     await page.getByTestId('checkout-submit').click()
@@ -39,9 +38,8 @@ test.describe('checkout validation', () => {
     await page.goto('/menu')
     await page.getByRole('link', {name: /Zaytun tovuq grili tanlash/}).click()
     await page.waitForURL('**/menu/chicken')
-    await page.getByTestId('add-to-cart').click()
-    await page.waitForURL('**/cart')
-    await page.getByTestId('go-to-checkout').click()
+    await page.getByRole('button', {name: '+'}).click()
+    await page.getByTestId('buy-now').click()
     await page.waitForURL('**/checkout')
 
     await page.getByTestId('type-pickup').click()
