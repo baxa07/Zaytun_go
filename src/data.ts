@@ -293,7 +293,7 @@ export const seedDrivers: Driver[] = [
     availability: "OFFLINE",
   },
 ];
-export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Kafe — LOCAL PILOT',restaurantAddress:'Guliston mavzesi 649, Navoiy shahri',restaurantPhone:'+998507440005',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'10:00–00:00'},deliveryEnabled:true,deliveryPolicyMode:'MANUAL_CITY_REVIEW',deliveryReviewMessage:'Navoiy shahri bo‘ylab yetkazib berish bepul. Manzil operator tomonidan tasdiqlanadi.',deliveryRadiusKm:null,deliveryAreaDescription:'Navoiy shahri',minimumDeliverySubtotal:100000,baseDeliveryFee:0,freeDeliveryThreshold:null,maximumItemQuantity:50,supportedPaymentMethods:['CASH'],estimatedPreparationMinutes:null,estimatedDeliveryMinutes:null,defaultMapZoom:17}
+export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Kafe — LOCAL PILOT',restaurantAddress:'Guliston mavzesi 649, Navoiy shahri',restaurantPhone:'+998507440005',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'10:00–00:00'},deliveryEnabled:true,deliveryPolicyMode:'MANUAL_CITY_REVIEW',deliveryReviewMessage:'Navoiy shahri bo‘ylab yetkazib berish bepul. Manzil operator tomonidan tasdiqlanadi.',deliveryRadiusKm:null,deliveryAreaDescription:'Navoiy shahri',minimumDeliverySubtotal:100000,baseDeliveryFee:0,freeDeliveryThreshold:null,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_AT_PICKUP'],pickupPaymentMethods:['CASH','CARD_AT_PICKUP'],deliveryPaymentMethods:['CASH'],estimatedPreparationMinutes:null,estimatedDeliveryMinutes:null,defaultMapZoom:17}
 class LocalStore
   implements
     MenuRepository,
@@ -345,6 +345,7 @@ class LocalStore
     return structuredClone(order);
   }
   async assign(order: Order, driver: Driver) {
+    if(order.type!=="DELIVERY")throw new Error("Pickup orders cannot be assigned to drivers");
     if (order.status !== "READY")
       throw new Error("Only ready orders can be assigned");
     if(order.type==="DELIVERY"&&order.deliveryReviewStatus!=="APPROVED")throw new Error("Delivery review is required");

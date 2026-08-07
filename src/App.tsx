@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import {
   Link,
@@ -38,6 +38,7 @@ import { navigationUrl } from "./maps/navigation";
 import type { MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
 import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
+import {fulfillmentStatusLabel,fulfillmentTimeline,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance} from './fulfillmentLifecycle'
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
@@ -51,6 +52,7 @@ const statusLabels: Record<OrderStatus, string> = {
   CONFIRMED: "Tasdiqlangan",
   PREPARING: "Tayyorlanmoqda",
   READY: "Tayyor",
+  COLLECTED: "Olib ketildi",
   DRIVER_ASSIGNED: "Haydovchi biriktirilgan",
   PICKED_UP: "Olib ketildi",
   ON_THE_WAY: "Yo‘lda",
@@ -61,17 +63,6 @@ const statusLabels: Record<OrderStatus, string> = {
   DELIVERY_FAILED: "Yetkazilmadi",
   RETURNED: "Qaytarildi",
 };
-const statusProgress: OrderStatus[] = [
-  "NEW",
-  "CONFIRMED",
-  "PREPARING",
-  "READY",
-  "DRIVER_ASSIGNED",
-  "PICKED_UP",
-  "ON_THE_WAY",
-  "ARRIVED",
-  "DELIVERED",
-];
 const issueLabels: Record<string, string> = {
   ADDRESS_INCORRECT: "Manzil noto‘g‘ri",
   CUSTOMER_NOT_ANSWERING: "Mijoz javob bermayapti",
@@ -83,6 +74,7 @@ const Badge = ({ status }: { status: OrderStatus }) => (
     {statusLabels[status]}
   </span>
 );
+const OrderBadge=({order}:{order:Order})=><span className={`badge s-${order.status.toLowerCase()}`}>{fulfillmentStatusLabel(order)||statusLabels[order.status]}</span>
 function UpdateNotice(){const[ready,setReady]=useState(false);useEffect(()=>{const show=()=>setReady(true);window.addEventListener(UPDATE_EVENT,show);return()=>window.removeEventListener(UPDATE_EVENT,show)},[]);return ready?<div className="update-notice" role="status"><span>Ilovaning yangi xavfsiz versiyasi tayyor.</span><button type="button" onClick={requestApplicationUpdate}>Yangilash</button></div>:null}
 function Shell({
   children,
@@ -360,7 +352,8 @@ function Checkout() {
   const [mapSelection, setMapSelection] = useState<MapLocationSelection>(() =>
     initialSelection(configuredMapProvider()),
   );
-  useEffect(()=>{if(publicConfig&&!publicConfig.supportedPaymentMethods.includes(payment))setPayment(publicConfig.supportedPaymentMethods[0]);if(publicConfig?.deliveryEnabled===false)setType('PICKUP')},[payment,publicConfig]);
+  const allowedPayments=useMemo(()=>publicConfig?paymentMethodsForFulfillment(publicConfig,type):['CASH'] as PaymentMethod[],[publicConfig,type]);
+  useEffect(()=>{if(!allowedPayments.includes(payment))setPayment(allowedPayments[0]||'CASH');if(publicConfig?.deliveryEnabled===false)setType('PICKUP')},[allowedPayments,payment,publicConfig]);
   const submittingRef = useRef(false);
   const subtotal = calculateOrderTotal(cart);
   const estimatedFee = type === "DELIVERY" && publicConfig && (publicConfig.freeDeliveryThreshold == null || subtotal < publicConfig.freeDeliveryThreshold) ? publicConfig.baseDeliveryFee : 0;
@@ -420,6 +413,8 @@ function Checkout() {
     e.preventDefault();
     if (submittingRef.current) return;
     const found = validateOrderInput(type, address, payment);
+    if(!cart.length)found.cart='Savat bo‘sh. Avval taom tanlang.';
+    if(!allowedPayments.includes(payment))found.paymentMethod='Bu buyurtma turi uchun to‘lov usulini qayta tanlang.';
     if (type === "DELIVERY" && publicConfig && subtotal < publicConfig.minimumDeliverySubtotal) {
       found.deliveryMinimum = `Yetkazib berish uchun eng kam buyurtma ${money(publicConfig.minimumDeliverySubtotal)}.`;
     }
@@ -611,8 +606,8 @@ function Checkout() {
           )}
           <section className="form-card">
             <h2>To‘lov</h2>
-            <label className="radio">
-              <input disabled={Boolean(publicConfig&&!publicConfig.supportedPaymentMethods.includes("CASH"))}
+            {allowedPayments.includes('CASH')&&<label className="radio">
+              <input
                 type="radio"
                 checked={payment === "CASH"}
                 onChange={() => {
@@ -621,18 +616,18 @@ function Checkout() {
                 }}
               />
               Naqd pul
-            </label>
-            <label className="radio">
-              <input disabled={Boolean(publicConfig&&!publicConfig.supportedPaymentMethods.includes("CARD_ON_DELIVERY"))}
+            </label>}
+            {type==='PICKUP'&&allowedPayments.includes('CARD_AT_PICKUP')&&<label className="radio">
+              <input
                 type="radio"
-                checked={payment === "CARD_ON_DELIVERY"}
+                checked={payment === "CARD_AT_PICKUP"}
                 onChange={() => {
-                  setPayment("CARD_ON_DELIVERY");
+                  setPayment("CARD_AT_PICKUP");
                   clearError("paymentMethod");
                 }}
               />
-              Yetkazilganda karta orqali
-            </label>
+              Restoranda karta orqali
+            </label>}
             <Field label="Buyurtma izohi" value={notes} onChange={setNotes} />
           </section>
           <section className="form-card review">
@@ -649,6 +644,7 @@ function Checkout() {
               <span>{fulfillment.label}</span>
               <b>{type === "DELIVERY" ? money(estimatedFee) : fulfillment.value}</b>
             </div>
+            <div data-testid="review-payment-method"><span>To‘lov</span><b>{paymentLabel(payment)}</b></div>
             <div className="total" data-testid="estimated-total">
               <span>Taxminiy jami</span>
               <b>{money(total)}</b>
@@ -666,6 +662,8 @@ function Checkout() {
             {submitting ? "Yuborilmoqda…" : "Buyurtmani yuborish"}
           </button>
           {errors.submit && <p className="error" role="alert">{errors.submit}</p>}
+          {errors.cart && <p className="error" role="alert">{errors.cart}</p>}
+          {errors.paymentMethod && <p className="error" role="alert">{errors.paymentMethod}</p>}
         </form>
       </main>
     </Shell>
@@ -727,7 +725,7 @@ function Confirmation() {
 }
 function Track() {
   const { id } = useParams();
-  const { orders, loadTrackedOrder } = useApp();
+  const { orders, loadTrackedOrder, publicConfig } = useApp();
   const [trackingReady, setTrackingReady] = useState(false);
   const [trackingError, setTrackingError] = useState("");
   const order = orders.find((o) => o.id === id);
@@ -753,7 +751,8 @@ function Track() {
         </main>
       </Shell>
     );
-  const current = statusProgress.indexOf(order.status);
+  const timeline=fulfillmentTimeline(order.type);
+  const current = timeline.findIndex(stage=>stage.status===order.status);
   const reviewRequired = order.type === "DELIVERY" && order.deliveryReviewStatus === "REVIEW_REQUIRED";
   return (
     <Shell>
@@ -761,13 +760,14 @@ function Track() {
         <div className="page-title">
           <div>
             <p className="eyebrow">{order.number}</p>
-            <h1 data-testid="order-status">{reviewRequired ? "Manzil tasdiqlanmoqda" : statusLabels[order.status]}</h1>
+            <h1 data-testid="order-status">{reviewRequired ? "Manzil tasdiqlanmoqda" : fulfillmentStatusLabel(order)||statusLabels[order.status]}</h1>
           </div>
-          <Badge status={order.status} />
+          <span className="badge">{order.type==='PICKUP'?'Olib ketish':'Yetkazib berish'}</span>
         </div>
         {reviewRequired && <p className="pilot-notice" data-testid="tracking-delivery-review">Operator manzil va yetkazish imkoniyatini tekshirmoqda. Zarur bo‘lsa siz bilan telefon orqali bog‘lanamiz.</p>}
         {order.deliveryReviewStatus === "APPROVED" && <p className="success-notice">✓ Yetkazish manzili operator tomonidan tasdiqlandi.</p>}
         {order.deliveryReviewStatus === "REJECTED" && <p className="warning" role="alert">Yetkazish tasdiqlanmadi. {order.deliveryReviewReason || "Restoran bilan bog‘laning."}</p>}
+        {order.type==='PICKUP'&&order.status==='READY'&&<p className="success-notice" data-testid="pickup-ready-message">Buyurtmangiz tayyor. Zaytun Kafedan olib ketishingiz mumkin.</p>}
         <div className="eta">
           <b>
             {order.estimatedMinutes || 35}–{(order.estimatedMinutes || 35) + 10}{" "}
@@ -776,15 +776,15 @@ function Track() {
           <span>Taxminiy vaqt</span>
         </div>
         <section className="timeline">
-          {statusProgress.map((s, i) => (
-            <div className={i <= current ? "done" : ""} key={s}>
+          {timeline.map((stage, i) => (
+            <div className={i <= current ? "done" : ""} key={stage.status}>
               <i>{i < current ? "✓" : i + 1}</i>
               <span>
-                <b>{statusLabels[s]}</b>
-                {order.events.find((e) => e.newStatus === s) && (
+                <b>{stage.label}</b>
+                {order.events.find((e) => e.newStatus === stage.status) && (
                   <small>
                     {time(
-                      order.events.find((e) => e.newStatus === s)!.timestamp,
+                      order.events.find((e) => e.newStatus === stage.status)!.timestamp,
                     )}
                   </small>
                 )}
@@ -792,6 +792,7 @@ function Track() {
             </div>
           ))}
         </section>
+        {order.type==='PICKUP'&&<section className="form-card pickup-facts" data-testid="pickup-tracking-details"><h2>Olib ketish ma’lumotlari</h2><p><b>{publicConfig?.restaurantName||'Zaytun Kafe'}</b></p><p>{publicConfig?.restaurantAddress}</p><a href={`tel:${publicConfig?.restaurantPhone}`}>{publicConfig?.restaurantPhone}</a><p><b>To‘lov:</b> {paymentLabel(order.paymentMethod)}</p><p>{pickupPaymentGuidance(order.paymentMethod)}</p></section>}
         <section className="form-card">
           <h2>Buyurtma</h2>
           {order.items.map((i) => (
@@ -816,6 +817,7 @@ const groups: BoardGroup[] = [
     title: "Yakunlangan",
     statuses: [
       "DELIVERED",
+      "COLLECTED",
       "CANCELLED",
       "REJECTED",
       "DELIVERY_FAILED",
@@ -932,7 +934,7 @@ function OrderCard({ order }: { order: Order }) {
     >
       <div>
         <b>{order.number}</b>
-        <Badge status={order.status} />
+        <OrderBadge order={order} />
       </div>
       <h3>{order.customer.name}</h3>
       <small>
@@ -1009,7 +1011,7 @@ function OrderDetail() {
             <p className="eyebrow">{order.number}</p>
             <h1>{order.customer.name}</h1>
           </div>
-          <Badge status={order.status} />
+          <OrderBadge order={order} />
         </div>
         <div className="detail-grid">
           <div className="stack">
@@ -1032,9 +1034,7 @@ function OrderDetail() {
               </div>
               <p>
                 <b>To‘lov:</b>{" "}
-                {order.paymentMethod === "CASH"
-                  ? "Naqd"
-                  : "Yetkazilganda karta"}{" "}
+                {paymentLabel(order.paymentMethod,true)}{" "}
                 · {order.paymentStatus}
               </p>
               <p>
@@ -1054,6 +1054,7 @@ function OrderDetail() {
               >
                 ☎ {order.customer.primaryPhone}
               </a>
+              {order.customer.secondaryPhone&&<a href={`tel:${order.customer.secondaryPhone}`} className="button secondary">☎ {order.customer.secondaryPhone}</a>}
               {order.address ? (
                 <>
                   <p>
@@ -1153,7 +1154,7 @@ function OrderDetail() {
                   disabled={order.type === "DELIVERY" && order.deliveryReviewStatus !== "APPROVED"}
                   onClick={() => void action("CONFIRMED")}
                 >
-                  Qabul qilish
+                  {order.type==='PICKUP'?'Buyurtmani tasdiqlash':'Qabul qilish'}
                 </button>
                 <input
                   value={reason}
@@ -1203,16 +1204,16 @@ function OrderDetail() {
                 data-testid="action-mark-ready"
                 onClick={() => void action("READY")}
               >
-                Tayyor deb belgilash
+                {order.type==='PICKUP'?'Olib ketishga tayyor':'Tayyor deb belgilash'}
               </button>
             )}
             {order.status === "READY" && order.type === "PICKUP" && (
               <button
                 className="button primary"
                 data-testid="action-mark-pickup-complete"
-                onClick={() => void action("DELIVERED")}
+                onClick={() => void action("COLLECTED")}
               >
-                Mijozga topshirildi
+                Mijoz olib ketdi
               </button>
             )}
             {order.status === "READY" && order.type === "DELIVERY" && (
@@ -1287,7 +1288,7 @@ function DriverApp() {
         o.status,
       ),
   );
-  const next = orders.find((o) => o.status === "READY");
+  const next = orders.find((o) => o.type==='DELIVERY'&&o.status === "READY"&&o.deliveryReviewStatus==='APPROVED');
   return (
     <Shell surface="driver">
       <main className="driver-page">

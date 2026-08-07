@@ -75,3 +75,34 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await expect(page.locator(".delivery-top .badge")).toHaveText("Olib ketildi");
   });
 });
+
+test('local Supabase pickup card lifecycle is restaurant-only',async({page})=>{
+  await page.goto('/menu')
+  await page.getByRole('link',{name:/Zaytun tovuq grili tanlash/}).click()
+  await page.getByTestId('buy-now').click()
+  await page.getByTestId('type-pickup').click()
+  await page.getByLabel('Restoranda karta orqali').check()
+  await page.getByLabel('Ism *').fill('Supabase Pickup Mijoz')
+  await page.getByLabel('Telefon *').fill('+998901234568')
+  await page.getByTestId('checkout-submit').click()
+  await page.waitForURL('**/confirmation/**')
+  const orderId=page.url().split('/confirmation/')[1]
+  await page.getByTestId('track-link').click()
+  const trackingUrl=page.url()
+  await expect(page.getByTestId('pickup-tracking-details')).toContainText('restoranda karta')
+
+  await page.goto(`/restaurant/orders/${orderId}`)
+  await signIn(page,'restaurant@zaytun.local')
+  await page.waitForURL(`**/restaurant/orders/${orderId}`)
+  await page.getByTestId('action-confirm').click()
+  await page.getByTestId('action-start-prep').click()
+  await page.getByTestId('action-mark-ready').click()
+  await page.getByTestId('action-mark-pickup-complete').click()
+  await expect(page.locator('.detail-head .badge')).toHaveText('Olib ketildi')
+  await page.getByRole('button',{name:'Chiqish'}).click()
+
+  await page.goto(trackingUrl)
+  await expect(page.getByTestId('order-status')).toHaveText('Olib ketildi')
+  await expect(page.locator('.timeline>div')).toHaveCount(5)
+  await expect(page.locator('.timeline')).not.toContainText('Haydovchi')
+})
