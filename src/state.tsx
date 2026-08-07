@@ -72,6 +72,7 @@ type State = {
   clearCart: () => void;
   submitOrder: (order: Order) => Promise<Order>;
   transition: (id: string, to: OrderStatus, actor: ActorType, reason?: string) => Promise<void>;
+  transitionPending: (id: string) => boolean;
   assign: (orderId: string, driverId: string) => Promise<void>;
   acceptAssignment: (orderId: string) => Promise<void>;
   setEstimate: (orderId: string, minutes: number) => Promise<void>;
@@ -99,6 +100,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
   const [authError, setAuthError] = useState("");
+  const pendingTransitions = useRef(new Set<string>());
+  const [pendingTransitionState, setPendingTransitionState] = useState<Record<string, boolean>>({});
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const publicLoadStarted = useRef(false);
 
@@ -232,6 +235,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh]);
 
+  const setTransitionPending = useCallback((id: string, pending: boolean) => {
+    if (pending) pendingTransitions.current.add(id);
+    else pendingTransitions.current.delete(id);
+    setPendingTransitionState((current) => {
+      const next = { ...current };
+      if (pending) next[id] = true;
+      else delete next[id];
+      return next;
+    });
+  }, []);
+
   const loadTrackedOrder = useCallback(async (id: string) => {
     const tracked = "getTracked" in store ? await store.getTracked(id) : await store.get(id);
     if (tracked) setOrders((current) => [tracked, ...current.filter((order) => order.id !== tracked.id)]);
@@ -277,15 +291,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setOrders((current) => [saved, ...current.filter((entry) => entry.id !== saved.id)]);
       return saved;
     },
-    transition: async (id, to, actor, reason) => runOperation(async () => {
-      const order = await store.get(id);
-      if (!order) throw new Error("Order not found");
-      await store.transition(id, to, actor, reason);
-      if (terminalStatuses.includes(to) && order.assignedDriverId && "saveDriver" in store) {
-        const driver = drivers.find((entry) => entry.id === order.assignedDriverId);
-        if (driver) await store.saveDriver({ ...driver, availability: "AVAILABLE" });
+    transition: async (id, to, actor, reason) => {
+      if (pendingTransitions.current.has(id)) return;
+      setTransitionPending(id, true);
+      try {
+        await runOperation(async () => {
+          const order = await store.get(id);
+          if (!order) throw new Error("Order not found");
+          await store.transition(id, to, actor, reason);
+          if (terminalStatuses.includes(to) && order.assignedDriverId && "saveDriver" in store) {
+            const driver = drivers.find((entry) => entry.id === order.assignedDriverId);
+            if (driver) await store.saveDriver({ ...driver, availability: "AVAILABLE" });
+          }
+        });
+      } finally {
+        setTransitionPending(id, false);
       }
-    }),
+    },
+    transitionPending: (id) => Boolean(pendingTransitionState[id]),
     assign: async (orderId, driverId) => runOperation(async () => {
       const order = await store.get(orderId);
       const driver = drivers.find((entry) => entry.id === driverId);
@@ -297,7 +320,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     reviewDelivery: async(orderId,approved,reason)=>runOperation(()=>store.reviewDelivery(orderId,approved,reason)),
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
-  }), [authError, authReady, cart, categories, drivers, loadTrackedOrder, loaded, menuItems, operationalError, orders, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session]);
+  }), [authError, authReady, cart, categories, drivers, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, setTransitionPending]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }
