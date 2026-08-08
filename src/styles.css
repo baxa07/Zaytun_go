@@ -706,6 +706,7 @@ h2 {
   font-size: 12px;
 }
 .pilot-notice,.delivery-review-panel{background:#fff7db;border:1px solid #e8d695;border-radius:12px;padding:12px}.delivery-review-panel{display:grid;gap:10px;margin-bottom:14px}.delivery-review-panel p{margin:0;color:var(--muted);font-size:13px}
+.clarification-card{display:grid;gap:10px;margin-bottom:14px}.clarification-card h2{margin:0;font-size:16px}.clarification-card p{margin:0;color:var(--muted);font-size:13px;overflow-wrap:anywhere}.clarification-card button{justify-self:start}
 .detail {
   max-width: 1260px;
 }

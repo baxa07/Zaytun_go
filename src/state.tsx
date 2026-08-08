@@ -15,6 +15,7 @@ import { addCartLine } from "./domain";
 import type {
   ActorType,
   CartItem,
+  CustomerAddress,
   DeliveryIssueType,
   Driver,
   MenuCategory,
@@ -77,6 +78,8 @@ type State = {
   acceptAssignment: (orderId: string) => Promise<void>;
   setEstimate: (orderId: string, minutes: number) => Promise<void>;
   reviewDelivery: (orderId:string,approved:boolean,reason?:string)=>Promise<void>;
+  getAddressForRevision: (orderId: string) => Promise<CustomerAddress | undefined>;
+  reviseDeliveryAddress: (orderId: string, address: CustomerAddress) => Promise<void>;
   reportIssue: (orderId: string, type: DeliveryIssueType, description: string, reporter: string) => Promise<void>;
   resolveIssue: (orderId: string, issueId: string) => Promise<void>;
 };
@@ -318,6 +321,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     acceptAssignment: async (orderId) => runOperation(() => store.acceptAssignment(orderId)),
     setEstimate: async (orderId, minutes) => runOperation(() => store.setEstimate(orderId, minutes)),
     reviewDelivery: async(orderId,approved,reason)=>runOperation(()=>store.reviewDelivery(orderId,approved,reason)),
+    getAddressForRevision: (orderId) => store.getAddressForRevision(orderId),
+    reviseDeliveryAddress: async (orderId, address) => {
+      const updated = await store.reviseAddress(orderId, address);
+      if (updated) setOrders((current) => [updated, ...current.filter((entry) => entry.id !== updated.id)]);
+    },
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
   }), [authError, authReady, cart, categories, drivers, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, setTransitionPending]);

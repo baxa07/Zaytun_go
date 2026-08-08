@@ -1,5 +1,5 @@
 begin;
-select plan(59);
+select plan(69);
 
 select has_column('public','orders','delivery_review_status','orders record delivery review');
 select has_function('public','review_delivery_request',array['uuid','boolean','text'],'review RPC exists');
@@ -149,6 +149,26 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
 select throws_ok($$update public.order_events set notes='tampered' where order_id='70000000-0000-4000-8000-000000000004' and notes='DELIVERY_CLARIFICATION_REQUESTED'$$,'42501',null,'staff cannot mutate order_events directly');
 reset role;
+
+-- ==========================================================================
+-- get_delivery_address_for_revision: narrow customer-safe address read
+-- ==========================================================================
+
+select public.create_public_order('{"id":"70000000-0000-4000-8000-000000000009","customer":{"name":"Revision Read Test","primaryPhone":"+998900000009"},"type":"DELIVERY","paymentMethod":"CASH","address":{"district":"Navoiy","street":"Test ko‘chasi","house":"noma’lum","landmark":"","deliveryNotes":"Uy raqamini aniqlashtirish kerak","latitude":40.12,"longitude":65.43,"pinConfirmedAt":"2026-08-08T08:00:00Z","locationProvider":"mock"},"items":[{"menuItemId":"plov","quantity":3,"modifierIds":[]}]}'::jsonb);
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000002',true);
+select lives_ok($$select public.request_delivery_clarification('70000000-0000-4000-8000-000000000009','Uy raqamini tasdiqlang')$$,'clarification requested for revision-read fixture');
+reset role;
+
+select is((select public.get_delivery_address_for_revision('70000000-0000-4000-8000-000000000009',(select tracking_token from public.orders where id='70000000-0000-4000-8000-000000000009'))->>'house'),'noma’lum','correct token returns the current address');
+select is((select array(select jsonb_object_keys(public.get_delivery_address_for_revision('70000000-0000-4000-8000-000000000009',(select tracking_token from public.orders where id='70000000-0000-4000-8000-000000000009'))) order by 1)),array['apartment','confidence','deliveryNotes','district','entrance','floor','house','landmark','latitude','locationProvider','longitude','providerFormattedAddress','providerPlaceId','street']::text[],'response exposes only the intended address fields');
+select is((select public.get_delivery_address_for_revision('70000000-0000-4000-8000-000000000009','00000000-0000-0000-0000-000000000099')),null,'wrong token returns nothing');
+select is((select public.get_delivery_address_for_revision('70000000-0000-4000-8000-000000000009',null)),null,'missing token returns nothing');
+select is((select public.get_delivery_address_for_revision('70000000-0000-4000-8000-000000000005',(select tracking_token from public.orders where id='70000000-0000-4000-8000-000000000009'))),null,'a different order''s token returns nothing');
+select is((select public.get_delivery_address_for_revision('70000000-0000-4000-8000-000000000008',(select tracking_token from public.orders where id='70000000-0000-4000-8000-000000000008'))),null,'pickup order returns nothing');
+select is((select public.get_delivery_address_for_revision('70000000-0000-4000-8000-000000000005',(select tracking_token from public.orders where id='70000000-0000-4000-8000-000000000005'))),null,'REVIEW_REQUIRED order returns nothing');
+select is((select public.get_delivery_address_for_revision('70000000-0000-4000-8000-000000000004',(select tracking_token from public.orders where id='70000000-0000-4000-8000-000000000004'))),null,'approved/later-lifecycle order returns nothing');
+select is((select public.get_delivery_address_for_revision('70000000-0000-4000-8000-000000000006',(select tracking_token from public.orders where id='70000000-0000-4000-8000-000000000006'))),null,'rejected order returns nothing');
 
 select * from finish();
 rollback;
