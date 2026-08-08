@@ -974,6 +974,7 @@ function OrderDetail() {
     reportIssue,
     resolveIssue,
     reviewDelivery,
+    transitionPending,
   } = useApp();
   const order = orders.find((o) => o.id === id);
   const [reason, setReason] = useState("");
@@ -993,6 +994,7 @@ function OrderDetail() {
     to: OrderStatus,
     actor: "RESTAURANT" | "DISPATCHER" = "RESTAURANT",
   ) => {
+    if (transitionPending(order.id)) return;
     try {
       await transition(order.id, to, actor, reason || undefined);
       setReason("");
@@ -1151,7 +1153,7 @@ function OrderDetail() {
                 <button
                   className="button primary"
                   data-testid="action-confirm"
-                  disabled={order.type === "DELIVERY" && order.deliveryReviewStatus !== "APPROVED"}
+                  disabled={transitionPending(order.id) || (order.type === "DELIVERY" && order.deliveryReviewStatus !== "APPROVED")}
                   onClick={() => void action("CONFIRMED")}
                 >
                   {order.type==='PICKUP'?'Buyurtmani tasdiqlash':'Qabul qilish'}
@@ -1164,7 +1166,7 @@ function OrderDetail() {
                 <button
                   className="button danger"
                   data-testid="action-reject"
-                  disabled={!reason}
+                  disabled={transitionPending(order.id) || !reason}
                   onClick={() => void action("REJECTED")}
                 >
                   Rad etish
@@ -1193,6 +1195,7 @@ function OrderDetail() {
               <button
                 className="button primary"
                 data-testid="action-start-prep"
+                disabled={transitionPending(order.id)}
                 onClick={() => void action("PREPARING")}
               >
                 Tayyorlashni boshlash
@@ -1202,6 +1205,7 @@ function OrderDetail() {
               <button
                 className="button primary"
                 data-testid="action-mark-ready"
+                disabled={transitionPending(order.id)}
                 onClick={() => void action("READY")}
               >
                 {order.type==='PICKUP'?'Olib ketishga tayyor':'Tayyor deb belgilash'}
@@ -1211,6 +1215,7 @@ function OrderDetail() {
               <button
                 className="button primary"
                 data-testid="action-mark-pickup-complete"
+                disabled={transitionPending(order.id)}
                 onClick={() => void action("COLLECTED")}
               >
                 Mijoz olib ketdi
@@ -1249,7 +1254,7 @@ function OrderDetail() {
               <button
                 className="button danger"
                 data-testid="action-cancel"
-                disabled={!reason}
+                disabled={transitionPending(order.id) || !reason}
                 onClick={() => void action("CANCELLED")}
               >
                 Bekor qilish

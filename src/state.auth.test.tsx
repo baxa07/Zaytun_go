@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   subscribe: vi.fn(() => vi.fn()),
   get: vi.fn(),
   save: vi.fn(),
+  transition: vi.fn(),
   authCallback: null as ((event: string, session: unknown) => void) | null,
 }));
 
@@ -50,7 +51,7 @@ vi.mock("./data", () => ({
     subscribe: mocks.subscribe,
     get: mocks.get,
     save: mocks.save,
-    transition: vi.fn(),
+    transition: mocks.transition,
     assign: vi.fn(),
     acceptAssignment: vi.fn(),
     setEstimate: vi.fn(),
@@ -98,6 +99,8 @@ beforeEach(() => {
   mocks.role = null;
   mocks.list.mockReset().mockResolvedValue([]);
   mocks.listDrivers.mockReset().mockResolvedValue([]);
+  mocks.transition.mockReset();
+  mocks.get.mockReset();
   mocks.subscribe.mockClear();
 });
 
@@ -158,5 +161,113 @@ describe("route-aware Supabase loading", () => {
     mocks.list.mockRejectedValue(new Error("permission denied"));
     renderAt("/restaurant", <OperationalProbe />);
     expect(await screen.findByText(/error:permission denied/)).toBeTruthy();
+  });
+});
+
+const lifecycleOrder = (status: Order["status"]): Order => ({
+  id: "order-1",
+  number: "ZG-TEST",
+  customer: { id: "customer-1", name: "Release Test", primaryPhone: "+998900000000" },
+  type: "PICKUP",
+  items: [{ id: "item-1", menuItemId: "plov", name: "Plov", unitPrice: 10000, quantity: 1, modifierIds: [], modifierNames: [], instructions: "", total: 10000 }],
+  subtotal: 10000,
+  deliveryFee: 0,
+  total: 10000,
+  paymentMethod: "CASH",
+  paymentStatus: "PENDING",
+  specialInstructions: "",
+  status,
+  createdAt: "2026-08-07T00:00:00.000Z",
+  events: [],
+  issues: [],
+});
+
+describe("restaurant lifecycle transition guard", () => {
+  beforeEach(() => {
+    mocks.session = { user: { id: "staff-1" } };
+    mocks.role = "RESTAURANT";
+  });
+
+  it("disables the action and suppresses a rapid duplicate request for the same order", async () => {
+    const order = lifecycleOrder("CONFIRMED");
+    let resolveTransition!: () => void;
+    mocks.list.mockResolvedValue(order ? [order] : []);
+    mocks.get.mockResolvedValue(order);
+    mocks.transition.mockImplementation(() => new Promise<void>((resolve) => { resolveTransition = resolve; }));
+    renderAt(`/restaurant/orders/${order.id}`);
+
+    const button = await screen.findByTestId("action-start-prep");
+    fireEvent.click(button);
+    await waitFor(() => expect(mocks.transition).toHaveBeenCalledOnce());
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(mocks.transition).toHaveBeenCalledOnce();
+    resolveTransition();
+  });
+
+  it("clears pending state after success and exposes the next action after reconciliation", async () => {
+    const confirmed = lifecycleOrder("CONFIRMED");
+    const preparing = lifecycleOrder("PREPARING");
+    mocks.list.mockResolvedValueOnce([confirmed]).mockResolvedValue([preparing]);
+    mocks.get.mockResolvedValue(confirmed);
+    mocks.transition.mockResolvedValue(undefined);
+    renderAt(`/restaurant/orders/${confirmed.id}`);
+
+    fireEvent.click(await screen.findByTestId("action-start-prep"));
+    expect((await screen.findByTestId("action-mark-ready") as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByTestId("action-start-prep")).toBeNull();
+  });
+
+  it("clears pending state after failure so the action can be retried", async () => {
+    const order = lifecycleOrder("CONFIRMED");
+    mocks.list.mockResolvedValue([order]);
+    mocks.get.mockResolvedValue(order);
+    mocks.transition.mockRejectedValueOnce(new Error("transition failed"));
+    renderAt(`/restaurant/orders/${order.id}`);
+
+    const button = await screen.findByTestId("action-start-prep");
+    fireEvent.click(button);
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    expect(mocks.transition).toHaveBeenCalledOnce();
+  });
+
+  it("allows a different order to transition while the first order is pending", async () => {
+    const first = lifecycleOrder("CONFIRMED");
+    const second = { ...lifecycleOrder("CONFIRMED"), id: "order-2", number: "ZG-TEST-2" };
+    let resolveFirst!: () => void;
+    const pendingById = new Map<string, () => void>();
+    mocks.list.mockResolvedValue([first, second]);
+    mocks.get.mockImplementation(async (id: string) => id === first.id ? first : second);
+    mocks.transition.mockImplementation(async (id: string) => new Promise<void>((resolve) => { pendingById.set(id, resolve); if (id === first.id) resolveFirst = resolve; }));
+    function TwoOrdersProbe() {
+      const { transition, transitionPending } = useApp();
+      return <><button disabled={transitionPending(first.id)} onClick={() => void transition(first.id, "PREPARING", "RESTAURANT")}>first</button><button disabled={transitionPending(second.id)} onClick={() => void transition(second.id, "PREPARING", "RESTAURANT")}>second</button></>;
+    }
+    renderAt("/restaurant", <TwoOrdersProbe />);
+    const firstButton = await screen.findByText("first");
+    const secondButton = screen.getByText("second");
+    fireEvent.click(firstButton);
+    await waitFor(() => expect(mocks.transition).toHaveBeenCalledWith(first.id, "PREPARING", "RESTAURANT", undefined));
+    expect((firstButton as HTMLButtonElement).disabled).toBe(true);
+    expect((secondButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(secondButton);
+    await waitFor(() => expect(mocks.transition).toHaveBeenCalledWith(second.id, "PREPARING", "RESTAURANT", undefined));
+    resolveFirst();
+    pendingById.get(second.id)?.();
+  });
+
+  it("keeps pickup and delivery action labels fulfillment-aware", async () => {
+    const pickup = lifecycleOrder("PREPARING");
+    mocks.list.mockResolvedValue([pickup]);
+    mocks.get.mockResolvedValue(pickup);
+    const rendered = renderAt(`/restaurant/orders/${pickup.id}`);
+    expect((await screen.findByTestId("action-mark-ready")).textContent).toContain("Olib ketishga tayyor");
+    rendered.unmount();
+
+    const delivery = { ...pickup, type: "DELIVERY" as const, address: { customerName: "Release Test", primaryPhone: "+998900000000", district: "Navoiy", street: "Street", house: "1", landmark: "Landmark", deliveryNotes: "", latitude: 40, longitude: 65, confidence: "COMPLETE" as const, pinConfirmedAt: "2026-08-07T00:00:00.000Z", locationProvider: "mock" as const } };
+    mocks.list.mockResolvedValue([delivery]);
+    mocks.get.mockResolvedValue(delivery);
+    renderAt(`/restaurant/orders/${delivery.id}`);
+    expect((await screen.findByTestId("action-mark-ready")).textContent).toContain("Tayyor deb belgilash");
   });
 });
