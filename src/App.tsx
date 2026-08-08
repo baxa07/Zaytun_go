@@ -14,6 +14,8 @@ import {
   calculateOrderTotal,
   canTransition,
   createEvent,
+  deliveryAddressWasResubmitted,
+  isDeliveryAddressRevisable,
   publicMenuState,
   validateDeliveryLocation,
   validateOrderInput,
@@ -64,6 +66,11 @@ const statusLabels: Record<OrderStatus, string> = {
   CANCELLED: "Bekor qilindi",
   DELIVERY_FAILED: "Yetkazilmadi",
   RETURNED: "Qaytarildi",
+};
+const deliveryReviewBadges: Partial<Record<NonNullable<Order["deliveryReviewStatus"]>, { label: string; className: string }>> = {
+  REVIEW_REQUIRED: { label: "Manzil tekshirilmoqda", className: "review-required" },
+  CLARIFICATION_REQUESTED: { label: "Manzil aniqlashtirilmoqda", className: "clarification-requested" },
+  APPROVED: { label: "Manzil tasdiqlangan", className: "review-approved" },
 };
 const issueLabels: Record<string, string> = {
   ADDRESS_INCORRECT: "Manzil noto‘g‘ri",
@@ -773,7 +780,7 @@ function Track() {
     return () => { disposed = true; };
   }, [id, loadTrackedOrder, order]);
   useEffect(() => {
-    if (editingAddress && order && !(order.type === "DELIVERY" && order.deliveryReviewStatus === "CLARIFICATION_REQUESTED")) {
+    if (editingAddress && order && !isDeliveryAddressRevisable(order)) {
       setEditingAddress(false);
     }
   }, [editingAddress, order]);
@@ -789,7 +796,7 @@ function Track() {
   const timeline=fulfillmentTimeline(order.type);
   const current = timeline.findIndex(stage=>stage.status===order.status);
   const reviewRequired = order.type === "DELIVERY" && order.deliveryReviewStatus === "REVIEW_REQUIRED";
-  const clarificationRequested = order.type === "DELIVERY" && order.deliveryReviewStatus === "CLARIFICATION_REQUESTED";
+  const clarificationRequested = isDeliveryAddressRevisable(order);
   return (
     <Shell>
       <main className="track">
@@ -1148,16 +1155,23 @@ function Restaurant() {
   );
 }
 function OrderCard({ order }: { order: Order }) {
+  const waitingOnCustomer = isDeliveryAddressRevisable(order);
+  const reviewBadge = deliveryReviewBadges[order.deliveryReviewStatus as NonNullable<Order["deliveryReviewStatus"]>];
   return (
     <Link
       to={`/restaurant/orders/${order.id}`}
       data-testid={`order-card-${order.id}`}
-      className={`order-card ${order.status === "NEW" ? "new" : ""}`}
+      className={`order-card ${order.status === "NEW" && !waitingOnCustomer ? "new" : ""} ${waitingOnCustomer ? "waiting-customer" : ""}`}
     >
       <div>
         <b>{order.number}</b>
         <OrderBadge order={order} />
       </div>
+      {order.type === "DELIVERY" && reviewBadge && (
+        <small className={`review-state-badge ${reviewBadge.className}`} data-testid={`review-state-${order.id}`}>
+          {reviewBadge.label}
+        </small>
+      )}
       <h3>{order.customer.name}</h3>
       <small>
         {time(order.createdAt)} ·{" "}
@@ -1190,6 +1204,7 @@ function OrderDetail() {
     orders,
     drivers,
     loaded,
+    operationalError,
     transition,
     assign,
     setEstimate,
@@ -1218,12 +1233,8 @@ function OrderDetail() {
     actor: "RESTAURANT" | "DISPATCHER" = "RESTAURANT",
   ) => {
     if (transitionPending(order.id)) return;
-    try {
-      await transition(order.id, to, actor, reason || undefined);
-      setReason("");
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Action failed");
-    }
+    await transition(order.id, to, actor, reason || undefined);
+    setReason("");
   };
   return (
     <Shell surface="staff">
@@ -1357,9 +1368,15 @@ function OrderDetail() {
           </div>
           <aside className="panel action-panel">
             <h2>Keyingi amal</h2>
+            {operationalError && <p className="error" role="alert" data-testid="operational-error">{operationalError}</p>}
             {order.type === "DELIVERY" && order.deliveryReviewStatus === "REVIEW_REQUIRED" && (
               <section className="delivery-review-panel" data-testid="delivery-review-required">
                 <b>Manzilni tasdiqlash kerak</b>
+                {deliveryAddressWasResubmitted(order) && (
+                  <small className="review-state-badge clarification-requested" data-testid="address-resubmitted-cue">
+                    Manzil yangilandi — qayta tekshiring
+                  </small>
+                )}
                 <p>Mijoz manzilini, pinini va masofani tekshiring. Buyurtma tasdiqlanmaguncha haydovchiga berilmaydi.</p>
                 <button
                   className="button primary"
@@ -1367,7 +1384,7 @@ function OrderDetail() {
                   disabled={transitionPending(order.id)}
                   onClick={() => void reviewDelivery(order.id, true)}
                 >
-                  Yetkazishni tasdiqlash
+                  Manzilni tasdiqlash
                 </button>
                 <a className="button secondary" data-testid="contact-customer" href={`tel:${order.customer.primaryPhone}`}>
                   ☎ Mijoz bilan bog‘lanish

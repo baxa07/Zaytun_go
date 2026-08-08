@@ -75,4 +75,58 @@ test.describe("restaurant address review", () => {
     await expect(staff.getByTestId("delivery-review-approved")).toBeVisible();
     await expect(staff.getByTestId("event-list").locator("div")).toHaveCount(2);
   });
+
+  test("review panel, clarify/reject forms and waiting state stay usable at desktop, tablet and phone widths", async ({ context }) => {
+    const customer = await context.newPage();
+    const staff = await context.newPage();
+    const orderId = await placeDeliveryOrder(customer);
+
+    const noHorizontalOverflow = async () => {
+      const { scrollWidth, clientWidth } = await staff.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    };
+    const viewports = [
+      { name: "desktop", width: 1440, height: 900 },
+      { name: "tablet", width: 810, height: 1080 },
+      { name: "phone-390", width: 390, height: 844 },
+      { name: "phone-320", width: 320, height: 700 },
+    ];
+
+    // The 4-action REVIEW_REQUIRED panel, with the clarify/reject reason form.
+    for (const viewport of viewports) {
+      await staff.setViewportSize({ width: viewport.width, height: viewport.height });
+      await staff.goto(`/restaurant/orders/${orderId}`);
+      await expect(staff.getByTestId("delivery-review-required")).toBeVisible();
+      await expect(staff.getByTestId("approve-delivery")).toBeVisible();
+      await expect(staff.getByTestId("contact-customer")).toBeVisible();
+      await noHorizontalOverflow();
+
+      const reasonInput = staff.locator(".delivery-review-panel input");
+      await expect(staff.getByTestId("request-clarification")).toBeDisabled();
+      await expect(staff.getByTestId("reject-delivery")).toBeDisabled();
+      await reasonInput.fill("Juda uzun sabab matni xaritada yoki formada tashqariga chiqib ketmasligi kerak, chunki bu haqiqiy restoran xodimi tomonidan yozilishi mumkin bo‘lgan uzun izohni ifodalaydi.");
+      await expect(staff.getByTestId("request-clarification")).toBeEnabled();
+      await expect(staff.getByTestId("reject-delivery")).toBeEnabled();
+      await noHorizontalOverflow();
+    }
+
+    // Move the order into CLARIFICATION_REQUESTED, then re-check the waiting state.
+    await staff.setViewportSize({ width: 1440, height: 900 });
+    await staff.goto(`/restaurant/orders/${orderId}`);
+    await staff.locator(".delivery-review-panel input").fill("Uy raqamini aniqlashtiring, mo‘ljal yetarli emas");
+    await staff.getByTestId("request-clarification").click();
+    await expect(staff.getByTestId("delivery-review-clarification-pending")).toBeVisible();
+
+    for (const viewport of viewports) {
+      await staff.setViewportSize({ width: viewport.width, height: viewport.height });
+      await staff.goto(`/restaurant/orders/${orderId}`);
+      await expect(staff.getByTestId("delivery-review-clarification-pending")).toBeVisible();
+      await expect(staff.getByTestId("clarification-reason-sent")).toBeVisible();
+      await expect(staff.getByTestId("contact-customer")).toBeVisible();
+      await noHorizontalOverflow();
+    }
+  });
 });

@@ -231,12 +231,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const runOperation = useCallback(async (action: () => Promise<void>) => {
     setOperationalError("");
+    let actionError: string | null = null;
     try {
       await action();
-      await refresh();
     } catch (error) {
-      setOperationalError(error instanceof Error ? error.message : "Amal bajarilmadi");
+      actionError = error instanceof Error && error.message ? error.message : "Amal bajarilmadi. Qayta urinib ko‘ring.";
     }
+    // Reconcile from the server whether the action succeeded or failed, so a
+    // failure caused by the order's state already having changed (e.g. another
+    // staff tab acted first) replaces stale controls with the real state
+    // instead of leaving the UI showing options that no longer apply. A
+    // successful refresh clears operationalError as a side effect, so the
+    // action's own error (if any) is re-asserted afterward.
+    try {
+      await refresh();
+    } catch {
+      // The action's own error (if any) is still surfaced below; a refresh
+      // failure here just means the UI stays as-is until the next success.
+    }
+    if (actionError) setOperationalError(actionError);
   }, [refresh]);
 
   const setTransitionPending = useCallback((id: string, pending: boolean) => {

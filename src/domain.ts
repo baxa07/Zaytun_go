@@ -36,6 +36,9 @@ export const canTransitionOrder=(order:Pick<Order,'type'|'status'>,to:OrderStatu
     ? !['DRIVER_ASSIGNED','PICKED_UP','ON_THE_WAY','ARRIVED','DELIVERED','DELIVERY_FAILED','RETURNED'].includes(to)
     : to!=='COLLECTED'
 )
+export const isDeliveryAddressRevisable=(order:Pick<Order,'type'|'status'|'deliveryReviewStatus'>)=>order.type==='DELIVERY'&&order.status==='NEW'&&order.deliveryReviewStatus==='CLARIFICATION_REQUESTED'
+const deliveryReviewMarkerNotes=['DELIVERY_CLARIFICATION_REQUESTED','DELIVERY_ADDRESS_REVISED','DELIVERY_REVIEW_APPROVED','DELIVERY_REVIEW_REJECTED']
+export const deliveryAddressWasResubmitted=(order:Pick<Order,'events'>)=>{const marker=order.events.filter(e=>e.notes&&deliveryReviewMarkerNotes.includes(e.notes)).sort((a,b)=>a.timestamp.localeCompare(b.timestamp)).at(-1);return marker?.notes==='DELIVERY_ADDRESS_REVISED'}
 export function createEvent(orderId:string,previousStatus:OrderStatus|null,newStatus:OrderStatus,actorType:ActorType,actorId:string,reason?:string,notes?:string):OrderEvent{return{id:createUuid(),orderId,previousStatus,newStatus,actorType,actorId,timestamp:new Date().toISOString(),reason,notes}}
 export function transitionOrder(order:Order,to:OrderStatus,actorType:ActorType,actorId:string,reason?:string,notes?:string):Order{if(!canTransitionOrder(order,to))throw new Error(`Illegal transition: ${order.status} → ${to}`);const event=createEvent(order.id,order.status,to,actorType,actorId,reason,notes);return{...order,status:to,events:[...order.events,event],rejectionReason:to==='REJECTED'?reason:order.rejectionReason,cancellationReason:to==='CANCELLED'?reason:order.cancellationReason}}
 export function calculateOrderTotal(items:Pick<CartItem,'unitPrice'|'quantity'>[],deliveryFee=0){return items.reduce((sum,item)=>sum+item.unitPrice*item.quantity,0)+deliveryFee}
