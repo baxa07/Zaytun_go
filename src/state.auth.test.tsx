@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { AppProvider, useApp, type AppRole } from "./state";
-import type { Order, RestaurantConfig } from "./domain";
+import type { Order, OrderStatus, RestaurantConfig } from "./domain";
 
 const publicConfig: RestaurantConfig = {
   restaurantName: "Test Zaytun",
@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   assign: vi.fn(),
   reviewDelivery: vi.fn(),
   requestClarification: vi.fn(),
+  acceptAssignment: vi.fn(),
   authCallback: null as ((event: string, session: unknown) => void) | null,
 }));
 
@@ -56,7 +57,7 @@ vi.mock("./data", () => ({
     save: mocks.save,
     transition: mocks.transition,
     assign: mocks.assign,
-    acceptAssignment: vi.fn(),
+    acceptAssignment: mocks.acceptAssignment,
     setEstimate: vi.fn(),
     reviewDelivery: mocks.reviewDelivery,
     requestClarification: mocks.requestClarification,
@@ -108,6 +109,7 @@ beforeEach(() => {
   mocks.assign.mockReset();
   mocks.reviewDelivery.mockReset();
   mocks.requestClarification.mockReset();
+  mocks.acceptAssignment.mockReset();
   mocks.get.mockReset();
   mocks.subscribe.mockClear();
 });
@@ -516,5 +518,137 @@ describe("pickup isolation from delivery review UI", () => {
     expect(screen.queryByTestId("delivery-review-required")).toBeNull();
     expect(screen.queryByTestId("delivery-review-clarification-pending")).toBeNull();
     expect(screen.queryByTestId("delivery-review-approved")).toBeNull();
+  });
+});
+
+const assignedDelivery = (status: Order["status"], extra: Partial<Order> = {}): Order => ({
+  ...deliveryOrder(status, "APPROVED"),
+  id: "assigned-1",
+  assignedDriverId: "driver-1",
+  ...extra,
+});
+
+describe("driver work surface: Keyingi yetkazish removed, active assignment preserved", () => {
+  beforeEach(() => {
+    mocks.session = { user: { id: "driver-1" } };
+    mocks.role = "DRIVER";
+  });
+
+  it("never shows a 'next delivery' preview, even if another ready order is present in state", async () => {
+    const active = assignedDelivery("DRIVER_ASSIGNED", { assignmentAcceptedAt: "2026-08-09T00:00:00.000Z" });
+    // Real RLS would never return this to a driver at all; included defensively
+    // to prove the removed preview cannot resurface even from stray client state.
+    const otherReady = { ...deliveryOrder("READY", "APPROVED"), id: "other-ready" };
+    mocks.list.mockResolvedValue([active, otherReady]);
+    renderAt("/driver");
+
+    await screen.findByTestId("driver-primary-action");
+    expect(screen.queryByText(/Keyingi yetkazish/i)).toBeNull();
+    expect(document.querySelector(".next-card")).toBeNull();
+  });
+
+  it("shows no active-delivery card and no crash when nothing is assigned", async () => {
+    mocks.list.mockResolvedValue([]);
+    renderAt("/driver");
+    expect(await screen.findByTestId("driver-no-active")).toBeTruthy();
+  });
+
+  it("requires explicit acceptance before progressing, then walks PICKED_UP -> ON_THE_WAY -> ARRIVED -> DELIVERED", async () => {
+    const assigned = assignedDelivery("DRIVER_ASSIGNED");
+    const accepted = { ...assigned, assignmentAcceptedAt: "2026-08-09T00:00:00.000Z" };
+    const pickedUp = { ...accepted, status: "PICKED_UP" as const };
+    const onTheWay = { ...accepted, status: "ON_THE_WAY" as const };
+    const arrived = { ...accepted, status: "ARRIVED" as const };
+    mocks.list
+      .mockResolvedValueOnce([assigned])
+      .mockResolvedValueOnce([accepted])
+      .mockResolvedValueOnce([pickedUp])
+      .mockResolvedValueOnce([onTheWay])
+      .mockResolvedValue([arrived]);
+    mocks.acceptAssignment.mockResolvedValue(undefined);
+    mocks.transition.mockResolvedValue(undefined);
+    mocks.get.mockResolvedValue(accepted);
+    renderAt("/driver");
+
+    expect((await screen.findByTestId("driver-primary-action")).textContent).toContain("Topshiriqni qabul qilish");
+    fireEvent.click(screen.getByTestId("driver-primary-action"));
+    await waitFor(() => expect(mocks.acceptAssignment).toHaveBeenCalledWith("assigned-1"));
+
+    expect((await screen.findByTestId("driver-primary-action")).textContent).toContain("Olib ketdim");
+    fireEvent.click(screen.getByTestId("driver-primary-action"));
+    await waitFor(() => expect(mocks.transition).toHaveBeenCalledWith("assigned-1", "PICKED_UP", "DRIVER", undefined));
+
+    expect((await screen.findByTestId("driver-primary-action")).textContent).toContain("Yo‘lga chiqdim");
+    fireEvent.click(screen.getByTestId("driver-primary-action"));
+    await waitFor(() => expect(mocks.transition).toHaveBeenCalledWith("assigned-1", "ON_THE_WAY", "DRIVER", undefined));
+
+    expect((await screen.findByTestId("driver-primary-action")).textContent).toContain("Yetib keldim");
+    fireEvent.click(screen.getByTestId("driver-primary-action"));
+    await waitFor(() => expect(mocks.transition).toHaveBeenCalledWith("assigned-1", "ARRIVED", "DRIVER", undefined));
+
+    expect((await screen.findByTestId("driver-primary-action")).textContent).toContain("Yetkazildi");
+  });
+
+  it("keeps issue-reporting and delivery-failed actions available as before", async () => {
+    const order = assignedDelivery("ON_THE_WAY", { assignmentAcceptedAt: "2026-08-09T00:00:00.000Z" });
+    mocks.list.mockResolvedValue([order]);
+    renderAt("/driver");
+
+    await screen.findByTestId("driver-primary-action");
+    fireEvent.click(screen.getByTestId("driver-report-issue-toggle"));
+    expect(screen.getByTestId("driver-report-issue-submit")).toBeTruthy();
+    expect(screen.getByTestId("driver-mark-failed")).toBeTruthy();
+  });
+
+  it("pickup never renders in the driver work surface, even defensively if state contained an assigned pickup order", async () => {
+    // assign_driver rejects PICKUP orders server-side (Phase A pgTAP), so this
+    // can't happen for real; DriverApp's active-order finder now also filters
+    // by type as a defense-in-depth check independent of that backend guarantee.
+    const pickup = { ...lifecycleOrder("DRIVER_ASSIGNED" as OrderStatus), assignedDriverId: "driver-1" };
+    mocks.list.mockResolvedValue([pickup]);
+    renderAt("/driver");
+
+    expect(await screen.findByTestId("driver-no-active")).toBeTruthy();
+    expect(screen.queryByTestId("driver-primary-action")).toBeNull();
+  });
+});
+
+describe("acceptAssignment duplicate-interaction guard", () => {
+  beforeEach(() => {
+    mocks.session = { user: { id: "driver-1" } };
+    mocks.role = "DRIVER";
+  });
+
+  it("suppresses a rapid duplicate accept, disables the button, and re-enables after success", async () => {
+    const assigned = assignedDelivery("DRIVER_ASSIGNED");
+    const accepted = { ...assigned, assignmentAcceptedAt: "2026-08-09T00:00:00.000Z" };
+    let resolveAccept!: () => void;
+    mocks.list.mockResolvedValueOnce([assigned]).mockResolvedValue([accepted]);
+    mocks.acceptAssignment.mockImplementation(() => new Promise<void>((resolve) => { resolveAccept = resolve; }));
+    renderAt("/driver");
+
+    const button = await screen.findByTestId("driver-primary-action");
+    fireEvent.click(button);
+    await waitFor(() => expect(mocks.acceptAssignment).toHaveBeenCalledOnce());
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(mocks.acceptAssignment).toHaveBeenCalledOnce();
+    resolveAccept();
+    expect(await screen.findByText("Olib ketdim")).toBeTruthy();
+  });
+
+  it("clears the lock after a failed accept, surfaces a visible error, and allows a retry", async () => {
+    const assigned = assignedDelivery("DRIVER_ASSIGNED");
+    mocks.list.mockResolvedValue([assigned]);
+    mocks.acceptAssignment.mockRejectedValueOnce(new Error("Topshiriqni qabul qilib bo‘lmadi"));
+    renderAt("/driver");
+
+    const button = await screen.findByTestId("driver-primary-action");
+    fireEvent.click(button);
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    expect(mocks.acceptAssignment).toHaveBeenCalledOnce();
+    expect(await screen.findByText("Topshiriqni qabul qilib bo‘lmadi")).toBeTruthy();
+    fireEvent.click(button);
+    await waitFor(() => expect(mocks.acceptAssignment).toHaveBeenCalledTimes(2));
   });
 });
