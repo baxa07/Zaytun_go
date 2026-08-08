@@ -4,6 +4,7 @@ import {
   type Session,
 } from "@supabase/supabase-js";
 import type {
+  CustomerAddress,
   Driver,
   DriverAssignment,
   MenuCategory,
@@ -145,6 +146,23 @@ const mapOrder = (r: Row): Order => {
 };
 const orderSelect =
   "*,customer_addresses(*),order_items(*),order_events(*),delivery_issues(*)";
+export const toAddressPayload = (address: CustomerAddress) => ({
+  district: address.district,
+  street: address.street,
+  house: address.house,
+  entrance: address.entrance,
+  floor: address.floor,
+  apartment: address.apartment,
+  landmark: address.landmark,
+  deliveryNotes: address.deliveryNotes,
+  latitude: address.latitude,
+  longitude: address.longitude,
+  confidence: address.confidence,
+  pinConfirmedAt: address.pinConfirmedAt,
+  locationProvider: address.locationProvider,
+  providerPlaceId: address.providerPlaceId,
+  providerFormattedAddress: address.providerFormattedAddress,
+});
 export const toPublicOrderPayload = (order: Order) => ({
   id: order.id,
   idempotencyKey: order.id,
@@ -156,29 +174,33 @@ export const toPublicOrderPayload = (order: Order) => ({
   type: order.type,
   paymentMethod: order.paymentMethod,
   specialInstructions: order.specialInstructions,
-  address: order.address ? {
-    district: order.address.district,
-    street: order.address.street,
-    house: order.address.house,
-    entrance: order.address.entrance,
-    floor: order.address.floor,
-    apartment: order.address.apartment,
-    landmark: order.address.landmark,
-    deliveryNotes: order.address.deliveryNotes,
-    latitude: order.address.latitude,
-    longitude: order.address.longitude,
-    confidence: order.address.confidence,
-    pinConfirmedAt: order.address.pinConfirmedAt,
-    locationProvider: order.address.locationProvider,
-    providerPlaceId: order.address.providerPlaceId,
-    providerFormattedAddress: order.address.providerFormattedAddress,
-  } : undefined,
+  address: order.address ? toAddressPayload(order.address) : undefined,
   items: order.items.map((item) => ({
     menuItemId: item.menuItemId,
     quantity: item.quantity,
     modifierIds: item.modifierIds,
     instructions: item.instructions,
   })),
+});
+const mapAddressForRevision = (r: Row): CustomerAddress => ({
+  customerName: "",
+  primaryPhone: "",
+  district: String(r.district || ""),
+  street: String(r.street || ""),
+  house: String(r.house || ""),
+  entrance: r.entrance ? String(r.entrance) : undefined,
+  floor: r.floor ? String(r.floor) : undefined,
+  apartment: r.apartment ? String(r.apartment) : undefined,
+  landmark: String(r.landmark || ""),
+  deliveryNotes: String(r.deliveryNotes || ""),
+  latitude: r.latitude === null || r.latitude === undefined ? undefined : Number(r.latitude),
+  longitude: r.longitude === null || r.longitude === undefined ? undefined : Number(r.longitude),
+  confidence: (r.confidence as CustomerAddress["confidence"]) || "CUSTOMER_CONFIRMATION_REQUIRED",
+  // pinConfirmedAt is intentionally omitted: a prior confirmation must never
+  // be carried into a new revision session, the customer reconfirms fresh.
+  locationProvider: r.locationProvider as CustomerAddress["locationProvider"],
+  providerPlaceId: r.providerPlaceId ? String(r.providerPlaceId) : undefined,
+  providerFormattedAddress: r.providerFormattedAddress ? String(r.providerFormattedAddress) : undefined,
 });
 export class SupabaseStore {
   async getRestaurantConfig(){const{data,error}=await supabase!.rpc('get_public_restaurant_config');fail(error);if(!data)throw new Error('Restoran sozlamalari topilmadi');return data as RestaurantConfig}
@@ -347,6 +369,24 @@ export class SupabaseStore {
   async reviewDelivery(id: string, approved: boolean, reason?: string) {
     const { error } = await supabase!.rpc("review_delivery_request", {p_order_id:id,p_approved:approved,p_reason:reason||null});
     fail(error);
+  }
+  async requestClarification(id: string, reason: string) {
+    const { error } = await supabase!.rpc("request_delivery_clarification", { p_order_id: id, p_reason: reason });
+    fail(error);
+  }
+  async getAddressForRevision(id: string) {
+    const token = (JSON.parse(localStorage.getItem("zgo.tracking") || "{}") as Record<string, string>)[id];
+    if (!token) return undefined;
+    const { data, error } = await supabase!.rpc("get_delivery_address_for_revision", { p_order_id: id, p_tracking_token: token });
+    fail(error);
+    return data ? mapAddressForRevision(data as Row) : undefined;
+  }
+  async reviseAddress(id: string, address: CustomerAddress) {
+    const token = (JSON.parse(localStorage.getItem("zgo.tracking") || "{}") as Record<string, string>)[id];
+    if (!token) throw new Error("Kuzatuv havolasi topilmadi. Sahifani qayta yuklang.");
+    const { data, error } = await supabase!.rpc("revise_delivery_address", { p_order_id: id, p_tracking_token: token, p_address: toAddressPayload(address) });
+    fail(error);
+    return data ? mapOrder(data as Row) : undefined;
   }
   async reportIssue(id: string, type: DeliveryIssueType, description: string) {
     const { error } = await supabase!.rpc("report_delivery_issue", {

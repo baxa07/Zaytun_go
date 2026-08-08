@@ -670,6 +670,30 @@ h2 {
 .order-card.new {
   border-left: 4px solid var(--gold);
 }
+.order-card.waiting-customer {
+  border-left: 4px solid #cfc2e0;
+  opacity: 0.85;
+}
+.review-state-badge {
+  display: inline-block;
+  border-radius: 20px;
+  padding: 3px 9px;
+  font-size: 10px;
+  font-weight: 800;
+  margin-top: 6px;
+}
+.review-state-badge.review-required {
+  background: #fff7db;
+  color: #7a5c00;
+}
+.review-state-badge.clarification-requested {
+  background: #f2e9fb;
+  color: #5b3a91;
+}
+.review-state-badge.review-approved {
+  background: #dcebe0;
+  color: #245436;
+}
 .order-card > div,
 .order-card footer {
   display: flex;
@@ -706,6 +730,7 @@ h2 {
   font-size: 12px;
 }
 .pilot-notice,.delivery-review-panel{background:#fff7db;border:1px solid #e8d695;border-radius:12px;padding:12px}.delivery-review-panel{display:grid;gap:10px;margin-bottom:14px}.delivery-review-panel p{margin:0;color:var(--muted);font-size:13px}
+.clarification-card{display:grid;gap:10px;margin-bottom:14px}.clarification-card h2{margin:0;font-size:16px}.clarification-card p{margin:0;color:var(--muted);font-size:13px;overflow-wrap:anywhere}.clarification-card button{justify-self:start}
 .detail {
   max-width: 1260px;
 }

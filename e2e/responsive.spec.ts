@@ -1,6 +1,6 @@
 import {expect, test} from '@playwright/test'
 
-const routes = ['/', '/menu', '/menu/chicken', '/cart', '/checkout', '/track/ord-new', '/driver']
+const routes = ['/', '/menu', '/menu/chicken', '/cart', '/checkout', '/track/ord-new', '/track/ord-clarify', '/driver']
 
 test.describe('no horizontal overflow at required mobile viewports', () => {
   test.use({viewport: {width: 390, height: 844}})

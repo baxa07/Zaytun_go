@@ -14,13 +14,17 @@ import {
   calculateOrderTotal,
   canTransition,
   createEvent,
+  deliveryAddressWasResubmitted,
+  isDeliveryAddressRevisable,
   publicMenuState,
+  validateDeliveryLocation,
   validateOrderInput,
   type CustomerAddress,
   type MenuItem,
   type Order,
   type OrderStatus,
   type PaymentMethod,
+  type RestaurantConfig,
 } from "./domain";
 import { useApp } from "./state";
 import { supabaseConfigured } from "./supabase";
@@ -35,7 +39,7 @@ import {
 } from "./maps/core";
 import { configuredMapProvider } from "./maps/factory";
 import { navigationUrl } from "./maps/navigation";
-import type { MapLocationSelection } from "./maps/types";
+import type { AddressSuggestion, MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
 import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
 import {fulfillmentStatusLabel,fulfillmentTimeline,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance} from './fulfillmentLifecycle'
@@ -62,6 +66,11 @@ const statusLabels: Record<OrderStatus, string> = {
   CANCELLED: "Bekor qilindi",
   DELIVERY_FAILED: "Yetkazilmadi",
   RETURNED: "Qaytarildi",
+};
+const deliveryReviewBadges: Partial<Record<NonNullable<Order["deliveryReviewStatus"]>, { label: string; className: string }>> = {
+  REVIEW_REQUIRED: { label: "Manzil tekshirilmoqda", className: "review-required" },
+  CLARIFICATION_REQUESTED: { label: "Manzil aniqlashtirilmoqda", className: "clarification-requested" },
+  APPROVED: { label: "Manzil tasdiqlangan", className: "review-approved" },
 };
 const issueLabels: Record<string, string> = {
   ADDRESS_INCORRECT: "Manzil noto‘g‘ri",
@@ -340,6 +349,116 @@ const blankAddress: CustomerAddress = {
   longitude: undefined,
   confidence: "CUSTOMER_CONFIRMATION_REQUIRED",
 };
+function applyMapSelectionToAddress(address: CustomerAddress, selection: MapLocationSelection, publicConfig: RestaurantConfig | null): CustomerAddress {
+  const coordinate = selection.coordinate;
+  const center = publicConfig ? { latitude: publicConfig.restaurantLatitude, longitude: publicConfig.restaurantLongitude } : undefined;
+  const distance = coordinate && center ? haversineKm(center, coordinate) : undefined;
+  const zone = publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && coordinate
+    ? "ELIGIBLE"
+    : distance === undefined || !publicConfig || publicConfig.deliveryRadiusKm == null
+      ? undefined
+      : distance <= publicConfig.deliveryRadiusKm ? "ELIGIBLE" : "OUTSIDE_ZONE";
+  return {
+    ...address,
+    latitude: coordinate?.latitude,
+    longitude: coordinate?.longitude,
+    pinConfirmedAt: selection.confirmedAt,
+    locationProvider: selection.provider,
+    providerPlaceId: selection.suggestion?.providerPlaceId,
+    providerFormattedAddress: selection.suggestion?.formattedAddress,
+    deliveryDistanceKm: distance,
+    deliveryZoneResult: zone,
+    confidence: addressConfidence(selection, Boolean(address.district && address.street && address.house), zone === "ELIGIBLE", !selection.suggestion),
+  };
+}
+function DeliveryAddressFields({
+  address,
+  errors,
+  set,
+  mapSelection,
+  updateMapSelection,
+  onApplySuggestion,
+}: {
+  address: CustomerAddress;
+  errors: Record<string, string>;
+  set: (key: keyof CustomerAddress, value: string | number) => void;
+  mapSelection: MapLocationSelection;
+  updateMapSelection: (selection: MapLocationSelection) => void;
+  onApplySuggestion: (suggestion: AddressSuggestion) => void;
+}) {
+  return (
+    <>
+      <Field
+        label="Mahalla yoki tuman *"
+        value={address.district}
+        error={errors.district}
+        onChange={(v) => set("district", v)}
+      />
+      <Field
+        label="Ko‘cha yoki joylashuv *"
+        value={address.street}
+        error={errors.street}
+        onChange={(v) => set("street", v)}
+      />
+      <Field
+        label="Uy / bino *"
+        value={address.house}
+        error={errors.house}
+        placeholder="Raqam bo‘lmasa, sababini yozing"
+        onChange={(v) => set("house", v)}
+      />
+      <div className="field-row">
+        <Field
+          label="Kirish"
+          value={address.entrance || ""}
+          onChange={(v) => set("entrance", v)}
+        />
+        <Field
+          label="Qavat"
+          value={address.floor || ""}
+          onChange={(v) => set("floor", v)}
+        />
+        <Field
+          label="Xonadon"
+          value={address.apartment || ""}
+          onChange={(v) => set("apartment", v)}
+        />
+      </div>
+      <Field
+        label="Mo‘ljal"
+        value={address.landmark}
+        error={errors.landmark}
+        onChange={(v) => set("landmark", v)}
+      />
+      <Field
+        label="Yetkazish izohi"
+        value={address.deliveryNotes}
+        onChange={(v) => set("deliveryNotes", v)}
+      />
+      <div className="address-explainer">
+        <p><b>Xarita joyi</b> — pin kirish nuqtasini ko‘rsatadi.</p>
+        <p><b>Yozma manzil</b> — yuqoridagi maydonlarni o‘zingiz tekshirasiz.</p>
+        <p><b>Mo‘ljal va izoh</b> — kuryerga topishga yordam beradi.</p>
+      </div>
+      <MapPicker
+        value={mapSelection}
+        onChange={updateMapSelection}
+        onApplySuggestion={onApplySuggestion}
+      />
+      {errors.coordinates && (
+        <em className="error">{errors.coordinates}</em>
+      )}
+      {errors.pinConfirmation && (
+        <em className="error">{errors.pinConfirmation}</em>
+      )}
+      {(errors.deliveryZone || address.deliveryZoneResult === "OUTSIDE_ZONE") && (
+        <em className="error" data-testid="delivery-zone-error">
+          {errors.deliveryZone || "Bu manzil yetkazish hududidan tashqarida."}
+        </em>
+      )}
+    </>
+  );
+}
 function Checkout() {
   const { cart, submitOrder, clearCart, publicConfig } = useApp();
   const nav = useNavigate();
@@ -379,32 +498,8 @@ function Checkout() {
     clearError(key);
   };
   const updateMapSelection = (selection: MapLocationSelection) => {
-    const coordinate = selection.coordinate;
-    const center = publicConfig ? {latitude:publicConfig.restaurantLatitude,longitude:publicConfig.restaurantLongitude} : undefined;
-    const distance = coordinate && center ? haversineKm(center, coordinate) : undefined;
-    const zone = publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && coordinate
-      ? "ELIGIBLE"
-      : distance === undefined || !publicConfig || publicConfig.deliveryRadiusKm == null
-        ? undefined
-        : distance <= publicConfig.deliveryRadiusKm ? "ELIGIBLE" : "OUTSIDE_ZONE";
     setMapSelection(selection);
-    setAddress((a) => ({
-      ...a,
-      latitude: coordinate?.latitude,
-      longitude: coordinate?.longitude,
-      pinConfirmedAt: selection.confirmedAt,
-      locationProvider: selection.provider,
-      providerPlaceId: selection.suggestion?.providerPlaceId,
-      providerFormattedAddress: selection.suggestion?.formattedAddress,
-      deliveryDistanceKm: distance,
-      deliveryZoneResult: zone,
-      confidence: addressConfidence(
-        selection,
-        Boolean(a.district && a.street && a.house),
-        zone === "ELIGIBLE",
-        !selection.suggestion,
-      ),
-    }));
+    setAddress((a) => applyMapSelectionToAddress(a, selection, publicConfig));
     clearError("coordinates");
     clearError("pinConfirmation");
     clearError("deliveryZone");
@@ -525,61 +620,12 @@ function Checkout() {
           {type === "DELIVERY" && (
             <section className="form-card">
               <h2>Aniq manzil</h2>
-              <Field
-                label="Mahalla yoki tuman *"
-                value={address.district}
-                error={errors.district}
-                onChange={(v) => set("district", v)}
-              />
-              <Field
-                label="Ko‘cha yoki joylashuv *"
-                value={address.street}
-                error={errors.street}
-                onChange={(v) => set("street", v)}
-              />
-              <Field
-                label="Uy / bino *"
-                value={address.house}
-                error={errors.house}
-                placeholder="Raqam bo‘lmasa, sababini yozing"
-                onChange={(v) => set("house", v)}
-              />
-              <div className="field-row">
-                <Field
-                  label="Kirish"
-                  value={address.entrance || ""}
-                  onChange={(v) => set("entrance", v)}
-                />
-                <Field
-                  label="Qavat"
-                  value={address.floor || ""}
-                  onChange={(v) => set("floor", v)}
-                />
-                <Field
-                  label="Xonadon"
-                  value={address.apartment || ""}
-                  onChange={(v) => set("apartment", v)}
-                />
-              </div>
-              <Field
-                label="Mo‘ljal"
-                value={address.landmark}
-                error={errors.landmark}
-                onChange={(v) => set("landmark", v)}
-              />
-              <Field
-                label="Yetkazish izohi"
-                value={address.deliveryNotes}
-                onChange={(v) => set("deliveryNotes", v)}
-              />
-              <div className="address-explainer">
-                <p><b>Xarita joyi</b> — pin kirish nuqtasini ko‘rsatadi.</p>
-                <p><b>Yozma manzil</b> — yuqoridagi maydonlarni o‘zingiz tekshirasiz.</p>
-                <p><b>Mo‘ljal va izoh</b> — kuryerga topishga yordam beradi.</p>
-              </div>
-              <MapPicker
-                value={mapSelection}
-                onChange={updateMapSelection}
+              <DeliveryAddressFields
+                address={address}
+                errors={errors}
+                set={set}
+                mapSelection={mapSelection}
+                updateMapSelection={updateMapSelection}
                 onApplySuggestion={(suggestion) => {
                   setAddress((a) => ({
                     ...applySuggestion(a, suggestion),
@@ -591,17 +637,6 @@ function Checkout() {
                   setMapSelection((s) => materialAddressChange(s));
                 }}
               />
-              {errors.coordinates && (
-                <em className="error">{errors.coordinates}</em>
-              )}
-              {errors.pinConfirmation && (
-                <em className="error">{errors.pinConfirmation}</em>
-              )}
-              {(errors.deliveryZone || address.deliveryZoneResult === "OUTSIDE_ZONE") && (
-                <em className="error" data-testid="delivery-zone-error">
-                  {errors.deliveryZone || "Bu manzil yetkazish hududidan tashqarida."}
-                </em>
-              )}
             </section>
           )}
           <section className="form-card">
@@ -728,6 +763,8 @@ function Track() {
   const { orders, loadTrackedOrder, publicConfig } = useApp();
   const [trackingReady, setTrackingReady] = useState(false);
   const [trackingError, setTrackingError] = useState("");
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [justRevised, setJustRevised] = useState(false);
   const order = orders.find((o) => o.id === id);
   useEffect(() => {
     let disposed = false;
@@ -742,6 +779,11 @@ function Track() {
     });
     return () => { disposed = true; };
   }, [id, loadTrackedOrder, order]);
+  useEffect(() => {
+    if (editingAddress && order && !isDeliveryAddressRevisable(order)) {
+      setEditingAddress(false);
+    }
+  }, [editingAddress, order]);
   if (!order)
     return (
       <Shell>
@@ -754,16 +796,40 @@ function Track() {
   const timeline=fulfillmentTimeline(order.type);
   const current = timeline.findIndex(stage=>stage.status===order.status);
   const reviewRequired = order.type === "DELIVERY" && order.deliveryReviewStatus === "REVIEW_REQUIRED";
+  const clarificationRequested = isDeliveryAddressRevisable(order);
   return (
     <Shell>
       <main className="track">
         <div className="page-title">
           <div>
             <p className="eyebrow">{order.number}</p>
-            <h1 data-testid="order-status">{reviewRequired ? "Manzil tasdiqlanmoqda" : fulfillmentStatusLabel(order)||statusLabels[order.status]}</h1>
+            <h1 data-testid="order-status">{clarificationRequested ? "Manzilni aniqlashtirish kerak" : reviewRequired ? "Manzil tasdiqlanmoqda" : fulfillmentStatusLabel(order)||statusLabels[order.status]}</h1>
           </div>
           <span className="badge">{order.type==='PICKUP'?'Olib ketish':'Yetkazib berish'}</span>
         </div>
+        {justRevised && <p className="success-notice" data-testid="address-revision-success">✓ Manzil yangilandi. Manzilingiz qayta tekshirish uchun yuborildi.</p>}
+        {clarificationRequested && !editingAddress && (
+          <section className="pilot-notice clarification-card" data-testid="clarification-required" role="alert">
+            <h2>Manzilni aniqlashtirish kerak</h2>
+            <p>Buyurtmangizni yetkazish uchun manzil bo‘yicha qo‘shimcha ma’lumot kerak.</p>
+            {order.deliveryReviewReason && <p data-testid="clarification-reason"><b>{order.deliveryReviewReason}</b></p>}
+            <button
+              type="button"
+              className="button primary"
+              data-testid="edit-delivery-address"
+              onClick={() => { setJustRevised(false); setEditingAddress(true); }}
+            >
+              Manzilni tahrirlash
+            </button>
+          </section>
+        )}
+        {editingAddress && (
+          <AddressRevisionEditor
+            order={order}
+            onCancel={() => setEditingAddress(false)}
+            onSuccess={() => { setEditingAddress(false); setJustRevised(true); }}
+          />
+        )}
         {reviewRequired && <p className="pilot-notice" data-testid="tracking-delivery-review">Operator manzil va yetkazish imkoniyatini tekshirmoqda. Zarur bo‘lsa siz bilan telefon orqali bog‘lanamiz.</p>}
         {order.deliveryReviewStatus === "APPROVED" && <p className="success-notice">✓ Yetkazish manzili operator tomonidan tasdiqlandi.</p>}
         {order.deliveryReviewStatus === "REJECTED" && <p className="warning" role="alert">Yetkazish tasdiqlanmadi. {order.deliveryReviewReason || "Restoran bilan bog‘laning."}</p>}
@@ -804,6 +870,169 @@ function Track() {
         </section>
       </main>
     </Shell>
+  );
+}
+function AddressRevisionEditor({
+  order,
+  onCancel,
+  onSuccess,
+}: {
+  order: Order;
+  onCancel: () => void;
+  onSuccess: () => void;
+}) {
+  const { getAddressForRevision, reviseDeliveryAddress, loadTrackedOrder, publicConfig } = useApp();
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [address, setAddress] = useState<CustomerAddress>(blankAddress);
+  const [mapSelection, setMapSelection] = useState<MapLocationSelection>(() =>
+    initialSelection(configuredMapProvider()),
+  );
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const loadStarted = useRef(false);
+  useEffect(() => {
+    if (loadStarted.current) return;
+    loadStarted.current = true;
+    void getAddressForRevision(order.id)
+      .then((current) => {
+        if (!current) {
+          setLoadError("Manzil ma’lumotlari topilmadi. Sahifani qayta yuklang.");
+          return;
+        }
+        // A prior confirmation must never carry into a new revision session;
+        // the customer explicitly reconfirms the pin again before resubmitting.
+        setAddress({ ...current, pinConfirmedAt: undefined });
+        if (current.latitude !== undefined && current.longitude !== undefined) {
+          const coordinate = { latitude: current.latitude, longitude: current.longitude };
+          setMapSelection({
+            provider: (current.locationProvider as MapLocationSelection["provider"]) || configuredMapProvider(),
+            coordinate,
+            state: current.providerFormattedAddress ? "SUGGESTION_AVAILABLE" : "SELECTED",
+            suggestion: current.providerFormattedAddress
+              ? {
+                  label: current.providerFormattedAddress,
+                  formattedAddress: current.providerFormattedAddress,
+                  coordinate,
+                  providerPlaceId: current.providerPlaceId,
+                  district: current.district,
+                  street: current.street,
+                  house: current.house,
+                }
+              : undefined,
+          });
+        }
+      })
+      .catch((error: unknown) => setLoadError(error instanceof Error ? error.message : "Manzil ma’lumotlari yuklanmadi"))
+      .finally(() => setLoading(false));
+  }, [getAddressForRevision, order.id]);
+  const clearError = (key: string) =>
+    setErrors((er) =>
+      er[key] ? Object.fromEntries(Object.entries(er).filter(([k]) => k !== key)) : er,
+    );
+  const set = (key: keyof CustomerAddress, value: string | number) => {
+    const material = ["district", "street", "house"].includes(key);
+    setAddress((a) => ({
+      ...a,
+      [key]: value,
+      ...(material && a.pinConfirmedAt
+        ? { pinConfirmedAt: undefined, confidence: "CUSTOMER_CONFIRMATION_REQUIRED" as const }
+        : {}),
+    }));
+    if (material) setMapSelection((s) => materialAddressChange(s));
+    clearError(key);
+  };
+  const updateMapSelection = (selection: MapLocationSelection) => {
+    setMapSelection(selection);
+    setAddress((a) => applyMapSelectionToAddress(a, selection, publicConfig));
+    clearError("coordinates");
+    clearError("pinConfirmation");
+    clearError("deliveryZone");
+  };
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (submittingRef.current) return;
+    const found = validateDeliveryLocation(address);
+    setErrors(found);
+    if (Object.keys(found).length) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await reviseDeliveryAddress(order.id, address);
+      onSuccess();
+    } catch (error) {
+      setSubmitError(error instanceof Error && error.message ? error.message : "Manzilni yangilab bo‘lmadi. Qayta urinib ko‘ring.");
+      // The order's state may have changed server-side since the editor opened
+      // (e.g. staff already acted). Reconcile in the background so the parent
+      // page reflects reality; Track closes this editor if it's now stale.
+      void loadTrackedOrder(order.id);
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
+  if (loading)
+    return (
+      <section className="form-card" data-testid="address-revision-loading">
+        Manzil yuklanmoqda…
+      </section>
+    );
+  if (loadError)
+    return (
+      <section className="form-card">
+        <p className="error" role="alert">{loadError}</p>
+        <button type="button" className="button secondary" onClick={onCancel}>
+          Yopish
+        </button>
+      </section>
+    );
+  return (
+    <form className="form-card address-revision-editor" data-testid="address-revision-editor" onSubmit={submit}>
+      <h2>Manzilni tahrirlash</h2>
+      <DeliveryAddressFields
+        address={address}
+        errors={errors}
+        set={set}
+        mapSelection={mapSelection}
+        updateMapSelection={updateMapSelection}
+        onApplySuggestion={(suggestion) => {
+          setAddress((a) => ({
+            ...applySuggestion(a, suggestion),
+            providerPlaceId: suggestion.providerPlaceId,
+            providerFormattedAddress: suggestion.formattedAddress,
+            pinConfirmedAt: undefined,
+            confidence: "CUSTOMER_CONFIRMATION_REQUIRED",
+          }));
+          setMapSelection((s) => materialAddressChange(s));
+        }}
+      />
+      {submitError && (
+        <p className="error" role="alert" data-testid="address-revision-error">
+          {submitError}
+        </p>
+      )}
+      <div className="two-actions">
+        <button
+          type="button"
+          className="button secondary"
+          data-testid="cancel-address-revision"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          Bekor qilish
+        </button>
+        <button
+          type="submit"
+          className="button primary"
+          data-testid="submit-address-revision"
+          disabled={submitting}
+        >
+          {submitting ? "Yuborilmoqda…" : "Qayta tekshirishga yuborish"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -926,16 +1155,23 @@ function Restaurant() {
   );
 }
 function OrderCard({ order }: { order: Order }) {
+  const waitingOnCustomer = isDeliveryAddressRevisable(order);
+  const reviewBadge = deliveryReviewBadges[order.deliveryReviewStatus as NonNullable<Order["deliveryReviewStatus"]>];
   return (
     <Link
       to={`/restaurant/orders/${order.id}`}
       data-testid={`order-card-${order.id}`}
-      className={`order-card ${order.status === "NEW" ? "new" : ""}`}
+      className={`order-card ${order.status === "NEW" && !waitingOnCustomer ? "new" : ""} ${waitingOnCustomer ? "waiting-customer" : ""}`}
     >
       <div>
         <b>{order.number}</b>
         <OrderBadge order={order} />
       </div>
+      {order.type === "DELIVERY" && reviewBadge && (
+        <small className={`review-state-badge ${reviewBadge.className}`} data-testid={`review-state-${order.id}`}>
+          {reviewBadge.label}
+        </small>
+      )}
       <h3>{order.customer.name}</h3>
       <small>
         {time(order.createdAt)} ·{" "}
@@ -968,12 +1204,14 @@ function OrderDetail() {
     orders,
     drivers,
     loaded,
+    operationalError,
     transition,
     assign,
     setEstimate,
     reportIssue,
     resolveIssue,
     reviewDelivery,
+    requestClarification,
     transitionPending,
   } = useApp();
   const order = orders.find((o) => o.id === id);
@@ -995,12 +1233,8 @@ function OrderDetail() {
     actor: "RESTAURANT" | "DISPATCHER" = "RESTAURANT",
   ) => {
     if (transitionPending(order.id)) return;
-    try {
-      await transition(order.id, to, actor, reason || undefined);
-      setReason("");
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Action failed");
-    }
+    await transition(order.id, to, actor, reason || undefined);
+    setReason("");
   };
   return (
     <Shell surface="staff">
@@ -1134,17 +1368,54 @@ function OrderDetail() {
           </div>
           <aside className="panel action-panel">
             <h2>Keyingi amal</h2>
+            {operationalError && <p className="error" role="alert" data-testid="operational-error">{operationalError}</p>}
             {order.type === "DELIVERY" && order.deliveryReviewStatus === "REVIEW_REQUIRED" && (
               <section className="delivery-review-panel" data-testid="delivery-review-required">
                 <b>Manzilni tasdiqlash kerak</b>
+                {deliveryAddressWasResubmitted(order) && (
+                  <small className="review-state-badge clarification-requested" data-testid="address-resubmitted-cue">
+                    Manzil yangilandi — qayta tekshiring
+                  </small>
+                )}
                 <p>Mijoz manzilini, pinini va masofani tekshiring. Buyurtma tasdiqlanmaguncha haydovchiga berilmaydi.</p>
-                <button className="button primary" data-testid="approve-delivery" onClick={() => void reviewDelivery(order.id, true)}>
-                  Yetkazishni tasdiqlash
+                <button
+                  className="button primary"
+                  data-testid="approve-delivery"
+                  disabled={transitionPending(order.id)}
+                  onClick={() => void reviewDelivery(order.id, true)}
+                >
+                  Manzilni tasdiqlash
                 </button>
-                <input value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Rad etish yoki aloqa sababi" />
-                <button className="button danger" data-testid="reject-delivery" disabled={!reviewReason.trim()} onClick={() => void reviewDelivery(order.id, false, reviewReason)}>
-                  Rad etish / mijoz bilan bog‘lanish
+                <a className="button secondary" data-testid="contact-customer" href={`tel:${order.customer.primaryPhone}`}>
+                  ☎ Mijoz bilan bog‘lanish
+                </a>
+                <input value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Aniqlashtirish yoki rad etish sababi" />
+                <button
+                  className="button secondary"
+                  data-testid="request-clarification"
+                  disabled={transitionPending(order.id) || !reviewReason.trim()}
+                  onClick={() => { void requestClarification(order.id, reviewReason); setReviewReason(""); }}
+                >
+                  Manzilni aniqlashtirish
                 </button>
+                <button
+                  className="button danger"
+                  data-testid="reject-delivery"
+                  disabled={transitionPending(order.id) || !reviewReason.trim()}
+                  onClick={() => { void reviewDelivery(order.id, false, reviewReason); setReviewReason(""); }}
+                >
+                  Yetkazib bo‘lmaydi
+                </button>
+              </section>
+            )}
+            {order.type === "DELIVERY" && order.deliveryReviewStatus === "CLARIFICATION_REQUESTED" && (
+              <section className="delivery-review-panel clarification-pending" data-testid="delivery-review-clarification-pending">
+                <b>Mijozdan aniqlashtirish so‘ralgan</b>
+                <p>Mijoz manzilni yangilagach, u yana ko‘rib chiqish uchun shu yerda ko‘rinadi.</p>
+                {order.deliveryReviewReason && <p data-testid="clarification-reason-sent"><i>{order.deliveryReviewReason}</i></p>}
+                <a className="button secondary" data-testid="contact-customer" href={`tel:${order.customer.primaryPhone}`}>
+                  ☎ Mijoz bilan bog‘lanish
+                </a>
               </section>
             )}
             {order.type === "DELIVERY" && order.deliveryReviewStatus === "APPROVED" && <p className="success-notice" data-testid="delivery-review-approved">✓ Yetkazish manzili tasdiqlangan</p>}
@@ -1227,7 +1498,7 @@ function OrderDetail() {
                   <button
                     className="driver-option"
                     data-testid={`assign-driver-${d.id}`}
-                    disabled={d.availability !== "AVAILABLE"}
+                    disabled={transitionPending(order.id) || d.availability !== "AVAILABLE"}
                     key={d.id}
                     onClick={() => void assign(order.id, d.id)}
                   >

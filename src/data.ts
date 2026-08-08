@@ -1,4 +1,5 @@
 import type {
+  CustomerAddress,
   Driver,
   DriverAssignment,
   MenuCategory,
@@ -183,6 +184,17 @@ const history = (
 };
 const seedOrders: Order[] = [
   seeded("ord-new", "ZG-1042", "NEW", 4),
+  seeded("ord-clarify", "ZG-1041", "NEW", 6, {
+    address: {
+      ...fullAddress,
+      house: "Bino raqami noma’lum",
+      landmark: "",
+      confidence: "NEEDS_CLARIFICATION",
+    },
+    deliveryReviewStatus: "CLARIFICATION_REQUESTED",
+    deliveryReviewReason: "Uy raqami yoki mo‘ljalni aniqlashtiring.",
+    events: [createEvent("ord-clarify", null, "NEW", "CUSTOMER", "guest")],
+  }),
   seeded("ord-address", "ZG-1039", "CONFIRMED", 25, {
     address: {
       ...fullAddress,
@@ -392,7 +404,7 @@ class LocalStore
   ) {
     const order = await this.get(id);
     if (!order) throw new Error("Order not found");
-    if(order.type==="DELIVERY"&&order.deliveryReviewStatus==="REVIEW_REQUIRED"&&!['REJECTED','CANCELLED'].includes(to))throw new Error("Delivery review is required");
+    if(order.type==="DELIVERY"&&order.deliveryReviewStatus!=="APPROVED"&&!['REJECTED','CANCELLED'].includes(to))throw new Error("Delivery review is required");
     await this.save(
       transitionOrder(order, to, actor, actor.toLowerCase(), reason),
     );
@@ -411,6 +423,9 @@ class LocalStore
     await this.save({ ...order, estimatedMinutes: minutes });
   }
   async reviewDelivery(id:string,approved:boolean,reason?:string){const order=await this.get(id);if(!order||order.type!=="DELIVERY"||order.deliveryReviewStatus!=="REVIEW_REQUIRED")throw new Error("Delivery review is not required");if(!approved&&!reason?.trim())throw new Error("Review reason is required");if(approved){await this.save({...order,deliveryReviewStatus:"APPROVED",deliveryReviewReason:undefined,events:[...order.events,createEvent(id,order.status,order.status,"DISPATCHER","dispatcher-1",undefined,"DELIVERY_REVIEW_APPROVED")]})}else{await this.save({...order,status:"REJECTED",deliveryReviewStatus:"REJECTED",deliveryReviewReason:reason,rejectionReason:reason,events:[...order.events,createEvent(id,order.status,"REJECTED","DISPATCHER","dispatcher-1",reason,"DELIVERY_REVIEW_REJECTED")]})}}
+  async requestClarification(id:string,reason:string){const order=await this.get(id);if(!order||order.type!=="DELIVERY"||order.status!=="NEW"||order.deliveryReviewStatus!=="REVIEW_REQUIRED")throw new Error("Delivery review is not required");if(!reason.trim())throw new Error("Clarification reason is required");await this.save({...order,deliveryReviewStatus:"CLARIFICATION_REQUESTED",deliveryReviewReason:reason,events:[...order.events,createEvent(id,order.status,order.status,"RESTAURANT","staff-1",reason,"DELIVERY_CLARIFICATION_REQUESTED")]})}
+  async getAddressForRevision(id:string){const order=await this.get(id);if(!order||order.type!=="DELIVERY"||order.status!=="NEW"||order.deliveryReviewStatus!=="CLARIFICATION_REQUESTED"||!order.address)return undefined;return{...order.address,pinConfirmedAt:undefined}}
+  async reviseAddress(id:string,address:CustomerAddress){const order=await this.get(id);if(!order)throw new Error("Order not found");if(order.type!=="DELIVERY"||order.status!=="NEW"||order.deliveryReviewStatus!=="CLARIFICATION_REQUESTED")throw new Error("Address revision is not allowed for this order");const updated={...order,address,deliveryReviewStatus:"REVIEW_REQUIRED" as const,deliveryReviewReason:undefined,events:[...order.events,createEvent(id,order.status,order.status,"CUSTOMER","guest",undefined,"DELIVERY_ADDRESS_REVISED")]};await this.save(updated);return updated}
   async reportIssue(
     id: string,
     type: Order["issues"][number]["type"],
