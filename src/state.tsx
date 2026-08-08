@@ -78,6 +78,7 @@ type State = {
   acceptAssignment: (orderId: string) => Promise<void>;
   setEstimate: (orderId: string, minutes: number) => Promise<void>;
   reviewDelivery: (orderId:string,approved:boolean,reason?:string)=>Promise<void>;
+  requestClarification: (orderId: string, reason: string) => Promise<void>;
   getAddressForRevision: (orderId: string) => Promise<CustomerAddress | undefined>;
   reviseDeliveryAddress: (orderId: string, address: CustomerAddress) => Promise<void>;
   reportIssue: (orderId: string, type: DeliveryIssueType, description: string, reporter: string) => Promise<void>;
@@ -249,6 +250,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Shared per-order in-flight lock: any action here (kitchen transition,
+  // driver assignment, address review/clarification) on the same order id
+  // is serialized, so a rapid double-click or two staff tabs cannot fire two
+  // concurrent mutating requests against one order.
+  const withOrderLock = useCallback(async (id: string, action: () => Promise<void>) => {
+    if (pendingTransitions.current.has(id)) return;
+    setTransitionPending(id, true);
+    try {
+      await runOperation(action);
+    } finally {
+      setTransitionPending(id, false);
+    }
+  }, [runOperation, setTransitionPending]);
+
   const loadTrackedOrder = useCallback(async (id: string) => {
     const tracked = "getTracked" in store ? await store.getTracked(id) : await store.get(id);
     if (tracked) setOrders((current) => [tracked, ...current.filter((order) => order.id !== tracked.id)]);
@@ -294,25 +309,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setOrders((current) => [saved, ...current.filter((entry) => entry.id !== saved.id)]);
       return saved;
     },
-    transition: async (id, to, actor, reason) => {
-      if (pendingTransitions.current.has(id)) return;
-      setTransitionPending(id, true);
-      try {
-        await runOperation(async () => {
-          const order = await store.get(id);
-          if (!order) throw new Error("Order not found");
-          await store.transition(id, to, actor, reason);
-          if (terminalStatuses.includes(to) && order.assignedDriverId && "saveDriver" in store) {
-            const driver = drivers.find((entry) => entry.id === order.assignedDriverId);
-            if (driver) await store.saveDriver({ ...driver, availability: "AVAILABLE" });
-          }
-        });
-      } finally {
-        setTransitionPending(id, false);
+    transition: (id, to, actor, reason) => withOrderLock(id, async () => {
+      const order = await store.get(id);
+      if (!order) throw new Error("Order not found");
+      await store.transition(id, to, actor, reason);
+      if (terminalStatuses.includes(to) && order.assignedDriverId && "saveDriver" in store) {
+        const driver = drivers.find((entry) => entry.id === order.assignedDriverId);
+        if (driver) await store.saveDriver({ ...driver, availability: "AVAILABLE" });
       }
-    },
+    }),
     transitionPending: (id) => Boolean(pendingTransitionState[id]),
-    assign: async (orderId, driverId) => runOperation(async () => {
+    assign: (orderId, driverId) => withOrderLock(orderId, async () => {
       const order = await store.get(orderId);
       const driver = drivers.find((entry) => entry.id === driverId);
       if (!order || !driver) throw new Error("Order or driver not found");
@@ -320,7 +327,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     acceptAssignment: async (orderId) => runOperation(() => store.acceptAssignment(orderId)),
     setEstimate: async (orderId, minutes) => runOperation(() => store.setEstimate(orderId, minutes)),
-    reviewDelivery: async(orderId,approved,reason)=>runOperation(()=>store.reviewDelivery(orderId,approved,reason)),
+    reviewDelivery: (orderId, approved, reason) => withOrderLock(orderId, () => store.reviewDelivery(orderId, approved, reason)),
+    requestClarification: (orderId, reason) => withOrderLock(orderId, () => store.requestClarification(orderId, reason)),
     getAddressForRevision: (orderId) => store.getAddressForRevision(orderId),
     reviseDeliveryAddress: async (orderId, address) => {
       const updated = await store.reviseAddress(orderId, address);
@@ -328,7 +336,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
-  }), [authError, authReady, cart, categories, drivers, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, setTransitionPending]);
+  }), [authError, authReady, cart, categories, drivers, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, withOrderLock]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }

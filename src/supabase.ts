@@ -370,6 +370,10 @@ export class SupabaseStore {
     const { error } = await supabase!.rpc("review_delivery_request", {p_order_id:id,p_approved:approved,p_reason:reason||null});
     fail(error);
   }
+  async requestClarification(id: string, reason: string) {
+    const { error } = await supabase!.rpc("request_delivery_clarification", { p_order_id: id, p_reason: reason });
+    fail(error);
+  }
   async getAddressForRevision(id: string) {
     const token = (JSON.parse(localStorage.getItem("zgo.tracking") || "{}") as Record<string, string>)[id];
     if (!token) return undefined;

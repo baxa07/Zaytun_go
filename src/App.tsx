@@ -1196,6 +1196,7 @@ function OrderDetail() {
     reportIssue,
     resolveIssue,
     reviewDelivery,
+    requestClarification,
     transitionPending,
   } = useApp();
   const order = orders.find((o) => o.id === id);
@@ -1360,13 +1361,44 @@ function OrderDetail() {
               <section className="delivery-review-panel" data-testid="delivery-review-required">
                 <b>Manzilni tasdiqlash kerak</b>
                 <p>Mijoz manzilini, pinini va masofani tekshiring. Buyurtma tasdiqlanmaguncha haydovchiga berilmaydi.</p>
-                <button className="button primary" data-testid="approve-delivery" onClick={() => void reviewDelivery(order.id, true)}>
+                <button
+                  className="button primary"
+                  data-testid="approve-delivery"
+                  disabled={transitionPending(order.id)}
+                  onClick={() => void reviewDelivery(order.id, true)}
+                >
                   Yetkazishni tasdiqlash
                 </button>
-                <input value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Rad etish yoki aloqa sababi" />
-                <button className="button danger" data-testid="reject-delivery" disabled={!reviewReason.trim()} onClick={() => void reviewDelivery(order.id, false, reviewReason)}>
-                  Rad etish / mijoz bilan bog‘lanish
+                <a className="button secondary" data-testid="contact-customer" href={`tel:${order.customer.primaryPhone}`}>
+                  ☎ Mijoz bilan bog‘lanish
+                </a>
+                <input value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Aniqlashtirish yoki rad etish sababi" />
+                <button
+                  className="button secondary"
+                  data-testid="request-clarification"
+                  disabled={transitionPending(order.id) || !reviewReason.trim()}
+                  onClick={() => { void requestClarification(order.id, reviewReason); setReviewReason(""); }}
+                >
+                  Manzilni aniqlashtirish
                 </button>
+                <button
+                  className="button danger"
+                  data-testid="reject-delivery"
+                  disabled={transitionPending(order.id) || !reviewReason.trim()}
+                  onClick={() => { void reviewDelivery(order.id, false, reviewReason); setReviewReason(""); }}
+                >
+                  Yetkazib bo‘lmaydi
+                </button>
+              </section>
+            )}
+            {order.type === "DELIVERY" && order.deliveryReviewStatus === "CLARIFICATION_REQUESTED" && (
+              <section className="delivery-review-panel clarification-pending" data-testid="delivery-review-clarification-pending">
+                <b>Mijozdan aniqlashtirish so‘ralgan</b>
+                <p>Mijoz manzilni yangilagach, u yana ko‘rib chiqish uchun shu yerda ko‘rinadi.</p>
+                {order.deliveryReviewReason && <p data-testid="clarification-reason-sent"><i>{order.deliveryReviewReason}</i></p>}
+                <a className="button secondary" data-testid="contact-customer" href={`tel:${order.customer.primaryPhone}`}>
+                  ☎ Mijoz bilan bog‘lanish
+                </a>
               </section>
             )}
             {order.type === "DELIVERY" && order.deliveryReviewStatus === "APPROVED" && <p className="success-notice" data-testid="delivery-review-approved">✓ Yetkazish manzili tasdiqlangan</p>}
@@ -1449,7 +1481,7 @@ function OrderDetail() {
                   <button
                     className="driver-option"
                     data-testid={`assign-driver-${d.id}`}
-                    disabled={d.availability !== "AVAILABLE"}
+                    disabled={transitionPending(order.id) || d.availability !== "AVAILABLE"}
                     key={d.id}
                     onClick={() => void assign(order.id, d.id)}
                   >
