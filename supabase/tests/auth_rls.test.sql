@@ -1,5 +1,5 @@
 begin;
-select plan(18);
+select plan(21);
 
 select ok(not has_function_privilege('anon', 'public.transition_order(uuid,public.order_status,text,text)', 'EXECUTE'), 'anonymous cannot execute operational transitions');
 select ok(has_function_privilege('anon', 'public.create_public_order(jsonb)', 'EXECUTE'), 'anonymous can execute controlled order creation');
@@ -13,7 +13,14 @@ reset role;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 set local role authenticated;
 select ok((select count(*) > 0 from public.orders), 'restaurant can read operational orders');
-select is((select count(*)::integer from public.drivers), 1, 'restaurant can read driver roster');
+-- Two drivers are seeded (the original email driver and the phone-login
+-- LOCAL TEST fixture) -- assert staff visibility semantically (both known
+-- identities are readable, both hold DRIVER role) rather than an opaque
+-- count, so this test documents and verifies the actual roster shape.
+select ok((select exists(select 1 from public.drivers where id = '10000000-0000-0000-0000-000000000003')), 'restaurant roster includes the seeded email driver');
+select ok((select exists(select 1 from public.drivers where id = '10000000-0000-0000-0000-000000000004')), 'restaurant roster includes the seeded phone-login driver');
+select ok((select bool_and(role = 'DRIVER') from public.profiles where id in ('10000000-0000-0000-0000-000000000003','10000000-0000-0000-0000-000000000004')), 'both roster entries hold the DRIVER role');
+select is((select count(*)::integer from public.drivers), 2, 'restaurant sees the full driver roster, no more and no fewer');
 reset role;
 
 update public.orders
