@@ -42,7 +42,7 @@ import { navigationUrl } from "./maps/navigation";
 import type { AddressSuggestion, MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
 import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
-import {fulfillmentStatusLabel,fulfillmentTimeline,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance} from './fulfillmentLifecycle'
+import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance} from './fulfillmentLifecycle'
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
@@ -793,17 +793,22 @@ function Track() {
         </main>
       </Shell>
     );
-  const timeline=fulfillmentTimeline(order.type);
-  const current = timeline.findIndex(stage=>stage.status===order.status);
-  const reviewRequired = order.type === "DELIVERY" && order.deliveryReviewStatus === "REVIEW_REQUIRED";
+  const reviewRequired = order.type === "DELIVERY" && order.status === "NEW" && order.deliveryReviewStatus === "REVIEW_REQUIRED";
   const clarificationRequested = isDeliveryAddressRevisable(order);
+  const displayStages = order.type === "PICKUP"
+    ? fulfillmentTimeline("PICKUP").map((stage) => ({ label: stage.label, matchesEvent: (e: Order["events"][number]) => e.newStatus === stage.status }))
+    : customerDeliveryStages.map((stage, i) => ({ label: stage.label, matchesEvent: customerDeliveryStageEventMatchers[i] }));
+  const current = order.type === "PICKUP"
+    ? fulfillmentTimeline("PICKUP").findIndex((stage) => stage.status === order.status)
+    : customerDeliveryStageIndex(order);
+  const normalDeliveryProgress = isNormalDeliveryStatus(order);
   return (
     <Shell>
       <main className="track">
         <div className="page-title">
           <div>
             <p className="eyebrow">{order.number}</p>
-            <h1 data-testid="order-status">{clarificationRequested ? "Manzilni aniqlashtirish kerak" : reviewRequired ? "Manzil tasdiqlanmoqda" : fulfillmentStatusLabel(order)||statusLabels[order.status]}</h1>
+            <h1 data-testid="order-status">{clarificationRequested ? "Manzilni aniqlashtirish kerak" : reviewRequired ? "Manzil tasdiqlanmoqda" : normalDeliveryProgress ? customerDeliveryStages[current].label : fulfillmentStatusLabel(order)||statusLabels[order.status]}</h1>
           </div>
           <span className="badge">{order.type==='PICKUP'?'Olib ketish':'Yetkazib berish'}</span>
         </div>
@@ -842,21 +847,18 @@ function Track() {
           <span>Taxminiy vaqt</span>
         </div>
         <section className="timeline">
-          {timeline.map((stage, i) => (
-            <div className={i <= current ? "done" : ""} key={stage.status}>
-              <i>{i < current ? "✓" : i + 1}</i>
-              <span>
-                <b>{stage.label}</b>
-                {order.events.find((e) => e.newStatus === stage.status) && (
-                  <small>
-                    {time(
-                      order.events.find((e) => e.newStatus === stage.status)!.timestamp,
-                    )}
-                  </small>
-                )}
-              </span>
-            </div>
-          ))}
+          {displayStages.map((stage, i) => {
+            const reachedAt = order.events.filter(stage.matchesEvent).sort((a, b) => a.timestamp.localeCompare(b.timestamp))[0];
+            return (
+              <div className={i <= current ? "done" : ""} key={stage.label}>
+                <i>{i < current ? "✓" : i + 1}</i>
+                <span>
+                  <b>{stage.label}</b>
+                  {reachedAt && <small>{time(reachedAt.timestamp)}</small>}
+                </span>
+              </div>
+            );
+          })}
         </section>
         {order.type==='PICKUP'&&<section className="form-card pickup-facts" data-testid="pickup-tracking-details"><h2>Olib ketish ma’lumotlari</h2><p><b>{publicConfig?.restaurantName||'Zaytun Kafe'}</b></p><p>{publicConfig?.restaurantAddress}</p><a href={`tel:${publicConfig?.restaurantPhone}`}>{publicConfig?.restaurantPhone}</a><p><b>To‘lov:</b> {paymentLabel(order.paymentMethod)}</p><p>{pickupPaymentGuidance(order.paymentMethod)}</p></section>}
         <section className="form-card">
@@ -1559,12 +1561,12 @@ function DriverApp() {
   const { orders, loaded, operationalError } = useApp();
   const active = orders.find(
     (o) =>
+      o.type === "DELIVERY" &&
       o.assignedDriverId &&
       !["DELIVERED", "CANCELLED", "RETURNED", "DELIVERY_FAILED"].includes(
         o.status,
       ),
   );
-  const next = orders.find((o) => o.type==='DELIVERY'&&o.status === "READY"&&o.deliveryReviewStatus==='APPROVED');
   return (
     <Shell surface="driver">
       <main className="driver-page">
@@ -1586,21 +1588,12 @@ function DriverApp() {
             <p>Yangi topshiriq shu yerda ko‘rinadi.</p>
           </div>
         )}
-        {next && (
-          <section className="next-card">
-            <p className="eyebrow">KEYINGI YETKAZISH</p>
-            <b>
-              {next.number} · {next.address?.district}
-            </b>
-            <span>{money(next.total)}</span>
-          </section>
-        )}
       </main>
     </Shell>
   );
 }
 function DriverDelivery({ order }: { order: Order }) {
-  const { transition, acceptAssignment, reportIssue, publicConfig } = useApp();
+  const { transition, acceptAssignment, reportIssue, publicConfig, transitionPending } = useApp();
   const [issueOpen, setIssueOpen] = useState(false);
   const [issue, setIssue] = useState("");
   const next: Partial<Record<OrderStatus, OrderStatus>> = {
@@ -1695,6 +1688,7 @@ function DriverDelivery({ order }: { order: Order }) {
           <button
             className="button primary wide big"
             data-testid="driver-primary-action"
+            disabled={transitionPending(order.id)}
             onClick={() => void acceptAssignment(order.id)}
           >
             Topshiriqni qabul qilish
@@ -1704,6 +1698,7 @@ function DriverDelivery({ order }: { order: Order }) {
             <button
               className="button primary wide big"
               data-testid="driver-primary-action"
+              disabled={transitionPending(order.id)}
               onClick={() => void transition(order.id, target, "DRIVER")}
             >
               {labels[order.status]}

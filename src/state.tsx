@@ -338,7 +338,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!order || !driver) throw new Error("Order or driver not found");
       await store.assign(order, driver);
     }),
-    acceptAssignment: async (orderId) => runOperation(() => store.acceptAssignment(orderId)),
+    acceptAssignment: (orderId) => withOrderLock(orderId, () => store.acceptAssignment(orderId)),
     setEstimate: async (orderId, minutes) => runOperation(() => store.setEstimate(orderId, minutes)),
     reviewDelivery: (orderId, approved, reason) => withOrderLock(orderId, () => store.reviewDelivery(orderId, approved, reason)),
     requestClarification: (orderId, reason) => withOrderLock(orderId, () => store.requestClarification(orderId, reason)),
