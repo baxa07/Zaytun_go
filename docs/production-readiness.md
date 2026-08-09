@@ -36,6 +36,21 @@ The owner creates the production project manually and records its project refere
 
 Rollback is forward-only: restore from the pre-change backup for a severe data problem, or add a reviewed corrective migration. Never edit already-applied migration history and never use `db reset` on production.
 
+### Hosted default-ACL exposure — read before writing any new table or function
+
+Every hosted project (production, and recovery since it's restored from a production backup) carries broad default-privilege (`ALTER DEFAULT PRIVILEGES`) rules that are **not set by any migration** — confirmed by a full-history `git log -S"ALTER DEFAULT PRIVILEGES" --all` search across every branch, which finds no such statement ever committed. They exist only as an out-of-band configuration on the hosted project (set once, directly, outside version control) and auto-grant broad privileges — full `INSERT`/`SELECT`/`UPDATE`/`DELETE` on every new **table**, `EXECUTE` on every new **function**, and `SELECT`/`UPDATE`/`USAGE` on every new **sequence** — to `anon`, `authenticated`, and `service_role`, for every object subsequently created by the `postgres` role (the role migrations run as).
+
+Inspect it directly (read-only) with:
+
+```sql
+select defaclrole::regrole, defaclnamespace::regnamespace, defaclobjtype, defaclacl
+from pg_default_acl where defaclnamespace = 'public'::regnamespace;
+```
+
+**Recovery reproduces this exactly** (confirmed identical `postgres`-owned rows, since recovery is restored from a real production backup, which carries this database-level state). **Local `supabase start`/`db reset` does not** (local's `postgres`-owned defaults are weaker on tables/sequences and entirely absent for functions, since a from-scratch migration replay never sets it). This means local testing — however thorough — is not evidence that a new table or function is actually locked down; only recovery or production are.
+
+**Rule for every new table or function**: explicitly `revoke all/execute ... from public, anon, authenticated, service_role` immediately after creation, then selectively `grant` back only what's intended. `revoke ... from public` alone is insufficient — it only revokes the implicit `PUBLIC` pseudo-role grant, not the explicit named-role grants this default-ACL rule creates (this exact gap caused a real incident: `calculate_delivery_quote_internal`, fixed in `20260809160000_restrict_internal_delivery_quote_execute.sql`). Never infer an object is safe from local behavior alone — verify against recovery (or, for a read-only privilege check, directly against production) before trusting a new grant.
+
 ## Development seeds and staff bootstrap
 
 `supabase/seed.sql` is local development data. It contains predictable test identities, mock orders and placeholder customer/location data. Do not run it against production and do not reuse its passwords or email addresses.
