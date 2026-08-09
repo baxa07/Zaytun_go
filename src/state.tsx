@@ -25,6 +25,7 @@ import type {
   RestaurantConfig,
 } from "./domain";
 import { supabase, supabaseConfigured } from "./supabase";
+import { normalizeUzbekPhone } from "./phone";
 
 export type AppRole = "RESTAURANT" | "DISPATCHER" | "DRIVER";
 export type OperationalSurface = "restaurant" | "driver";
@@ -66,7 +67,7 @@ type State = {
   authError: string;
   refresh: () => Promise<void>;
   loadTrackedOrder: (id: string) => Promise<Order | undefined>;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   addToCart: (item: CartItem) => void;
   updateQuantity: (id: string, delta: number) => void;
@@ -300,10 +301,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     authError,
     refresh,
     loadTrackedOrder,
-    signIn: async (email, password) => {
+    signIn: async (identifier, password) => {
       if (!supabase) return;
       setAuthError("");
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const trimmed = identifier.trim();
+      if (trimmed.includes("@")) {
+        const { error } = await supabase.auth.signInWithPassword({ email: trimmed, password });
+        if (error) throw new Error(error.message);
+        return;
+      }
+      const normalizedPhone = normalizeUzbekPhone(trimmed);
+      if (!normalizedPhone) {
+        throw new Error("Email yoki telefon raqamini to'g'ri kiriting.");
+      }
+      const { error } = await supabase.auth.signInWithPassword({
+        phone: normalizedPhone,
+        password,
+      });
       if (error) throw new Error(error.message);
     },
     signOut: async () => {

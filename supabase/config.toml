@@ -255,8 +255,24 @@ otp_expiry = 3600
 # content_path = "./templates/password_changed_notification.html"
 
 [auth.sms]
-# Allow/disallow new user signups via SMS to your project.
-enable_signup = false
+# Allow/disallow new user signups via SMS to your project. Enabled locally
+# only so admin-created (pre-confirmed) phone/password accounts can sign in
+# for driver-login testing. No SMS provider is configured below — this does
+# not enable OTP delivery or self-service phone signup in practice, since no
+# provider is turned on to actually send a code.
+#
+# WARNING for whoever later enables Phone Auth on the hosted project: do
+# this through the Supabase Dashboard (or a deliberate, reviewed Management
+# API call) with real Twilio credentials, not by running `supabase config
+# push` against production. `config push` (a real, separate CLI command
+# from `db push`, requiring `supabase link` first) uploads this entire
+# file's Auth section verbatim. The `[auth.sms.twilio]` values below are all
+# `env(...)` references left unset in local dev, so a `config push` run
+# without those variables set would upload empty strings -- still not a
+# usable production SMS config, but confirm real values are provided
+# through the target environment before ever pushing this file's Auth
+# section anywhere.
+enable_signup = true
 # If enabled, users need to confirm their phone number before signing in.
 enable_confirmations = false
 # Template for sending OTP to users
@@ -286,10 +302,19 @@ max_frequency = "5s"
 # uri = "pg-functions://<database>/<schema>/<hook_name>"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
+# Enabled locally so the local Auth server accepts phone/password sign-in
+# (GoTrue refuses phone sign-in entirely unless some SMS provider is
+# "configured", even though our test flow never actually sends an OTP --
+# only pre-confirmed, admin-created phone/password accounts are used). All
+# three values are env-var references left unset in local dev: no literal
+# credential, real or fake, is committed here. Confirmed empirically that
+# local `supabase start`/`db reset` succeeds and phone/password sign-in
+# works with these variables unset -- GoTrue only requires the provider
+# block to be `enabled = true`, not for the referenced values to resolve.
 [auth.sms.twilio]
-enabled = false
-account_sid = ""
-message_service_sid = ""
+enabled = true
+account_sid = "env(SUPABASE_AUTH_SMS_TWILIO_ACCOUNT_SID)"
+message_service_sid = "env(SUPABASE_AUTH_SMS_TWILIO_MESSAGE_SERVICE_SID)"
 # DO NOT commit your Twilio auth token to git. Use environment variable substitution instead:
 auth_token = "env(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN)"
 

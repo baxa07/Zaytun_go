@@ -1758,7 +1758,7 @@ function DriverDelivery({ order }: { order: Order }) {
 }
 function AuthGate({ children, surface }: { children: React.ReactNode; surface: "restaurant" | "driver" }) {
   const { authReady, session, role, authError, signIn, signOut } = useApp();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const permitted = surface === "driver" ? role === "DRIVER" : role === "RESTAURANT" || role === "DISPATCHER";
@@ -1781,13 +1781,13 @@ function AuthGate({ children, surface }: { children: React.ReactNode; surface: "
               e.preventDefault();
               setError("");
               try {
-                await signIn(email, password);
+                await signIn(identifier, password);
               } catch (failure) {
                 setError(failure instanceof Error ? failure.message : "Kirish amalga oshmadi");
               }
             }}
           >
-            <Field label="Email" value={email} onChange={setEmail} />
+            <Field label="Telefon yoki email" value={identifier} onChange={setIdentifier} />
             <Field label="Parol" value={password} onChange={setPassword} />
             {(error || authError) && <p className="error" role="alert">{error || authError}</p>}
             <button className="button primary wide">Kirish</button>
