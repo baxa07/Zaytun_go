@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 const localPassword = "zaytun-local-2026";
 
-async function signIn(page: Page, email: string) {
-  await page.getByLabel("Email").fill(email);
+async function signIn(page: Page, identifier: string) {
+  await page.getByLabel("Telefon yoki email").fill(identifier);
   await page.getByLabel("Parol").fill(localPassword);
   await page.getByRole("button", { name: "Kirish" }).click();
 }
@@ -106,3 +106,24 @@ test('local Supabase pickup card lifecycle is restaurant-only',async({page})=>{
   await expect(page.locator('.timeline>div')).toHaveCount(5)
   await expect(page.locator('.timeline')).not.toContainText('Haydovchi')
 })
+
+test("driver signs in with a phone number and is gated correctly across surfaces", async ({ page }) => {
+  await page.goto("/driver");
+  await expect(page.getByRole("heading", { name: "Kirish" })).toBeVisible();
+  await signIn(page, "998900000099");
+  await expect(page.getByTestId("driver-no-active")).toBeVisible();
+  await page.getByRole("button", { name: "Chiqish" }).click();
+
+  await page.goto("/driver");
+  await signIn(page, "90 000 00 99");
+  await expect(page.getByTestId("driver-no-active")).toBeVisible();
+
+  await page.goto("/restaurant");
+  await expect(page.getByRole("heading", { name: "Ruxsat yo‘q" })).toBeVisible();
+  await page.getByRole("button", { name: "Boshqa hisob bilan kirish" }).click();
+
+  await signIn(page, "restaurant@zaytun.local");
+  await expect(page.getByRole("button", { name: "Chiqish" })).toBeVisible();
+  await page.goto("/driver");
+  await expect(page.getByRole("heading", { name: "Ruxsat yo‘q" })).toBeVisible();
+});

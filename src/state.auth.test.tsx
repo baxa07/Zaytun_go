@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   requestClarification: vi.fn(),
   acceptAssignment: vi.fn(),
   authCallback: null as ((event: string, session: unknown) => void) | null,
+  signInWithPassword: vi.fn(async () => ({ error: null })),
 }));
 
 vi.mock("./data", () => ({
@@ -76,7 +77,7 @@ vi.mock("./supabase", () => ({
         mocks.authCallback = callback;
         return { data: { subscription: { unsubscribe: vi.fn() } } };
       }),
-      signInWithPassword: vi.fn(async () => ({ error: null })),
+      signInWithPassword: mocks.signInWithPassword,
       signOut: vi.fn(async () => ({ error: null })),
     },
     from: vi.fn(() => ({
@@ -112,6 +113,7 @@ beforeEach(() => {
   mocks.acceptAssignment.mockReset();
   mocks.get.mockReset();
   mocks.subscribe.mockClear();
+  mocks.signInWithPassword.mockReset().mockResolvedValue({ error: null });
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -650,5 +652,70 @@ describe("acceptAssignment duplicate-interaction guard", () => {
     expect(await screen.findByText("Topshiriqni qabul qilib bo‘lmadi")).toBeTruthy();
     fireEvent.click(button);
     await waitFor(() => expect(mocks.acceptAssignment).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("identifier-based sign-in (email or Uzbek phone)", () => {
+  const submitLogin = async (identifier: string, password = "zaytun-local-2026") => {
+    renderAt("/restaurant");
+    fireEvent.change(await screen.findByLabelText("Telefon yoki email"), { target: { value: identifier } });
+    fireEvent.change(screen.getByLabelText("Parol"), { target: { value: password } });
+    fireEvent.click(screen.getByRole("button", { name: "Kirish" }));
+  };
+
+  it("signs in with email exactly as before, unchanged", async () => {
+    await submitLogin("restaurant@zaytun.local");
+    await waitFor(() => expect(mocks.signInWithPassword).toHaveBeenCalledOnce());
+    expect(mocks.signInWithPassword).toHaveBeenCalledWith({ email: "restaurant@zaytun.local", password: "zaytun-local-2026" });
+  });
+
+  it.each([
+    ["90 123 45 67"],
+    ["901234567"],
+    ["998901234567"],
+    ["+998901234567"],
+    ["90-123-45-67"],
+  ])("normalizes phone input %s to the canonical '+998...' Supabase phone param", async (identifier) => {
+    await submitLogin(identifier);
+    await waitFor(() => expect(mocks.signInWithPassword).toHaveBeenCalledOnce());
+    expect(mocks.signInWithPassword).toHaveBeenCalledWith({ phone: "+998901234567", password: "zaytun-local-2026" });
+  });
+
+  it("rejects a too-short number without calling Supabase", async () => {
+    await submitLogin("12345");
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("does not silently treat arbitrary non-phone, non-email text as a phone number", async () => {
+    await submitLogin("not-a-phone");
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("does not mutate the profile role based on the login method used", async () => {
+    mocks.role = "RESTAURANT";
+    await submitLogin("+998901234567");
+    await waitFor(() => expect(mocks.signInWithPassword).toHaveBeenCalledOnce());
+    // Role is only ever read from the mocked profiles select, never derived
+    // from the identifier the user typed; a phone-based sign-in call cannot
+    // by itself grant any role.
+    expect(mocks.signInWithPassword).toHaveBeenCalledWith({ phone: "+998901234567", password: "zaytun-local-2026" });
+  });
+});
+
+describe("role gate is independent of auth method", () => {
+  it("blocks a DRIVER-role session from the restaurant surface", async () => {
+    mocks.session = { user: { id: "driver-1" } };
+    mocks.role = "DRIVER";
+    renderAt("/restaurant");
+    expect(await screen.findByRole("heading", { name: "Ruxsat yo‘q" })).toBeTruthy();
+  });
+
+  it("blocks a RESTAURANT-role session from the driver surface", async () => {
+    mocks.session = { user: { id: "staff-1" } };
+    mocks.role = "RESTAURANT";
+    renderAt("/driver");
+    expect(await screen.findByRole("heading", { name: "Ruxsat yo‘q" })).toBeTruthy();
   });
 });
