@@ -117,6 +117,32 @@ Customer-facing recovery text must not include raw database errors or payloads. 
 
 For the pilot, use Supabase project logs, hosting access/build logs, browser error reports collected by staff, and a manual incident log with time/order number/symptom/resolution. Agree on an on-call owner, response channel and retention/privacy policy. A paid monitoring vendor requires separate approval.
 
+## Customer phone-OTP SMS transport (Eskiz)
+
+**Not live.** Phone Auth remains disabled on production; this section documents the transport design for when it is eventually enabled, and the open items that gate that.
+
+- **Provider decision**: Eskiz.uz is the primary SMS provider (Uzbekistan-native, per-SMS domestic pricing). Twilio remains a documented, unconfigured fallback option only — no Twilio credentials exist on this project.
+- **Architecture**: Supabase Auth remains the sole generator and verifier of the OTP itself — `signInWithOtp`/`verifyOtp` on the frontend are unchanged. A Supabase [Send SMS Hook](https://supabase.com/docs/guides/auth/auth-hooks/send-sms-hook) (`[auth.hook.send_sms]`) routes the SMS *text delivery only* through a dedicated Edge Function (`supabase/functions/send-sms-hook`), which calls Eskiz's `/api/message/sms/send`. Eskiz never sees or generates an OTP value on its own — it only relays the six-digit code Supabase already produced.
+- **Required server-side secrets** (Edge Function env, never the browser, never committed — see `supabase/functions/.env.example` for names only): `SEND_SMS_HOOK_SECRETS` (Supabase Standard Webhooks signing secret), `ESKIZ_EMAIL`, `ESKIZ_PASSWORD`, `ESKIZ_SENDER`. The function fails closed (500, no SMS attempt) if any is missing — the production sender is never silently defaulted.
+- **Sender/alpha-name**: ZAYTUN's own alpha-name approval has been submitted to Eskiz and is pending (Eskiz's public docs cite 1–2 months for operator approval). Whether Eskiz's shared default/test sender (`"4546"`, seen consistently across Eskiz's own API examples) is acceptable for *production* OTP traffic — as opposed to the free testing allotment — is **still awaiting Eskiz support's confirmation**. Do not set `ESKIZ_SENDER=4546` in production until that's confirmed.
+- **Credential rotation — blocker before any real integration**: an Eskiz API secret was exposed in a screenshot during this project's planning. That credential must be treated as compromised and is never to be used. Before Phone Auth is ever enabled with real Eskiz credentials, rotate the Eskiz account credential and place only the replacement directly into server-side secrets (Supabase Edge Function secrets) — never into source, chat, or a screenshot.
+- **Hook URI is never hard-coded**: `[auth.hook.send_sms].uri` in `supabase/config.toml` reads `env(SEND_SMS_HOOK_URI)` — it is not a literal URL in tracked source. Locally this resolves to `http://host.docker.internal:54321/functions/v1/send-sms-hook`; if the variable is unset, `supabase start`/`stop`/`db reset` fail loudly with a config-validation error rather than silently defaulting to any URL (confirmed empirically — there is no automatic production or `4546` fallback of any kind).
+
+  **`supabase config push` safety gate — do not skip any item.** `config push` applies `supabase/config.toml` verbatim to whichever project the CLI is currently linked to, including the SMS-hook wiring. Never run it for the SMS-hook rollout unless every one of the following has been explicitly, freshly verified immediately beforehand, in the same sitting:
+  1. The linked project ref (`supabase/.temp/project-ref` or `supabase projects list` / `supabase status`) is the intended target — not recovery, not a stale link from a previous task.
+  2. `SEND_SMS_HOOK_URI` is set to the exact hosted Edge Function URL for *that* project (not a value copied from another project or from this doc).
+  3. That URL is HTTPS.
+  4. That URL is not `localhost`, `127.0.0.1`, or `host.docker.internal` — any of those in a value about to be pushed to a hosted project means the wrong value is loaded.
+  5. `SEND_SMS_HOOK_SECRETS` is the *current* hook signing secret for that project (rotate it and this together if either is ever suspected exposed — a stale secret here means Standard Webhooks verification will reject GoTrue's own real requests).
+  6. The `send-sms-hook` Edge Function is already deployed to that project (`supabase functions deploy send-sms-hook` there first — `config push` wires the hook to a URL, it does not deploy the function behind it).
+  7. `ESKIZ_EMAIL`/`ESKIZ_PASSWORD`/`ESKIZ_SENDER` already exist as that project's Edge Function secrets (`supabase secrets set`, scoped to that project only).
+  8. The real sender choice (ZAYTUN alpha-name, or an Eskiz-confirmed interim sender — never an unconfirmed guess) has been approved for that value.
+
+  Production configuration is its own separate, explicit release gate — never a side effect of a local config-plumbing or dependency change on this branch.
+- **Local testing**: `[auth.sms.test_otp]` (fixed local OTP fixtures) takes priority over the hook — confirmed empirically (Supabase-backed Playwright suite passes with the hook enabled locally, and the hook's own request log shows zero invocations for `test_otp`-covered numbers across the full suite run). Real Eskiz is never called by local or CI tests; a fake/injectable provider is used for the Edge Function's own Deno test suite (`supabase/functions/send-sms-hook/*.test.ts`).
+- **CAPTCHA**: not yet enabled (see the Phase 3A SMS-abuse-protection findings). Ordering matters — CAPTCHA (`signInWithOtp`'s `captchaToken` option) is verified by Supabase Auth *before* it invokes the Send SMS Hook, so the two are independent and compatible; CAPTCHA should still be enabled before any real customer OTP traffic to control SMS-pumping risk.
+- **Do not enable** Phone Auth, configure real Eskiz secrets, or flip `customer_auth_required` until: the alpha-name (or a confirmed-acceptable interim sender) is settled with Eskiz, the exposed credential is rotated, and CAPTCHA + rate limits have been deliberately reviewed (not left at Supabase's generic defaults).
+
 ## Real delivery pilot checklist
 
 Verified: exact entrance pin `40.087274, 65.402551` and default zoom `17`. Owner still verifies and signs off: written address; service radius; minimum subtotal; base fee; free threshold; hours; phone; payment methods; expected preparation time; expected delivery time; named admin/dispatcher/drivers; customer privacy handling; incident owner.
