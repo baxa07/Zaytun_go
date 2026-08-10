@@ -318,6 +318,30 @@ max_frequency = "5s"
 # enabled = true
 # uri = "pg-functions://<database>/<schema>/<hook_name>"
 
+# Send SMS Hook: routes OTP delivery through supabase/functions/send-sms-hook
+# (Eskiz.uz transport) instead of a native GoTrue SMS provider. Supabase
+# Auth remains the sole OTP generator/verifier -- this hook only decides HOW
+# the OTP text reaches the phone. [auth.sms.test_otp] above takes priority
+# for its fixture numbers: per Supabase's own documented test_otp behavior
+# ("the Auth service skips SMS delivery" for a matched number), GoTrue
+# should never invoke this hook at all for those numbers -- verified
+# empirically by the customer-otp Playwright suite continuing to pass with
+# this hook enabled and pointed at an intentionally-unreachable local
+# ESKIZ_BASE_URL (see supabase/functions/.env).
+[auth.hook.send_sms]
+enabled = true
+uri = "env(SEND_SMS_HOOK_URI)"
+secrets = "env(SEND_SMS_HOOK_SECRETS)"
+
+# GoTrue invokes this function itself, signing the request with Standard
+# Webhooks headers (verified inside the function against
+# SEND_SMS_HOOK_SECRETS) rather than a Supabase-issued end-user JWT --
+# platform-level JWT verification must stay off for this function or
+# GoTrue's own hook calls would be rejected before ever reaching our code.
+[functions.send-sms-hook]
+enabled = true
+verify_jwt = false
+
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 # Enabled locally so the local Auth server accepts phone/password sign-in
 # (GoTrue refuses phone sign-in entirely unless some SMS provider is
