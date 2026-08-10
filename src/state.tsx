@@ -71,6 +71,9 @@ export const mapCustomerAuthError = (error: { code?: string; status?: number } |
   if (code === "sms_send_failed") {
     return "SMS yuborilmadi. Birozdan keyin qayta urinib ko‘ring.";
   }
+  if (code === "captcha_failed") {
+    return "Robot emasligingizni tasdiqlab bo‘lmadi. Sahifani yangilab, qaytadan urinib ko‘ring.";
+  }
   if (code === "otp_expired") {
     return context === "verify"
       ? "Kod noto‘g‘ri yoki muddati tugagan. Qaytadan yuboring."
@@ -129,7 +132,7 @@ type State = {
   // (staff email/password, driver phone/password) -- no password involved.
   // sendCustomerOtp returns the canonical +998... phone so the caller can
   // reuse the exact value for verifyCustomerOtp without re-normalizing.
-  sendCustomerOtp: (phone: string) => Promise<string>;
+  sendCustomerOtp: (phone: string, captchaToken?: string) => Promise<string>;
   verifyCustomerOtp: (phone: string, code: string) => Promise<void>;
   addToCart: (item: CartItem) => void;
   updateQuantity: (id: string, delta: number) => void;
@@ -398,11 +401,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDrivers([]);
       setLoaded(false);
     },
-    sendCustomerOtp: async (phone) => {
+    sendCustomerOtp: async (phone, captchaToken) => {
       if (!supabase) throw new Error("Xizmat sozlanmagan.");
       const normalized = normalizeUzbekPhone(phone);
       if (!normalized) throw new Error("Telefon raqamini to'g'ri kiriting.");
-      const { error } = await supabase.auth.signInWithOtp({ phone: normalized });
+      // captchaToken is omitted entirely (not sent as undefined/empty) when
+      // the caller has none, so this stays a no-op when CAPTCHA isn't
+      // configured/enabled -- matches today's production behavior exactly.
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: normalized,
+        ...(captchaToken ? { options: { captchaToken } } : {}),
+      });
       if (error) throw new Error(mapCustomerAuthError(error, "send"));
       return normalized;
     },

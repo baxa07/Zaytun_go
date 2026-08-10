@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { AppProvider, useApp, isVerifiedCustomerSession, type AppRole } from "./state";
+import { AppProvider, useApp, isVerifiedCustomerSession, mapCustomerAuthError, type AppRole } from "./state";
 import type { Order, OrderStatus, RestaurantConfig } from "./domain";
 
 const publicConfig: RestaurantConfig = {
@@ -42,7 +42,7 @@ const mocks = vi.hoisted(() => ({
   acceptAssignment: vi.fn(),
   authCallback: null as ((event: string, session: unknown) => void) | null,
   signInWithPassword: vi.fn(async () => ({ error: null })),
-  signInWithOtp: vi.fn<() => Promise<{ error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ error: null })),
+  signInWithOtp: vi.fn<(args: { phone: string; options?: { captchaToken?: string } }) => Promise<{ error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ error: null })),
   verifyOtp: vi.fn<() => Promise<{ data: { session: { user: { id: string; phone?: string; phone_confirmed_at?: string } } | null }; error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ data: { session: { user: { id: "customer-otp-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } } }, error: null })),
   ensureCurrentCustomer: vi.fn(async () => undefined),
   signOut: vi.fn(async () => ({ error: null })),
@@ -774,6 +774,22 @@ describe("isVerifiedCustomerSession (frontend customer-session predicate)", () =
   });
 });
 
+describe("mapCustomerAuthError (clean Uzbek messages for GoTrue's stable error codes)", () => {
+  it("maps captcha_failed to a clean Uzbek message, not a raw Supabase dump", () => {
+    const message = mapCustomerAuthError({ code: "captcha_failed" }, "send");
+    expect(message).toBe("Robot emasligingizni tasdiqlab bo‘lmadi. Sahifani yangilab, qaytadan urinib ko‘ring.");
+  });
+
+  it("maps rate-limit codes to the same throttling message regardless of send/verify context", () => {
+    expect(mapCustomerAuthError({ code: "over_sms_send_rate_limit" }, "send")).toContain("Juda ko‘p urinish");
+    expect(mapCustomerAuthError({ status: 429 }, "verify")).toContain("Juda ko‘p urinish");
+  });
+
+  it("falls back to a generic service message for an unrecognized code", () => {
+    expect(mapCustomerAuthError({ code: "some_new_unmapped_code" }, "send")).toContain("Xizmat bilan bog‘lanib bo‘lmadi");
+  });
+});
+
 describe("customer phone-OTP session (no profiles row required)", () => {
   it("resolves a role-less session with a confirmed Uzbek phone to isCustomerAuthenticated=true without a staff-role error", async () => {
     mocks.session = { user: { id: "customer-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } };
@@ -821,6 +837,7 @@ function CustomerOtpProbe() {
   return (
     <div>
       <button onClick={() => void sendCustomerOtp("901234567").catch(() => {})}>send</button>
+      <button onClick={() => void sendCustomerOtp("901234567", "fake-turnstile-token").catch(() => {})}>send-with-captcha</button>
       <button onClick={() => void verifyCustomerOtp("+998901234567", "111111").catch(() => {})}>verify</button>
     </div>
   );
@@ -832,6 +849,25 @@ describe("customer phone-OTP actions (sendCustomerOtp / verifyCustomerOtp)", () 
     fireEvent.click(await screen.findByText("send"));
     await waitFor(() => expect(mocks.signInWithOtp).toHaveBeenCalledWith({ phone: "+998901234567" }));
     expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("forwards a captchaToken as options.captchaToken when the caller provides one", async () => {
+    renderAt("/checkout", <CustomerOtpProbe />);
+    fireEvent.click(await screen.findByText("send-with-captcha"));
+    await waitFor(() =>
+      expect(mocks.signInWithOtp).toHaveBeenCalledWith({
+        phone: "+998901234567",
+        options: { captchaToken: "fake-turnstile-token" },
+      }),
+    );
+  });
+
+  it("omits options entirely (not options:{captchaToken:undefined}) when no token is provided", async () => {
+    renderAt("/checkout", <CustomerOtpProbe />);
+    fireEvent.click(await screen.findByText("send"));
+    await waitFor(() => expect(mocks.signInWithOtp).toHaveBeenCalledOnce());
+    const call = mocks.signInWithOtp.mock.calls[0][0];
+    expect(Object.prototype.hasOwnProperty.call(call, "options")).toBe(false);
   });
 
   it("verifies via verifyOtp with type sms, then resolves the canonical customer record", async () => {

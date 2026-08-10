@@ -31,6 +31,7 @@ import { normalizeUzbekPhone } from "./phone";
 import { supabaseConfigured } from "./supabase";
 import { MapPicker } from "./components/MapPicker";
 import { ProductImage } from "./components/ProductImage";
+import { TurnstileWidget } from "./components/TurnstileWidget";
 import {
   addressConfidence,
   applySuggestion,
@@ -482,6 +483,20 @@ function Checkout() {
   const [otpCode, setOtpCode] = useState("");
   const [otpError, setOtpError] = useState("");
   const [otpBusy, setOtpBusy] = useState(false);
+  // CAPTCHA gates only the SEND (signInWithOtp) call, never verifyOtp.
+  // Turnstile tokens are single-use, so otpCaptchaResetKey is bumped after
+  // every send attempt (success or failure) to force TurnstileWidget to
+  // remount and issue a fresh token for the next attempt -- simpler than
+  // plumbing an imperative reset() through a ref for this one use.
+  const [otpCaptchaToken, setOtpCaptchaToken] = useState<string | null>(null);
+  const [otpCaptchaResetKey, setOtpCaptchaResetKey] = useState(0);
+  // No fallback/default sitekey -- an unconfigured CAPTCHA disables sending
+  // entirely (see the otp-captcha-unavailable branch below) rather than
+  // silently sending without one. Deliberately unset on production for now
+  // (customer_auth_required stays false there, so this step never renders
+  // in production yet either way); local/CI environments set it to
+  // Cloudflare's public always-pass Turnstile test sitekey.
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
   const pendingOrderRef = useRef<Order | null>(null);
   // submitOrder's identity changes the instant isCustomerAuthenticated flips
   // true (see state.tsx's useMemo deps), but the OTP-verify click handler is
@@ -612,10 +627,12 @@ function Checkout() {
     }
   };
   const handleSendOtp = async () => {
+    if (!otpCaptchaToken) return;
     setOtpError("");
     setOtpBusy(true);
+    const captchaToken = otpCaptchaToken;
     try {
-      const canonical = await sendCustomerOtp(otpPhone);
+      const canonical = await sendCustomerOtp(otpPhone, captchaToken);
       setOtpCanonicalPhone(canonical);
       setOtpCode("");
       setOtpStep("code");
@@ -623,6 +640,11 @@ function Checkout() {
       setOtpError(error instanceof Error ? error.message : "Xatolik yuz berdi");
     } finally {
       setOtpBusy(false);
+      // The token is single-use regardless of outcome -- clear it and force
+      // a fresh widget so the next attempt (initial send or resend) always
+      // has to present a new one, never a stale/already-spent token.
+      setOtpCaptchaToken(null);
+      setOtpCaptchaResetKey((key) => key + 1);
     }
   };
   const handleVerifyOtp = async () => {
@@ -807,6 +829,25 @@ function Checkout() {
           {otpStep && (
             <section className="form-card otp-step" data-testid="customer-otp-step">
               <h2>Telefon raqamingizni tasdiqlang</h2>
+              {turnstileSiteKey ? (
+                <TurnstileWidget
+                  key={otpCaptchaResetKey}
+                  siteKey={turnstileSiteKey}
+                  onVerify={setOtpCaptchaToken}
+                  onExpire={() => {
+                    setOtpCaptchaToken(null);
+                    setOtpError("Tasdiqlash muddati tugadi. Qaytadan urinib ko‘ring.");
+                  }}
+                  onError={() => {
+                    setOtpCaptchaToken(null);
+                    setOtpError("Xavfsizlik tekshiruvini yuklab bo‘lmadi. Internetni tekshiring.");
+                  }}
+                />
+              ) : (
+                <p className="error" role="alert" data-testid="otp-captcha-unavailable">
+                  Xavfsizlik tekshiruvi sozlanmagan. Birozdan keyin qayta urinib ko‘ring.
+                </p>
+              )}
               {otpStep === "phone" && (
                 <>
                   <Field
@@ -819,7 +860,7 @@ function Checkout() {
                     type="button"
                     className="button primary wide"
                     data-testid="otp-send"
-                    disabled={otpBusy}
+                    disabled={otpBusy || !otpCaptchaToken}
                     onClick={handleSendOtp}
                   >
                     {otpBusy ? "Yuborilmoqda…" : "SMS kod yuborish"}
@@ -848,7 +889,7 @@ function Checkout() {
                     type="button"
                     className="button text"
                     data-testid="otp-resend"
-                    disabled={otpBusy}
+                    disabled={otpBusy || !otpCaptchaToken}
                     onClick={handleSendOtp}
                   >
                     Kodni qayta yuborish

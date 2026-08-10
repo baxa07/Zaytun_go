@@ -38,6 +38,11 @@ const webServerEnv = {
   VITE_DEFAULT_MAP_LAT: "40.087274",
   VITE_DEFAULT_MAP_LNG: "65.402551",
   VITE_DEFAULT_MAP_ZOOM: "17",
+  // Cloudflare's official public always-pass INVISIBLE Turnstile test
+  // sitekey -- not a secret, safe on any domain including localhost. Lets
+  // this suite exercise the real customer-OTP-send CAPTCHA gate without any
+  // human interaction or real Cloudflare account.
+  VITE_TURNSTILE_SITE_KEY: "1x00000000000000000000BB",
   // Set last, after the ...process.env spread, so nothing above (including a
   // real .env.production.local picked up by `vite build`) can override them.
   VITE_SUPABASE_URL: LOCAL_SUPABASE_URL,
