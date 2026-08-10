@@ -270,7 +270,18 @@ export class SupabaseStore {
     return tracked.data ? mapOrder(tracked.data as Row) : undefined;
   }
   async save(order: Order) {
-    const { data, error } = await supabase!.rpc("create_public_order", { p_order: toPublicOrderPayload(order) });
+    return this.submitOrderVia("create_public_order", order);
+  }
+  // Authenticated-customer path: identical shape/response handling to the
+  // anonymous path, only the RPC differs. The server derives customer_id
+  // and the verified phone itself (create_customer_order never trusts
+  // anything from this payload for identity) -- this method exists only
+  // to route to that RPC, not to add any client-side trust.
+  async saveAsCustomer(order: Order) {
+    return this.submitOrderVia("create_customer_order", order);
+  }
+  private async submitOrderVia(rpcName: "create_public_order" | "create_customer_order", order: Order) {
+    const { data, error } = await supabase!.rpc(rpcName, { p_order: toPublicOrderPayload(order) });
     fail(error);
     const tokens = JSON.parse(localStorage.getItem("zgo.tracking") || "{}");
     tokens[data.id] = data.trackingToken;
@@ -285,6 +296,16 @@ export class SupabaseStore {
       total: data.total,
       deliveryReviewStatus: order.type === "DELIVERY" ? "REVIEW_REQUIRED" : "NOT_REQUIRED",
     } satisfies Order;
+  }
+  // Resolves (creating or linking as needed) the canonical customers row
+  // for the current Supabase Auth session, entirely server-side -- the
+  // caller never supplies a customer id or phone. Called once right after
+  // a successful OTP verification, before the caller is told sign-in
+  // succeeded, so a customer_auth_required=true checkout can proceed
+  // immediately afterward.
+  async ensureCurrentCustomer(): Promise<void> {
+    const { error } = await supabase!.rpc("ensure_current_customer");
+    fail(error);
   }
   async listDrivers() {
     const { data, error } = await supabase!

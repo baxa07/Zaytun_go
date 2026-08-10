@@ -11,7 +11,7 @@ import {
 import { useLocation } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { store } from "./data";
-import { addCartLine } from "./domain";
+import { addCartLine, resolveOrderSubmissionMode } from "./domain";
 import type {
   ActorType,
   CartItem,
@@ -42,6 +42,58 @@ export const roleCanAccess = (role: AppRole | null, surface: OperationalSurface)
     ? role === "RESTAURANT" || role === "DISPATCHER"
     : role === "DRIVER";
 
+// A profile-less authenticated Supabase session must NOT automatically
+// count as a valid Zaytun CUSTOMER in frontend state -- only a session that
+// is provably (a) not staff/driver, and (b) backed by a confirmed, genuinely
+// Uzbek mobile phone counts. This is a frontend-correctness predicate, not
+// the security boundary: the backend (create_customer_order,
+// ensure_current_customer) independently re-derives and re-verifies
+// everything from auth.uid()/auth.users itself and never trusts this.
+type SessionPhoneInfo = { user: { phone?: string; phone_confirmed_at?: string } };
+export const isVerifiedCustomerSession = (session: SessionPhoneInfo | null, role: AppRole | null): boolean => {
+  if (!session || role !== null) return false;
+  const { phone, phone_confirmed_at } = session.user;
+  if (!phone || !phone_confirmed_at) return false;
+  return normalizeUzbekPhone(phone) !== null;
+};
+
+// Translates raw Supabase Auth (GoTrue) errors from the customer phone-OTP
+// flow into clean Uzbek messages, keyed on GoTrue's stable error `code`
+// (never on message-string matching, which isn't guaranteed stable across
+// versions). Anything unrecognized falls back to the same generic message
+// used elsewhere in this app for unexpected service failures, rather than
+// ever showing a raw Supabase error dump to a customer.
+export const mapCustomerAuthError = (error: { code?: string; status?: number } | null | undefined, context: "send" | "verify"): string => {
+  const code = error?.code;
+  if (code === "over_sms_send_rate_limit" || code === "over_request_rate_limit" || error?.status === 429) {
+    return "Juda ko‘p urinish. Birozdan keyin qayta urinib ko‘ring.";
+  }
+  if (code === "sms_send_failed") {
+    return "SMS yuborilmadi. Birozdan keyin qayta urinib ko‘ring.";
+  }
+  if (code === "otp_expired") {
+    return context === "verify"
+      ? "Kod noto‘g‘ri yoki muddati tugagan. Qaytadan yuboring."
+      : "Kod muddati tugagan. Qaytadan yuboring.";
+  }
+  if (code === "validation_failed" || code === "phone_provider_disabled") {
+    return "Telefon raqamini to‘g‘ri kiriting.";
+  }
+  return "Xizmat bilan bog‘lanib bo‘lmadi. Internetni tekshirib, qayta urinib ko‘ring.";
+};
+
+// Thrown by submitOrder instead of a plain Error so Checkout can reliably
+// distinguish "you must verify your phone first" (open the inline OTP
+// step, preserving all already-entered checkout state) from any other
+// order-creation failure (show it as a plain error), without string-
+// matching a message.
+export class CustomerAuthRequiredError extends Error {
+  constructor() {
+    super("Buyurtma berish uchun telefon raqamingizni tasdiqlang");
+    this.name = "CustomerAuthRequiredError";
+  }
+}
+
 const terminalStatuses: OrderStatus[] = [
   "DELIVERED",
   "COLLECTED",
@@ -65,10 +117,20 @@ type State = {
   session: Session | null;
   role: AppRole | null;
   authError: string;
+  // True once a session exists AND it's confirmed not to be a staff/driver
+  // session (role===null after authReady). Never conflated with "signed
+  // out" -- that's session===null.
+  isCustomerAuthenticated: boolean;
   refresh: () => Promise<void>;
   loadTrackedOrder: (id: string) => Promise<Order | undefined>;
   signIn: (identifier: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  // Customer-facing phone+OTP auth, deliberately separate from signIn
+  // (staff email/password, driver phone/password) -- no password involved.
+  // sendCustomerOtp returns the canonical +998... phone so the caller can
+  // reuse the exact value for verifyCustomerOtp without re-normalizing.
+  sendCustomerOtp: (phone: string) => Promise<string>;
+  verifyCustomerOtp: (phone: string, code: string) => Promise<void>;
   addToCart: (item: CartItem) => void;
   updateQuantity: (id: string, delta: number) => void;
   clearCart: () => void;
@@ -132,13 +194,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setAuthReady(true);
       return;
     }
+    // maybeSingle(), not single(): a CUSTOMER session (phone OTP) has no
+    // profiles row by design -- that must resolve to role=null quietly,
+    // not throw. single() would treat "zero rows" as a PostgREST error,
+    // incorrectly surfacing a staff-facing "Xodim roli yuklanmadi" error
+    // to every customer who signs in.
     const { data, error } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", nextSession.user.id)
-      .single();
+      .maybeSingle();
     if (error) throw new Error(`Xodim roli yuklanmadi: ${error.message}`);
-    setRole(data.role as AppRole);
+    setRole((data?.role as AppRole | undefined) ?? null);
     setAuthReady(true);
   }, []);
 
@@ -284,6 +351,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return tracked;
   }, []);
 
+  const isCustomerAuthenticated = authReady && isVerifiedCustomerSession(session, role);
+
   const value = useMemo<State>(() => ({
     orders,
     drivers,
@@ -299,6 +368,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     session,
     role,
     authError,
+    isCustomerAuthenticated,
     refresh,
     loadTrackedOrder,
     signIn: async (identifier, password) => {
@@ -328,11 +398,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDrivers([]);
       setLoaded(false);
     },
+    sendCustomerOtp: async (phone) => {
+      if (!supabase) throw new Error("Xizmat sozlanmagan.");
+      const normalized = normalizeUzbekPhone(phone);
+      if (!normalized) throw new Error("Telefon raqamini to'g'ri kiriting.");
+      const { error } = await supabase.auth.signInWithOtp({ phone: normalized });
+      if (error) throw new Error(mapCustomerAuthError(error, "send"));
+      return normalized;
+    },
+    verifyCustomerOtp: async (phone, code) => {
+      if (!supabase) throw new Error("Xizmat sozlanmagan.");
+      const normalized = normalizeUzbekPhone(phone);
+      if (!normalized) throw new Error("Telefon raqamini to'g'ri kiriting.");
+      const trimmedCode = code.trim();
+      if (!trimmedCode) throw new Error("Tasdiqlash kodini kiriting.");
+      const { data, error } = await supabase.auth.verifyOtp({ phone: normalized, token: trimmedCode, type: "sms" });
+      if (error) throw new Error(mapCustomerAuthError(error, "verify"));
+      // verifyOtp already established GoTrue's own client session at this
+      // point regardless of what happens next, so ensure_current_customer
+      // below can use it -- but React-facing auth state (session/role/
+      // isCustomerAuthenticated) is deliberately NOT finalized via
+      // applySession yet. Sanity-check the session GoTrue just handed back
+      // before trusting it at all (defensive: verifyOtp with type "sms"
+      // should always yield a confirmed Uzbek phone, but never assume).
+      if (!data.session || !isVerifiedCustomerSession(data.session, null)) {
+        await supabase.auth.signOut();
+        throw new Error("Telefon raqami tasdiqlanmadi. Qaytadan urinib ko'ring.");
+      }
+      try {
+        // Resolve/link the canonical customer record BEFORE telling the
+        // rest of the app a customer is authenticated. If this fails (e.g.
+        // CUSTOMER_PHONE_CONFLICT, CUSTOMER_PHONE_ALREADY_IN_USE,
+        // PHONE_NOT_VERIFIED), the app must never be left half-signed-in:
+        // a CUSTOMER-looking Supabase session with no valid Zaytun customer
+        // behind it. Tear down the session verifyOtp just established for
+        // THIS attempt so React never sees it -- this only ever signs out
+        // the brand-new session created a moment ago by the verifyOtp call
+        // above, never a pre-existing RESTAURANT/DRIVER session (verifyOtp
+        // already replaced whatever session existed before it was called).
+        await store.ensureCurrentCustomer();
+      } catch (customerError) {
+        await supabase.auth.signOut();
+        throw customerError instanceof Error ? customerError : new Error("Hisobni aniqlab bo'lmadi.");
+      }
+      // Only now finalize customer-facing React state, synchronously rather
+      // than waiting on onAuthStateChange's async event: a caller that
+      // immediately resubmits a checkout right after verification
+      // (customer_auth_required flow) needs isCustomerAuthenticated to
+      // already be true the moment this promise resolves.
+      await applySession(data.session);
+    },
     addToCart: (item) => setCart((current) => addCartLine(current,item,publicConfig?.maximumItemQuantity||50)),
     updateQuantity: (id, delta) => setCart((current) => current.map((entry) => entry.id === id ? { ...entry, quantity: Math.min(entry.quantity + delta,publicConfig?.maximumItemQuantity||50) } : entry).filter((entry) => entry.quantity > 0)),
     clearCart: () => setCart([]),
     submitOrder: async (order) => {
-      const saved = await store.save(order);
+      const mode = resolveOrderSubmissionMode(Boolean(publicConfig?.customerAuthRequired), isCustomerAuthenticated);
+      if (mode === "REQUIRES_CUSTOMER_AUTH") throw new CustomerAuthRequiredError();
+      const saved = mode === "CUSTOMER" ? await store.saveAsCustomer(order) : await store.save(order);
       setOrders((current) => [saved, ...current.filter((entry) => entry.id !== saved.id)]);
       return saved;
     },
@@ -363,7 +485,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
-  }), [authError, authReady, cart, categories, drivers, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, withOrderLock]);
+  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, withOrderLock]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }

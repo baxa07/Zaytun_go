@@ -26,7 +26,8 @@ import {
   type PaymentMethod,
   type RestaurantConfig,
 } from "./domain";
-import { useApp } from "./state";
+import { useApp, CustomerAuthRequiredError } from "./state";
+import { normalizeUzbekPhone } from "./phone";
 import { supabaseConfigured } from "./supabase";
 import { MapPicker } from "./components/MapPicker";
 import { ProductImage } from "./components/ProductImage";
@@ -460,7 +461,7 @@ function DeliveryAddressFields({
   );
 }
 function Checkout() {
-  const { cart, submitOrder, clearCart, publicConfig } = useApp();
+  const { cart, submitOrder, clearCart, publicConfig, session, isCustomerAuthenticated, sendCustomerOtp, verifyCustomerOtp, signOut } = useApp();
   const nav = useNavigate();
   const [type, setType] = useState<"DELIVERY" | "PICKUP">("DELIVERY");
   const [address, setAddress] = useState(blankAddress);
@@ -471,6 +472,41 @@ function Checkout() {
   const [mapSelection, setMapSelection] = useState<MapLocationSelection>(() =>
     initialSelection(configuredMapProvider()),
   );
+  // Inline phone-OTP step: rendered in place (never a route change) so that
+  // submitting a checkout that turns out to require auth never unmounts this
+  // component and never discards address/payment/notes/mapSelection, which
+  // all live only in this component's local state.
+  const [otpStep, setOtpStep] = useState<null | "phone" | "code">(null);
+  const [otpPhone, setOtpPhone] = useState("");
+  const [otpCanonicalPhone, setOtpCanonicalPhone] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [otpBusy, setOtpBusy] = useState(false);
+  const pendingOrderRef = useRef<Order | null>(null);
+  // submitOrder's identity changes the instant isCustomerAuthenticated flips
+  // true (see state.tsx's useMemo deps), but the OTP-verify click handler is
+  // already running by then -- its closure stays pinned to whatever
+  // submitOrder looked like when the click started, so a naive call would
+  // silently resubmit through the still-unauthenticated closure and loop
+  // back into the OTP step. Always read the latest submitOrder through this
+  // ref instead of the destructured value above.
+  const submitOrderRef = useRef(submitOrder);
+  useEffect(() => {
+    submitOrderRef.current = submitOrder;
+  }, [submitOrder]);
+  // The single canonical source for the verified customer's phone: never
+  // assume the client-side session representation is bare digits and
+  // manually prefix '+' -- reuse the same normalizer used everywhere else,
+  // so a representation change between environments can't produce a
+  // malformed value like "++998...". Feeds both the checkout autofill and
+  // the masked display below; only the masking itself is a separate,
+  // display-only concern.
+  const verifiedPhone = session?.user?.phone ? normalizeUzbekPhone(session.user.phone) : null;
+  useEffect(() => {
+    if (isCustomerAuthenticated && verifiedPhone) {
+      setAddress((a) => (a.primaryPhone === verifiedPhone ? a : { ...a, primaryPhone: verifiedPhone }));
+    }
+  }, [isCustomerAuthenticated, verifiedPhone]);
   const allowedPayments=useMemo(()=>publicConfig?paymentMethodsForFulfillment(publicConfig,type):['CASH'] as PaymentMethod[],[publicConfig,type]);
   useEffect(()=>{if(!allowedPayments.includes(payment))setPayment(allowedPayments[0]||'CASH');if(publicConfig?.deliveryEnabled===false)setType('PICKUP')},[allowedPayments,payment,publicConfig]);
   const submittingRef = useRef(false);
@@ -548,15 +584,68 @@ function Checkout() {
       events: [createEvent(id, null, "NEW", "CUSTOMER", "guest")],
       issues: [],
     };
+    await finishSubmit(order);
+  };
+  // Shared by the initial form submit and by the OTP-verified retry, so a
+  // customer_auth_required checkout resumes exactly where it left off
+  // instead of re-running validation or asking the user to press submit
+  // again.
+  const finishSubmit = async (order: Order) => {
     try {
-      const saved = await submitOrder(order);
+      const saved = await submitOrderRef.current(order);
       clearCart();
       nav(`/confirmation/${saved.id}`);
     } catch (error) {
+      if (error instanceof CustomerAuthRequiredError) {
+        pendingOrderRef.current = order;
+        setOtpError("");
+        setOtpPhone(address.primaryPhone || "");
+        setOtpStep("phone");
+        submittingRef.current = false;
+        setSubmitting(false);
+        return;
+      }
       const message = error instanceof Error ? error.message : "Buyurtma yuborilmadi";
       setErrors({ submit: message.includes("|") ? message.split("|").at(-1)! : message });
       submittingRef.current = false;
       setSubmitting(false);
+    }
+  };
+  const handleSendOtp = async () => {
+    setOtpError("");
+    setOtpBusy(true);
+    try {
+      const canonical = await sendCustomerOtp(otpPhone);
+      setOtpCanonicalPhone(canonical);
+      setOtpCode("");
+      setOtpStep("code");
+    } catch (error) {
+      setOtpError(error instanceof Error ? error.message : "Xatolik yuz berdi");
+    } finally {
+      setOtpBusy(false);
+    }
+  };
+  const handleVerifyOtp = async () => {
+    setOtpError("");
+    setOtpBusy(true);
+    try {
+      await verifyCustomerOtp(otpCanonicalPhone, otpCode);
+      setOtpStep(null);
+      setOtpCode("");
+      const order = pendingOrderRef.current;
+      pendingOrderRef.current = null;
+      if (order) {
+        submittingRef.current = true;
+        setSubmitting(true);
+        await finishSubmit({
+          ...order,
+          customer: { ...order.customer, primaryPhone: otpCanonicalPhone },
+        });
+      }
+    } catch (error) {
+      setOtpError(error instanceof Error ? error.message : "Xatolik yuz berdi");
+    } finally {
+      setOtpBusy(false);
     }
   };
   return (
@@ -598,6 +687,19 @@ function Checkout() {
           </section>
           <section className="form-card">
             <h2>Aloqa</h2>
+            {isCustomerAuthenticated && (
+              <p className="customer-session" data-testid="customer-session-badge">
+                {formatMaskedPhone(verifiedPhone)}{" "}
+                <button
+                  type="button"
+                  className="button text"
+                  data-testid="customer-sign-out"
+                  onClick={() => signOut()}
+                >
+                  Chiqish
+                </button>
+              </p>
+            )}
             <Field
               label="Ism *"
               value={address.customerName}
@@ -606,10 +708,11 @@ function Checkout() {
             />
             <Field
               label="Telefon *"
-              value={address.primaryPhone}
+              value={isCustomerAuthenticated ? formatMaskedPhone(verifiedPhone) : address.primaryPhone}
               error={errors.primaryPhone}
               placeholder="+998 90 123 45 67"
               onChange={(v) => set("primaryPhone", v)}
+              readOnly={isCustomerAuthenticated}
             />
             <Field
               label="Qo‘shimcha telefon"
@@ -688,17 +791,77 @@ function Checkout() {
               ? "Yakuniy narx menyu va yetkazish sozlamalari asosida serverda tasdiqlanadi."
               : "Yakuniy narx menyu narxlari asosida serverda tasdiqlanadi."}</small>
           </section>
-          <button
-            className="button primary wide"
-            type="submit"
-            data-testid="checkout-submit"
-            disabled={submitting}
-          >
-            {submitting ? "Yuborilmoqda…" : "Buyurtmani yuborish"}
-          </button>
+          {!otpStep && (
+            <button
+              className="button primary wide"
+              type="submit"
+              data-testid="checkout-submit"
+              disabled={submitting}
+            >
+              {submitting ? "Yuborilmoqda…" : "Buyurtmani yuborish"}
+            </button>
+          )}
           {errors.submit && <p className="error" role="alert">{errors.submit}</p>}
           {errors.cart && <p className="error" role="alert">{errors.cart}</p>}
           {errors.paymentMethod && <p className="error" role="alert">{errors.paymentMethod}</p>}
+          {otpStep && (
+            <section className="form-card otp-step" data-testid="customer-otp-step">
+              <h2>Telefon raqamingizni tasdiqlang</h2>
+              {otpStep === "phone" && (
+                <>
+                  <Field
+                    label="Telefon"
+                    value={otpPhone}
+                    placeholder="+998 __ ___ __ __"
+                    onChange={setOtpPhone}
+                  />
+                  <button
+                    type="button"
+                    className="button primary wide"
+                    data-testid="otp-send"
+                    disabled={otpBusy}
+                    onClick={handleSendOtp}
+                  >
+                    {otpBusy ? "Yuborilmoqda…" : "SMS kod yuborish"}
+                  </button>
+                </>
+              )}
+              {otpStep === "code" && (
+                <>
+                  <p>{otpCanonicalPhone} raqamiga yuborilgan kodni kiriting.</p>
+                  <Field
+                    label="Tasdiqlash kodi"
+                    value={otpCode}
+                    placeholder="123456"
+                    onChange={setOtpCode}
+                  />
+                  <button
+                    type="button"
+                    className="button primary wide"
+                    data-testid="otp-verify"
+                    disabled={otpBusy}
+                    onClick={handleVerifyOtp}
+                  >
+                    {otpBusy ? "Tekshirilmoqda…" : "Tasdiqlash"}
+                  </button>
+                  <button
+                    type="button"
+                    className="button text"
+                    data-testid="otp-resend"
+                    disabled={otpBusy}
+                    onClick={handleSendOtp}
+                  >
+                    Kodni qayta yuborish
+                  </button>
+                </>
+              )}
+              {otpError && (
+                <p className="error" role="alert" data-testid="otp-error">
+                  {otpError}
+                </p>
+              )}
+            </section>
+          )}
         </form>
       </main>
     </Shell>
@@ -710,12 +873,14 @@ function Field({
   onChange,
   error,
   placeholder,
+  readOnly,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   error?: string;
   placeholder?: string;
+  readOnly?: boolean;
 }) {
   return (
     <label className="field">
@@ -723,11 +888,20 @@ function Field({
       <input
         value={value}
         placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
+        readOnly={readOnly}
+        onChange={(e) => !readOnly && onChange(e.target.value)}
       />
       {error && <em className="error">{error}</em>}
     </label>
   );
+}
+// +998901234567 (12 digits incl. country code) -> "+998 90 *** ** 67".
+// Display-only: the underlying address.primaryPhone keeps the full verified
+// number so validateAddress's phone regex still passes.
+function formatMaskedPhone(raw?: string | null): string {
+  const digits = (raw || "").replace(/\D/g, "");
+  if (digits.length !== 12) return raw ? `+${digits}` : "";
+  return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} *** ** ${digits.slice(10, 12)}`;
 }
 function Confirmation() {
   const { id } = useParams();
