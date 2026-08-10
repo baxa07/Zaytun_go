@@ -7,10 +7,17 @@ export type PaymentCollectionStatus='NOT_REQUIRED'|'PENDING'|'COLLECTED'|'FAILED
 export type AddressConfidence='COMPLETE'|'NEEDS_CLARIFICATION'|'CUSTOMER_CONFIRMATION_REQUIRED'
 export type DriverAvailability='AVAILABLE'|'BUSY'|'OFFLINE'
 export type DeliveryIssueType='ADDRESS_INCORRECT'|'CUSTOMER_NOT_ANSWERING'|'PAYMENT_PROBLEM'|'ADDRESS_CLARIFICATION'
-export interface RestaurantConfig {restaurantName:string;restaurantAddress:string;restaurantPhone:string;restaurantLatitude:number;restaurantLongitude:number;operatingHours:Record<string,string>;deliveryEnabled:boolean;deliveryPolicyMode?:'RADIUS'|'MANUAL_CITY_REVIEW';deliveryReviewMessage?:string|null;deliveryRadiusKm:number|null;deliveryAreaDescription:string;minimumDeliverySubtotal:number;baseDeliveryFee:number;freeDeliveryThreshold:number|null;maximumItemQuantity:number;supportedPaymentMethods:PaymentMethod[];pickupPaymentMethods:PaymentMethod[];deliveryPaymentMethods:PaymentMethod[];estimatedPreparationMinutes:number|null;estimatedDeliveryMinutes:number|null;defaultMapZoom:number}
+export interface RestaurantConfig {restaurantName:string;restaurantAddress:string;restaurantPhone:string;restaurantLatitude:number;restaurantLongitude:number;operatingHours:Record<string,string>;deliveryEnabled:boolean;deliveryPolicyMode?:'RADIUS'|'MANUAL_CITY_REVIEW';deliveryReviewMessage?:string|null;deliveryRadiusKm:number|null;deliveryAreaDescription:string;minimumDeliverySubtotal:number;baseDeliveryFee:number;freeDeliveryThreshold:number|null;maximumItemQuantity:number;supportedPaymentMethods:PaymentMethod[];pickupPaymentMethods:PaymentMethod[];deliveryPaymentMethods:PaymentMethod[];estimatedPreparationMinutes:number|null;estimatedDeliveryMinutes:number|null;defaultMapZoom:number;customerAuthRequired?:boolean}
 
 export type PublicMenuState='LOADING'|'READY'|'UNPUBLISHED'|'ERROR'
 export const publicMenuState=(ready:boolean,error:string,categoryCount:number,itemCount:number):PublicMenuState=>!ready?'LOADING':error?'ERROR':categoryCount===0||itemCount===0?'UNPUBLISHED':'READY'
+
+// Which order-creation RPC a submission should use. Pure and testable on
+// purpose: this is the one place that decides public vs authenticated
+// order creation, independent of React/Supabase, so the flag=false/true
+// and authenticated/unauthenticated combinations can be verified directly.
+export type OrderSubmissionMode='PUBLIC'|'CUSTOMER'|'REQUIRES_CUSTOMER_AUTH'
+export const resolveOrderSubmissionMode=(customerAuthRequired:boolean,hasCustomerSession:boolean):OrderSubmissionMode=>!customerAuthRequired?'PUBLIC':hasCustomerSession?'CUSTOMER':'REQUIRES_CUSTOMER_AUTH'
 
 export interface MenuModifier {id:string;name:string;price:number}
 export interface MenuItem {id:string;categoryId:string;name:string;description:string;price:number;image:string;modifiers?:MenuModifier[];available:boolean}

@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest'
-import {addCartLine,calculateOrderTotal,canTransition,createEvent,createIssue,deliveryAddressWasResubmitted,isDeliveryAddressRevisable,publicMenuState,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
+import {addCartLine,calculateOrderTotal,canTransition,createEvent,createIssue,deliveryAddressWasResubmitted,isDeliveryAddressRevisable,publicMenuState,resolveOrderSubmissionMode,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
 
 const address:CustomerAddress={customerName:'Ali',primaryPhone:'+998901234567',district:'Navoiy sh.',street:'Navoiy ko‘chasi',house:'12',landmark:'Bozor yonida',deliveryNotes:'',latitude:40.1,longitude:65.3,confidence:'COMPLETE',pinConfirmedAt:'2026-08-04T08:00:00Z',locationProvider:'mock',deliveryZoneResult:'ELIGIBLE'}
 const order:Order={id:'o1',number:'ZG-1',customer:{id:'c1',name:'Ali',primaryPhone:'+998901234567'},type:'DELIVERY',address,items:[],subtotal:0,deliveryFee:0,total:0,paymentMethod:'CASH',paymentStatus:'PENDING',specialInstructions:'',status:'NEW',createdAt:'2026-08-03T10:00:00Z',events:[],issues:[]}
@@ -20,6 +20,18 @@ describe('delivery address revision eligibility (stale-state gate)',()=>{
     expect(isDeliveryAddressRevisable({type:'PICKUP',status:'NEW',deliveryReviewStatus:'CLARIFICATION_REQUESTED'})).toBe(false)
     expect(isDeliveryAddressRevisable({type:'DELIVERY',status:'NEW',deliveryReviewStatus:'REVIEW_REQUIRED'})).toBe(false)
     expect(isDeliveryAddressRevisable({type:'DELIVERY',status:'NEW',deliveryReviewStatus:'APPROVED'})).toBe(false)
+  })
+})
+describe('order submission mode (customer_auth_required rollout gate)',()=>{
+  it('always selects PUBLIC when the flag is off, authenticated or not',()=>{
+    expect(resolveOrderSubmissionMode(false,false)).toBe('PUBLIC')
+    expect(resolveOrderSubmissionMode(false,true)).toBe('PUBLIC')
+  })
+  it('selects CUSTOMER when the flag is on and a verified customer session exists',()=>{
+    expect(resolveOrderSubmissionMode(true,true)).toBe('CUSTOMER')
+  })
+  it('demands auth when the flag is on and there is no customer session',()=>{
+    expect(resolveOrderSubmissionMode(true,false)).toBe('REQUIRES_CUSTOMER_AUTH')
   })
 })
 describe('resubmitted-address cue (order_events inspection)',()=>{

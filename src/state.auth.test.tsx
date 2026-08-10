@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { AppProvider, useApp, type AppRole } from "./state";
+import { AppProvider, useApp, isVerifiedCustomerSession, type AppRole } from "./state";
 import type { Order, OrderStatus, RestaurantConfig } from "./domain";
 
 const publicConfig: RestaurantConfig = {
@@ -28,7 +28,7 @@ const publicConfig: RestaurantConfig = {
 };
 
 const mocks = vi.hoisted(() => ({
-  session: null as { user: { id: string } } | null,
+  session: null as { user: { id: string; phone?: string; phone_confirmed_at?: string } } | null,
   role: null as AppRole | null,
   list: vi.fn<() => Promise<Order[]>>(),
   listDrivers: vi.fn(),
@@ -42,6 +42,10 @@ const mocks = vi.hoisted(() => ({
   acceptAssignment: vi.fn(),
   authCallback: null as ((event: string, session: unknown) => void) | null,
   signInWithPassword: vi.fn(async () => ({ error: null })),
+  signInWithOtp: vi.fn<() => Promise<{ error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ error: null })),
+  verifyOtp: vi.fn<() => Promise<{ data: { session: { user: { id: string; phone?: string; phone_confirmed_at?: string } } | null }; error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ data: { session: { user: { id: "customer-otp-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } } }, error: null })),
+  ensureCurrentCustomer: vi.fn(async () => undefined),
+  signOut: vi.fn(async () => ({ error: null })),
 }));
 
 vi.mock("./data", () => ({
@@ -65,6 +69,8 @@ vi.mock("./data", () => ({
     reportIssue: vi.fn(),
     resolveIssue: vi.fn(),
     saveDriver: vi.fn(),
+    ensureCurrentCustomer: mocks.ensureCurrentCustomer,
+    saveAsCustomer: vi.fn(),
   },
 }));
 
@@ -78,12 +84,17 @@ vi.mock("./supabase", () => ({
         return { data: { subscription: { unsubscribe: vi.fn() } } };
       }),
       signInWithPassword: mocks.signInWithPassword,
-      signOut: vi.fn(async () => ({ error: null })),
+      signInWithOtp: mocks.signInWithOtp,
+      verifyOtp: mocks.verifyOtp,
+      signOut: mocks.signOut,
     },
     from: vi.fn(() => ({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          single: vi.fn(async () => ({ data: { role: mocks.role }, error: null })),
+          // A customer (phone-OTP) session has no profiles row by design;
+          // maybeSingle (not single) is what makes that resolve to
+          // role=null instead of a thrown PostgREST "zero rows" error.
+          maybeSingle: vi.fn(async () => ({ data: mocks.role ? { role: mocks.role } : null, error: null })),
         })),
       })),
     })),
@@ -114,6 +125,10 @@ beforeEach(() => {
   mocks.get.mockReset();
   mocks.subscribe.mockClear();
   mocks.signInWithPassword.mockReset().mockResolvedValue({ error: null });
+  mocks.signInWithOtp.mockReset().mockResolvedValue({ error: null });
+  mocks.verifyOtp.mockReset().mockResolvedValue({ data: { session: { user: { id: "customer-otp-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } } }, error: null });
+  mocks.ensureCurrentCustomer.mockReset().mockResolvedValue(undefined);
+  mocks.signOut.mockReset().mockResolvedValue({ error: null });
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -717,5 +732,162 @@ describe("role gate is independent of auth method", () => {
     mocks.role = "RESTAURANT";
     renderAt("/driver");
     expect(await screen.findByRole("heading", { name: "Ruxsat yo‘q" })).toBeTruthy();
+  });
+});
+
+function CustomerAuthProbe() {
+  const { isCustomerAuthenticated, authReady, authError } = useApp();
+  return (
+    <div>
+      <div data-testid="customer-auth-state">{!authReady ? "loading" : isCustomerAuthenticated ? "yes" : "no"}</div>
+      {authError && <div data-testid="probe-auth-error">{authError}</div>}
+    </div>
+  );
+}
+
+describe("isVerifiedCustomerSession (frontend customer-session predicate)", () => {
+  const sessionWith = (phone?: string, phone_confirmed_at?: string) => ({ user: { phone, phone_confirmed_at } });
+
+  it("role-less + confirmed valid Uzbek phone -> customer", () => {
+    expect(isVerifiedCustomerSession(sessionWith("998901234567", "2026-08-10T00:00:00.000Z"), null)).toBe(true);
+  });
+
+  it("role-less + no phone -> not customer", () => {
+    expect(isVerifiedCustomerSession(sessionWith(undefined, "2026-08-10T00:00:00.000Z"), null)).toBe(false);
+  });
+
+  it("role-less + unconfirmed phone -> not customer", () => {
+    expect(isVerifiedCustomerSession(sessionWith("998901234567", undefined), null)).toBe(false);
+  });
+
+  it("role-less + malformed/non-Uzbek phone -> not customer", () => {
+    expect(isVerifiedCustomerSession(sessionWith("15551234567", "2026-08-10T00:00:00.000Z"), null)).toBe(false);
+    expect(isVerifiedCustomerSession(sessionWith("not-a-phone", "2026-08-10T00:00:00.000Z"), null)).toBe(false);
+  });
+
+  it.each(["RESTAURANT", "DISPATCHER", "DRIVER"] as const)("%s session -> never customer, even with a confirmed valid Uzbek phone", (role) => {
+    expect(isVerifiedCustomerSession(sessionWith("998901234567", "2026-08-10T00:00:00.000Z"), role)).toBe(false);
+  });
+
+  it("no session -> not customer", () => {
+    expect(isVerifiedCustomerSession(null, null)).toBe(false);
+  });
+});
+
+describe("customer phone-OTP session (no profiles row required)", () => {
+  it("resolves a role-less session with a confirmed Uzbek phone to isCustomerAuthenticated=true without a staff-role error", async () => {
+    mocks.session = { user: { id: "customer-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } };
+    mocks.role = null;
+    renderAt("/checkout", <CustomerAuthProbe />);
+    expect(await screen.findByText("yes")).toBeTruthy();
+    expect(screen.queryByTestId("probe-auth-error")).toBeNull();
+  });
+
+  it("does not resolve isCustomerAuthenticated for a role-less session with no phone on it", async () => {
+    mocks.session = { user: { id: "customer-1" } };
+    mocks.role = null;
+    renderAt("/checkout", <CustomerAuthProbe />);
+    expect(await screen.findByText("no")).toBeTruthy();
+  });
+
+  it("does not resolve isCustomerAuthenticated for a staff session, even with a confirmed Uzbek phone on it", async () => {
+    mocks.session = { user: { id: "staff-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } };
+    mocks.role = "RESTAURANT";
+    renderAt("/checkout", <CustomerAuthProbe />);
+    expect(await screen.findByText("no")).toBeTruthy();
+  });
+
+  it("stays isCustomerAuthenticated=false with no session at all", async () => {
+    mocks.session = null;
+    renderAt("/checkout", <CustomerAuthProbe />);
+    expect(await screen.findByText("no")).toBeTruthy();
+  });
+
+  it("a role-less session cannot reach /restaurant or /driver and does not crash", async () => {
+    mocks.session = { user: { id: "customer-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } };
+    mocks.role = null;
+    renderAt("/restaurant");
+    expect(await screen.findByRole("heading", { name: "Ruxsat yo‘q" })).toBeTruthy();
+
+    mocks.session = { user: { id: "customer-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } };
+    mocks.role = null;
+    renderAt("/driver");
+    expect(await screen.findByRole("heading", { name: "Ruxsat yo‘q" })).toBeTruthy();
+  });
+});
+
+function CustomerOtpProbe() {
+  const { sendCustomerOtp, verifyCustomerOtp } = useApp();
+  return (
+    <div>
+      <button onClick={() => void sendCustomerOtp("901234567").catch(() => {})}>send</button>
+      <button onClick={() => void verifyCustomerOtp("+998901234567", "111111").catch(() => {})}>verify</button>
+    </div>
+  );
+}
+
+describe("customer phone-OTP actions (sendCustomerOtp / verifyCustomerOtp)", () => {
+  it("sends the normalized phone via signInWithOtp, not signInWithPassword", async () => {
+    renderAt("/checkout", <CustomerOtpProbe />);
+    fireEvent.click(await screen.findByText("send"));
+    await waitFor(() => expect(mocks.signInWithOtp).toHaveBeenCalledWith({ phone: "+998901234567" }));
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("verifies via verifyOtp with type sms, then resolves the canonical customer record", async () => {
+    renderAt("/checkout", <CustomerOtpProbe />);
+    fireEvent.click(await screen.findByText("verify"));
+    await waitFor(() => expect(mocks.verifyOtp).toHaveBeenCalledWith({ phone: "+998901234567", token: "111111", type: "sms" }));
+    await waitFor(() => expect(mocks.ensureCurrentCustomer).toHaveBeenCalledOnce());
+  });
+
+  it("does not call ensureCurrentCustomer when verification fails", async () => {
+    mocks.verifyOtp.mockResolvedValueOnce({ data: { session: null }, error: { code: "otp_expired", message: "Token has expired" } });
+    renderAt("/checkout", <CustomerOtpProbe />);
+    fireEvent.click(await screen.findByText("verify"));
+    await waitFor(() => expect(mocks.verifyOtp).toHaveBeenCalledOnce());
+    expect(mocks.ensureCurrentCustomer).not.toHaveBeenCalled();
+  });
+
+  it("rejects, signs the failed attempt's session out, and never finalizes customer auth state when canonical customer resolution fails after a successful OTP verify", async () => {
+    // GoTrue verification succeeds (verifyOtp resolves with a session), but
+    // Zaytun's own customer resolution rejects it (e.g. CUSTOMER_PHONE_CONFLICT).
+    // This is exactly the half-authenticated scenario the sequencing fix
+    // guards against: Supabase would have a CUSTOMER-looking session while
+    // no valid Zaytun customer backs it.
+    mocks.ensureCurrentCustomer.mockRejectedValueOnce(new Error("Bu telefon raqami allaqachon boshqa hisobga bog‘langan"));
+    let caught: unknown;
+    function FailingVerifyProbe() {
+      const { verifyCustomerOtp, isCustomerAuthenticated } = useApp();
+      return (
+        <div>
+          <div data-testid="auth-state">{isCustomerAuthenticated ? "yes" : "no"}</div>
+          <button
+            onClick={() =>
+              void verifyCustomerOtp("+998901234567", "111111").catch((error: unknown) => {
+                caught = error;
+              })
+            }
+          >
+            verify
+          </button>
+        </div>
+      );
+    }
+    renderAt("/checkout", <FailingVerifyProbe />);
+    fireEvent.click(await screen.findByText("verify"));
+
+    // Error is shown (surfaced to the caller).
+    await waitFor(() => expect(caught).toBeInstanceOf(Error));
+    expect((caught as Error).message).toContain("boshqa hisobga bog‘langan");
+
+    // The session GoTrue just established for this failed attempt is torn
+    // down -- never left dangling as a half-signed-in customer session.
+    await waitFor(() => expect(mocks.ensureCurrentCustomer).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mocks.signOut).toHaveBeenCalledOnce());
+
+    // Customer is never considered authenticated -- no half-authenticated
+    // window, not even momentarily (applySession is never reached).
+    expect(screen.getByTestId("auth-state").textContent).toBe("no");
   });
 });

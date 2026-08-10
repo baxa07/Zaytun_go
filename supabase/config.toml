@@ -281,8 +281,25 @@ template = "Your code is {{ .Code }}"
 max_frequency = "5s"
 
 # Use pre-defined map of phone number to OTP for testing.
-# [auth.sms.test_otp]
-# 4152127777 = "123456"
+# LOCAL TEST ONLY -- fake fixture, never a real phone number or real OTP
+# secret. Authenticated Customer Phase 2: fixed local OTP fixture so the
+# customer phone-OTP flow (signInWithOtp/verifyOtp) can be exercised locally
+# without a real SMS provider. Key is bare-digit E.164 (no '+', matching how
+# GoTrue stores auth.users.phone). This number is not required to be
+# "unassigned" as a security property -- it is a local-only dev/test config
+# file, never deployed to or read by production, and production Phone Auth
+# stays disabled regardless of what this file contains. Coexists with
+# [auth.sms.twilio] below, which stays enabled only so the driver
+# phone/password flow keeps working locally; this table is independent of
+# that one.
+[auth.sms.test_otp]
+998000000001 = "111111"
+# LOCAL TEST ONLY -- second and third fake fixtures, used only by the
+# customer-resolution-failure (CUSTOMER_PHONE_CONFLICT) Playwright test: one
+# to mint a throwaway second identity, one as the phone the test's own OTP
+# flow verifies against. Never real phone numbers or real OTP secrets.
+998000000002 = "222222"
+998000000003 = "333333"
 
 # Configure logged in session timeouts.
 # [auth.sessions]

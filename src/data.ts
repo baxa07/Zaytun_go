@@ -305,7 +305,7 @@ export const seedDrivers: Driver[] = [
     availability: "OFFLINE",
   },
 ];
-export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Kafe — LOCAL PILOT',restaurantAddress:'Guliston mavzesi 649, Navoiy shahri',restaurantPhone:'+998507440005',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'10:00–00:00'},deliveryEnabled:true,deliveryPolicyMode:'MANUAL_CITY_REVIEW',deliveryReviewMessage:'Navoiy shahri bo‘ylab yetkazib berish bepul. Manzil operator tomonidan tasdiqlanadi.',deliveryRadiusKm:null,deliveryAreaDescription:'Navoiy shahri',minimumDeliverySubtotal:100000,baseDeliveryFee:0,freeDeliveryThreshold:null,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_AT_PICKUP'],pickupPaymentMethods:['CASH','CARD_AT_PICKUP'],deliveryPaymentMethods:['CASH'],estimatedPreparationMinutes:null,estimatedDeliveryMinutes:null,defaultMapZoom:17}
+export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Kafe — LOCAL PILOT',restaurantAddress:'Guliston mavzesi 649, Navoiy shahri',restaurantPhone:'+998507440005',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'10:00–00:00'},deliveryEnabled:true,deliveryPolicyMode:'MANUAL_CITY_REVIEW',deliveryReviewMessage:'Navoiy shahri bo‘ylab yetkazib berish bepul. Manzil operator tomonidan tasdiqlanadi.',deliveryRadiusKm:null,deliveryAreaDescription:'Navoiy shahri',minimumDeliverySubtotal:100000,baseDeliveryFee:0,freeDeliveryThreshold:null,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_AT_PICKUP'],pickupPaymentMethods:['CASH','CARD_AT_PICKUP'],deliveryPaymentMethods:['CASH'],estimatedPreparationMinutes:null,estimatedDeliveryMinutes:null,defaultMapZoom:17,customerAuthRequired:false}
 class LocalStore
   implements
     MenuRepository,
@@ -355,6 +355,16 @@ class LocalStore
     else this.orders[i] = order;
     this.persist();
     return structuredClone(order);
+  }
+  // Authenticated-customer order creation is a Supabase Auth (phone OTP)
+  // feature; the local, non-Supabase dev store has no auth sessions at
+  // all, so this path is unreachable there by construction. Throwing
+  // loudly beats a silent no-op if that invariant is ever violated.
+  async saveAsCustomer(order: Order): Promise<Order> {
+    throw new Error(`Customer order creation requires the Supabase data provider (order ${order.id})`);
+  }
+  async ensureCurrentCustomer(): Promise<void> {
+    throw new Error("Customer identity resolution requires the Supabase data provider");
   }
   async assign(order: Order, driver: Driver) {
     if(order.type!=="DELIVERY")throw new Error("Pickup orders cannot be assigned to drivers");
