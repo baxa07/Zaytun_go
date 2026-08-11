@@ -16,6 +16,7 @@ import {
   checkoutFingerprint,
   createEvent,
   deliveryAddressWasResubmitted,
+  driverGreetingName,
   isDeliveryAddressRevisable,
   publicMenuState,
   resolvePendingCheckoutId,
@@ -1904,7 +1905,8 @@ function OrderDetail() {
   );
 }
 function DriverApp() {
-  const { orders, loaded, operationalError } = useApp();
+  const { orders, loaded, operationalError, profileDisplayName } = useApp();
+  const greetingName = driverGreetingName(profileDisplayName);
   const active = orders.find(
     (o) =>
       o.type === "DELIVERY" &&
@@ -1920,7 +1922,7 @@ function DriverApp() {
         {operationalError && <p className="error" role="alert">{operationalError}</p>}
         <div className="driver-head">
           <div>
-            <p className="eyebrow">XAYRLI KUN, AZIZ</p>
+            <p className="eyebrow">XAYRLI KUN{greetingName ? `, ${greetingName}` : ""}</p>
             <h1>Bugungi yetkazish</h1>
           </div>
           <span className="online">● Band</span>

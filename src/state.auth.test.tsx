@@ -30,6 +30,7 @@ const publicConfig: RestaurantConfig = {
 const mocks = vi.hoisted(() => ({
   session: null as { user: { id: string; phone?: string; phone_confirmed_at?: string } } | null,
   role: null as AppRole | null,
+  displayName: null as string | null,
   list: vi.fn<() => Promise<Order[]>>(),
   listDrivers: vi.fn(),
   subscribe: vi.fn(() => vi.fn()),
@@ -94,7 +95,7 @@ vi.mock("./supabase", () => ({
           // A customer (phone-OTP) session has no profiles row by design;
           // maybeSingle (not single) is what makes that resolve to
           // role=null instead of a thrown PostgREST "zero rows" error.
-          maybeSingle: vi.fn(async () => ({ data: mocks.role ? { role: mocks.role } : null, error: null })),
+          maybeSingle: vi.fn(async () => ({ data: mocks.role ? { role: mocks.role, display_name: mocks.displayName } : null, error: null })),
         })),
       })),
     })),
@@ -115,6 +116,7 @@ function OperationalProbe() {
 beforeEach(() => {
   mocks.session = null;
   mocks.role = null;
+  mocks.displayName = null;
   mocks.list.mockReset().mockResolvedValue([]);
   mocks.listDrivers.mockReset().mockResolvedValue([]);
   mocks.transition.mockReset();
@@ -180,6 +182,27 @@ describe("route-aware Supabase loading", () => {
     expect(await screen.findByText("loaded:1")).toBeTruthy();
     expect(mocks.listDrivers).not.toHaveBeenCalled();
     expect(mocks.subscribe).toHaveBeenCalledWith(expect.any(Function), "driver", expect.any(Function));
+  });
+
+  it("greets a signed-in driver by their own profile name, never a different person's", async () => {
+    mocks.session = { user: { id: "driver-2" } };
+    mocks.role = "DRIVER";
+    mocks.displayName = "Jasur Toshmatov";
+    mocks.list.mockResolvedValue([]);
+    renderAt("/driver");
+    expect(await screen.findByText("JASUR", { exact: false })).toBeTruthy();
+    expect(screen.queryByText("AZIZ", { exact: false })).toBeNull();
+  });
+
+  it("shows a neutral driver greeting with no name when the profile display name is unavailable", async () => {
+    mocks.session = { user: { id: "driver-3" } };
+    mocks.role = "DRIVER";
+    mocks.displayName = null;
+    mocks.list.mockResolvedValue([]);
+    renderAt("/driver");
+    expect(await screen.findByText("Bugungi yetkazish")).toBeTruthy();
+    expect(screen.queryByText("AZIZ", { exact: false })).toBeNull();
+    expect(screen.queryByText(/XAYRLI KUN,/)).toBeNull();
   });
 
   it("turns rejected operational loads into a recoverable state", async () => {

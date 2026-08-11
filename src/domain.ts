@@ -72,3 +72,14 @@ export const checkoutFingerprint=(type:'DELIVERY'|'PICKUP',cart:Pick<CartItem,'m
   address:type==='DELIVERY'&&address?{customerName:address.customerName,primaryPhone:address.primaryPhone,secondaryPhone:address.secondaryPhone,district:address.district,street:address.street,house:address.house,entrance:address.entrance,floor:address.floor,apartment:address.apartment,landmark:address.landmark,deliveryNotes:address.deliveryNotes,latitude:address.latitude,longitude:address.longitude}:undefined,
 })
 export const resolvePendingCheckoutId=(fingerprint:string,stored:PendingCheckout|null):string=>stored&&stored.fingerprint===fingerprint?stored.id:createUuid()
+
+// The driver surface's greeting previously hard-coded a fixed name
+// ("XAYRLI KUN, AZIZ") for every courier. This derives a greeting name from
+// the authenticated driver's own profiles.display_name instead, so no
+// courier is ever shown someone else's identity. Returns null (neutral
+// greeting, no name) when no reliable display name is available yet, rather
+// than guessing or falling back to a placeholder person.
+export const driverGreetingName=(displayName:string|null|undefined):string|null=>{
+  const first=displayName?.trim().split(/\s+/)[0]
+  return first?first.toUpperCase():null
+}

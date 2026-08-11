@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest'
-import {addCartLine,calculateOrderTotal,canTransition,checkoutFingerprint,createEvent,createIssue,deliveryAddressWasResubmitted,isDeliveryAddressRevisable,publicMenuState,resolveOrderSubmissionMode,resolvePendingCheckoutId,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
+import {addCartLine,calculateOrderTotal,canTransition,checkoutFingerprint,createEvent,createIssue,deliveryAddressWasResubmitted,driverGreetingName,isDeliveryAddressRevisable,publicMenuState,resolveOrderSubmissionMode,resolvePendingCheckoutId,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
 
 const address:CustomerAddress={customerName:'Ali',primaryPhone:'+998901234567',district:'Navoiy sh.',street:'Navoiy ko‘chasi',house:'12',landmark:'Bozor yonida',deliveryNotes:'',latitude:40.1,longitude:65.3,confidence:'COMPLETE',pinConfirmedAt:'2026-08-04T08:00:00Z',locationProvider:'mock',deliveryZoneResult:'ELIGIBLE'}
 const order:Order={id:'o1',number:'ZG-1',customer:{id:'c1',name:'Ali',primaryPhone:'+998901234567'},type:'DELIVERY',address,items:[],subtotal:0,deliveryFee:0,total:0,paymentMethod:'CASH',paymentStatus:'PENDING',specialInstructions:'',status:'NEW',createdAt:'2026-08-03T10:00:00Z',events:[],issues:[]}
@@ -91,5 +91,20 @@ describe('checkout idempotency (duplicate-order launch blocker)',()=>{
       const id=resolvePendingCheckoutId(newFingerprint,{id:'stored-id',fingerprint:oldFingerprint})
       expect(id).not.toBe('stored-id')
     })
+  })
+})
+describe('driver greeting name (hard-coded "AZIZ" launch defect)',()=>{
+  it('takes the first word of the driver\'s own display name, uppercased',()=>{
+    expect(driverGreetingName('Jasur Toshmatov')).toBe('JASUR')
+  })
+  it('never falls back to a different, hard-coded person',()=>{
+    expect(driverGreetingName('Jasur Toshmatov')).not.toBe('AZIZ')
+    expect(driverGreetingName(undefined)).not.toBe('AZIZ')
+    expect(driverGreetingName(null)).not.toBe('AZIZ')
+  })
+  it('returns null (neutral greeting) when no display name is available',()=>{
+    expect(driverGreetingName(null)).toBeNull()
+    expect(driverGreetingName(undefined)).toBeNull()
+    expect(driverGreetingName('   ')).toBeNull()
   })
 })
