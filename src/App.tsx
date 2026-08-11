@@ -56,6 +56,11 @@ import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDe
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
+// UI-only guard against obvious resend-button hammering -- Supabase's own
+// hosted per-phone/per-IP rate limits (see docs/production-readiness.md)
+// are the actual enforcement; this just avoids firing requests the server
+// would reject anyway.
+const DRIVER_OTP_RESEND_COOLDOWN_SECONDS = 30;
 const time = (s: string) =>
   new Intl.DateTimeFormat("uz-UZ", {
     hour: "2-digit",
@@ -2109,6 +2114,171 @@ function DriverDelivery({ order }: { order: Order }) {
     </>
   );
 }
+// Driver login offers two methods on one page: the pre-existing
+// phone/email + password form (default -- unchanged behavior, still what
+// e2e/auth-local.spec.ts exercises against a real provisioned local driver
+// account) and, behind an explicit toggle, closed-enrollment phone+OTP
+// login. OTP is additive, not a replacement: production readiness of
+// hosted Phone Auth is a separate, independently-gated concern (see
+// docs/production-readiness.md), so the proven password path must keep
+// working regardless of that state. An unrecognized phone can never gain
+// courier access via the OTP path -- sendDriverOtp (state.tsx) always
+// passes shouldCreateUser:false, and even a successfully-verified session
+// still has to clear AuthGate's own role==="DRIVER" gate afterward before
+// /driver renders, exactly like the password path already does.
+function DriverLogin({ authError }: { authError: string }) {
+  const { signIn, sendDriverOtp, verifyDriverOtp } = useApp();
+  const [mode, setMode] = useState<"password" | "otp">("password");
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [otpStep, setOtpStep] = useState<"phone" | "code">("phone");
+  const [phone, setPhone] = useState("");
+  const [canonicalPhone, setCanonicalPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [otpBusy, setOtpBusy] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => setResendCooldown((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+  const handleSend = async () => {
+    if (otpBusy || resendCooldown > 0) return;
+    setOtpError("");
+    setOtpBusy(true);
+    try {
+      const canonical = await sendDriverOtp(phone);
+      setCanonicalPhone(canonical);
+      setCode("");
+      setOtpStep("code");
+      setResendCooldown(DRIVER_OTP_RESEND_COOLDOWN_SECONDS);
+    } catch (failure) {
+      setOtpError(failure instanceof Error ? failure.message : "Xatolik yuz berdi");
+    } finally {
+      setOtpBusy(false);
+    }
+  };
+  const handleVerify = async () => {
+    if (otpBusy) return;
+    setOtpError("");
+    setOtpBusy(true);
+    try {
+      await verifyDriverOtp(canonicalPhone, code);
+      // Success: the onAuthStateChange listener (state.tsx) picks up the
+      // new session and resolves role, and AuthGate re-renders past this
+      // component on its own -- no local "done" state needed here.
+    } catch (failure) {
+      setOtpError(failure instanceof Error ? failure.message : "Xatolik yuz berdi");
+    } finally {
+      setOtpBusy(false);
+    }
+  };
+  return (
+    <Shell surface="driver">
+      <main className="narrow">
+        <section className="form-card">
+          <p className="eyebrow">HAYDOVCHILAR UCHUN</p>
+          <h1>Kirish</h1>
+          {mode === "password" && (
+            <>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setPasswordError("");
+                  try {
+                    await signIn(identifier, password);
+                  } catch (failure) {
+                    setPasswordError(failure instanceof Error ? failure.message : "Kirish amalga oshmadi");
+                  }
+                }}
+              >
+                <Field label="Telefon yoki email" value={identifier} onChange={setIdentifier} />
+                <Field label="Parol" value={password} onChange={setPassword} />
+                {(passwordError || authError) && <p className="error" role="alert">{passwordError || authError}</p>}
+                <button className="button primary wide">Kirish</button>
+              </form>
+              <button
+                type="button"
+                className="button text"
+                data-testid="driver-otp-switch"
+                onClick={() => setMode("otp")}
+              >
+                SMS-kod bilan
+              </button>
+            </>
+          )}
+          {mode === "otp" && (
+            <>
+              {otpStep === "phone" && (
+                <>
+                  <Field
+                    label="Telefon raqamingiz"
+                    value={phone}
+                    placeholder="+998 __ ___ __ __"
+                    onChange={setPhone}
+                  />
+                  <button
+                    type="button"
+                    className="button primary wide"
+                    data-testid="driver-otp-send"
+                    disabled={otpBusy || resendCooldown > 0}
+                    onClick={() => void handleSend()}
+                  >
+                    {otpBusy ? "Yuborilmoqda…" : "Kod yuborish"}
+                  </button>
+                </>
+              )}
+              {otpStep === "code" && (
+                <>
+                  <p>{canonicalPhone} raqamiga yuborilgan kodni kiriting.</p>
+                  <Field
+                    label="Tasdiqlash kodi"
+                    value={code}
+                    placeholder="123456"
+                    onChange={setCode}
+                  />
+                  <button
+                    type="button"
+                    className="button primary wide"
+                    data-testid="driver-otp-verify"
+                    disabled={otpBusy || !code}
+                    onClick={() => void handleVerify()}
+                  >
+                    {otpBusy ? "Tekshirilmoqda…" : "Kirish"}
+                  </button>
+                  <button
+                    type="button"
+                    className="button text"
+                    data-testid="driver-otp-resend"
+                    disabled={otpBusy || resendCooldown > 0}
+                    onClick={() => void handleSend()}
+                  >
+                    {resendCooldown > 0 ? `Kodni qayta yuborish (${resendCooldown}s)` : "Kodni qayta yuborish"}
+                  </button>
+                </>
+              )}
+              {(otpError || authError) && (
+                <p className="error" role="alert" data-testid="driver-otp-error">
+                  {otpError || authError}
+                </p>
+              )}
+              <button
+                type="button"
+                className="button text"
+                data-testid="driver-password-switch"
+                onClick={() => setMode("password")}
+              >
+                Parol bilan
+              </button>
+            </>
+          )}
+        </section>
+      </main>
+    </Shell>
+  );
+}
 function AuthGate({ children, surface }: { children: React.ReactNode; surface: "restaurant" | "driver" }) {
   const { authReady, session, role, authError, signIn, signOut } = useApp();
   const [identifier, setIdentifier] = useState("");
@@ -2119,15 +2289,15 @@ function AuthGate({ children, surface }: { children: React.ReactNode; surface: "
   if (!supabaseConfigured) return <>{children}</>;
   if (session && permitted) return <>{children}<button className="auth-signout" type="button" onClick={() => void signOut().catch((failure: unknown) => setError(failure instanceof Error ? failure.message : "Chiqish amalga oshmadi"))}>Chiqish</button></>;
   if (session && !permitted) return <Shell surface={surface === "driver" ? "driver" : "staff"}><main className="narrow"><section className="form-card"><h1>Ruxsat yo‘q</h1><p>Bu hisob ushbu operatsion bo‘limga kira olmaydi.</p><button className="button secondary" onClick={() => void signOut()}>Boshqa hisob bilan kirish</button></section></main></Shell>;
+  if (surface === "driver") return <DriverLogin authError={authError} />;
   return (
-    <Shell surface={surface === "driver" ? "driver" : "staff"}>
+    <Shell surface="staff">
       <main className="narrow">
         <section className="form-card">
           <p className="eyebrow">XODIMLAR UCHUN</p>
           <h1>Kirish</h1>
           <p>
-            Restaurant, dispatcher yoki driver Supabase Auth hisobi bilan
-            kiring.
+            Restaurant yoki dispatcher Supabase Auth hisobi bilan kiring.
           </p>
           <form
             onSubmit={async (e) => {

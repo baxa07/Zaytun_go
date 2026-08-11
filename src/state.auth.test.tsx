@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { AppProvider, useApp, isVerifiedCustomerSession, mapCustomerAuthError, type AppRole } from "./state";
+import { AppProvider, useApp, isVerifiedCustomerSession, mapCustomerAuthError, mapDriverAuthError, type AppRole } from "./state";
 import type { Order, OrderStatus, RestaurantConfig } from "./domain";
 
 const publicConfig: RestaurantConfig = {
@@ -43,7 +43,7 @@ const mocks = vi.hoisted(() => ({
   acceptAssignment: vi.fn(),
   authCallback: null as ((event: string, session: unknown) => void) | null,
   signInWithPassword: vi.fn(async () => ({ error: null })),
-  signInWithOtp: vi.fn<(args: { phone: string; options?: { captchaToken?: string } }) => Promise<{ error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ error: null })),
+  signInWithOtp: vi.fn<(args: { phone: string; options?: { captchaToken?: string; shouldCreateUser?: boolean } }) => Promise<{ error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ error: null })),
   verifyOtp: vi.fn<() => Promise<{ data: { session: { user: { id: string; phone?: string; phone_confirmed_at?: string } } | null }; error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ data: { session: { user: { id: "customer-otp-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } } }, error: null })),
   ensureCurrentCustomer: vi.fn(async () => undefined),
   signOut: vi.fn(async () => ({ error: null })),
@@ -948,5 +948,135 @@ describe("customer phone-OTP actions (sendCustomerOtp / verifyCustomerOtp)", () 
     // Customer is never considered authenticated -- no half-authenticated
     // window, not even momentarily (applySession is never reached).
     expect(screen.getByTestId("auth-state").textContent).toBe("no");
+  });
+});
+
+function DriverOtpProbe() {
+  const { sendDriverOtp, verifyDriverOtp } = useApp();
+  return (
+    <div>
+      <button onClick={() => void sendDriverOtp("901234567").catch(() => {})}>driver-send</button>
+      <button onClick={() => void verifyDriverOtp("+998901234567", "222222").catch(() => {})}>driver-verify</button>
+    </div>
+  );
+}
+
+describe("driver phone-OTP actions (sendDriverOtp / verifyDriverOtp)", () => {
+  it("sends via signInWithOtp with shouldCreateUser:false -- never signInWithPassword, never a create-user OTP", async () => {
+    renderAt("/checkout", <DriverOtpProbe />);
+    fireEvent.click(await screen.findByText("driver-send"));
+    await waitFor(() =>
+      expect(mocks.signInWithOtp).toHaveBeenCalledWith({
+        phone: "+998901234567",
+        options: { shouldCreateUser: false },
+      }),
+    );
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("verifies via verifyOtp with type sms, same as the customer flow", async () => {
+    renderAt("/checkout", <DriverOtpProbe />);
+    fireEvent.click(await screen.findByText("driver-verify"));
+    await waitFor(() => expect(mocks.verifyOtp).toHaveBeenCalledWith({ phone: "+998901234567", token: "222222", type: "sms" }));
+  });
+});
+
+describe("driver phone-OTP login flow (UI, /driver)", () => {
+  // Password login stays the default view (the pre-existing, real-world
+  // path -- see e2e/auth-local.spec.ts); OTP is reached via an explicit
+  // toggle, never the initial render.
+  const switchToOtp = async () => fireEvent.click(await screen.findByTestId("driver-otp-switch"));
+
+  it("password login remains the default view on /driver, unchanged", async () => {
+    renderAt("/driver");
+    expect(await screen.findByLabelText("Telefon yoki email")).toBeTruthy();
+    expect(await screen.findByLabelText("Parol")).toBeTruthy();
+  });
+
+  it("A/B: a provisioned DRIVER phone can start the OTP login path with shouldCreateUser:false", async () => {
+    renderAt("/driver");
+    await switchToOtp();
+    fireEvent.change(await screen.findByLabelText("Telefon raqamingiz"), { target: { value: "901234567" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kod yuborish" }));
+    await waitFor(() =>
+      expect(mocks.signInWithOtp).toHaveBeenCalledWith({
+        phone: "+998901234567",
+        options: { shouldCreateUser: false },
+      }),
+    );
+    expect(await screen.findByLabelText("Tasdiqlash kodi")).toBeTruthy();
+  });
+
+  it("C: routes a provisioned DRIVER phone to /driver after OTP verification, exactly like password-based driver sign-in", async () => {
+    mocks.role = "DRIVER";
+    renderAt("/driver");
+    await switchToOtp();
+    fireEvent.change(await screen.findByLabelText("Telefon raqamingiz"), { target: { value: "901234567" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kod yuborish" }));
+    await waitFor(() => expect(mocks.signInWithOtp).toHaveBeenCalledOnce());
+    fireEvent.change(await screen.findByLabelText("Tasdiqlash kodi"), { target: { value: "222222" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kirish" }));
+    await waitFor(() => expect(mocks.verifyOtp).toHaveBeenCalledOnce());
+    // Real GoTrue fires onAuthStateChange internally the instant verifyOtp
+    // establishes a session; this hand-rolled test double doesn't do that
+    // automatically, so simulate it explicitly, same as production.
+    mocks.session = { user: { id: "driver-otp-1" } };
+    await waitFor(() => expect(mocks.authCallback).toBeTruthy());
+    mocks.authCallback!("SIGNED_IN", mocks.session);
+    expect(await screen.findByText("Bugungi yetkazish")).toBeTruthy();
+  });
+
+  it("D: an OTP-authenticated session with no DRIVER role is denied /driver (same role gate as password sign-in)", async () => {
+    mocks.role = "RESTAURANT";
+    renderAt("/driver");
+    await switchToOtp();
+    fireEvent.change(await screen.findByLabelText("Telefon raqamingiz"), { target: { value: "901234567" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kod yuborish" }));
+    await waitFor(() => expect(mocks.signInWithOtp).toHaveBeenCalledOnce());
+    fireEvent.change(await screen.findByLabelText("Tasdiqlash kodi"), { target: { value: "222222" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kirish" }));
+    await waitFor(() => expect(mocks.verifyOtp).toHaveBeenCalledOnce());
+    mocks.session = { user: { id: "non-driver-otp-1" } };
+    await waitFor(() => expect(mocks.authCallback).toBeTruthy());
+    mocks.authCallback!("SIGNED_IN", mocks.session);
+    expect(await screen.findByRole("heading", { name: "Ruxsat yo‘q" })).toBeTruthy();
+  });
+
+  it("E: an unrecognized phone is refused via otp_disabled before any code is ever sent -- never becomes a DRIVER", async () => {
+    mocks.signInWithOtp.mockResolvedValueOnce({ error: { code: "otp_disabled", message: "Signups not allowed for otp" } });
+    renderAt("/driver");
+    await switchToOtp();
+    fireEvent.change(await screen.findByLabelText("Telefon raqamingiz"), { target: { value: "901234567" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kod yuborish" }));
+    await waitFor(() => expect(mocks.signInWithOtp).toHaveBeenCalledOnce());
+    expect((await screen.findByTestId("driver-otp-error")).textContent).toBe("Bu raqam kuryer sifatida ro‘yxatga olinmagan.");
+    expect(screen.queryByLabelText("Tasdiqlash kodi")).toBeNull();
+    expect(mocks.verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it("disables resend and shows a cooldown after a successful send, preventing obvious resend hammering", async () => {
+    renderAt("/driver");
+    await switchToOtp();
+    fireEvent.change(await screen.findByLabelText("Telefon raqamingiz"), { target: { value: "901234567" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kod yuborish" }));
+    await waitFor(() => expect(mocks.signInWithOtp).toHaveBeenCalledOnce());
+    const resendButton = await screen.findByTestId("driver-otp-resend");
+    expect((resendButton as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("mapDriverAuthError (clean Uzbek messages for GoTrue's stable error codes)", () => {
+  it("maps otp_disabled to the closed-enrollment message for an unrecognized phone", () => {
+    expect(mapDriverAuthError({ code: "otp_disabled" }, "send")).toBe("Bu raqam kuryer sifatida ro‘yxatga olinmagan.");
+  });
+  it("maps rate-limit codes to the same throttling message regardless of send/verify context", () => {
+    expect(mapDriverAuthError({ code: "over_sms_send_rate_limit" }, "send")).toBe(
+      mapDriverAuthError({ status: 429 }, "verify"),
+    );
+  });
+  it("falls back to a generic service message for an unrecognized code", () => {
+    expect(mapDriverAuthError({ code: "something_new" }, "send")).toBe(
+      "Xizmat bilan bog‘lanib bo‘lmadi. Internetni tekshirib, qayta urinib ko‘ring.",
+    );
   });
 });

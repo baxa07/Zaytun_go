@@ -85,6 +85,36 @@ export const mapCustomerAuthError = (error: { code?: string; status?: number } |
   return "Xizmat bilan bog‘lanib bo‘lmadi. Internetni tekshirib, qayta urinib ko‘ring.";
 };
 
+// Translates raw Supabase Auth (GoTrue) errors from the driver phone-OTP
+// login flow into clean Uzbek messages, keyed on GoTrue's stable error
+// `code` (never message-string matching, mirroring mapCustomerAuthError).
+// A phone with no existing DRIVER auth.users identity surfaces as
+// `otp_disabled` here specifically because sendDriverOtp always passes
+// shouldCreateUser:false -- GoTrue refuses to send an OTP for an unknown
+// identity under that option instead of silently creating one, which is
+// exactly the closed-enrollment behavior this flow depends on.
+export const mapDriverAuthError = (error: { code?: string; status?: number } | null | undefined, context: "send" | "verify"): string => {
+  const code = error?.code;
+  if (code === "over_sms_send_rate_limit" || code === "over_request_rate_limit" || error?.status === 429) {
+    return "Juda ko‘p urinish. Birozdan keyin qayta urinib ko‘ring.";
+  }
+  if (code === "otp_disabled") {
+    return "Bu raqam kuryer sifatida ro‘yxatga olinmagan.";
+  }
+  if (code === "sms_send_failed") {
+    return "SMS yuborilmadi. Birozdan keyin qayta urinib ko‘ring.";
+  }
+  if (code === "otp_expired") {
+    return context === "verify"
+      ? "Kod noto‘g‘ri yoki muddati tugagan. Qaytadan yuboring."
+      : "Kod muddati tugagan. Qaytadan yuboring.";
+  }
+  if (code === "validation_failed" || code === "phone_provider_disabled") {
+    return "Telefon raqamini to‘g‘ri kiriting.";
+  }
+  return "Xizmat bilan bog‘lanib bo‘lmadi. Internetni tekshirib, qayta urinib ko‘ring.";
+};
+
 // Thrown by submitOrder instead of a plain Error so Checkout can reliably
 // distinguish "you must verify your phone first" (open the inline OTP
 // step, preserving all already-entered checkout state) from any other
@@ -139,6 +169,14 @@ type State = {
   // reuse the exact value for verifyCustomerOtp without re-normalizing.
   sendCustomerOtp: (phone: string, captchaToken?: string) => Promise<string>;
   verifyCustomerOtp: (phone: string, code: string) => Promise<void>;
+  // Driver-facing phone+OTP login (LOGIN only, never registration): sends
+  // via signInWithOtp with shouldCreateUser:false so an unrecognized phone
+  // can never provision a new Auth identity, then verifies via verifyOtp.
+  // Role/route access is decided entirely by AuthGate's existing
+  // role==="DRIVER" gate afterward, exactly as it already is for
+  // password-based driver sign-in -- this never grants /driver by itself.
+  sendDriverOtp: (phone: string) => Promise<string>;
+  verifyDriverOtp: (phone: string, code: string) => Promise<void>;
   addToCart: (item: CartItem) => void;
   updateQuantity: (id: string, delta: number) => void;
   clearCart: () => void;
@@ -465,6 +503,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // (customer_auth_required flow) needs isCustomerAuthenticated to
       // already be true the moment this promise resolves.
       await applySession(data.session);
+    },
+    sendDriverOtp: async (phone) => {
+      if (!supabase) throw new Error("Xizmat sozlanmagan.");
+      const normalized = normalizeUzbekPhone(phone);
+      if (!normalized) throw new Error("Telefon raqamini to'g'ri kiriting.");
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: normalized,
+        options: { shouldCreateUser: false },
+      });
+      if (error) throw new Error(mapDriverAuthError(error, "send"));
+      return normalized;
+    },
+    verifyDriverOtp: async (phone, code) => {
+      if (!supabase) throw new Error("Xizmat sozlanmagan.");
+      const normalized = normalizeUzbekPhone(phone);
+      if (!normalized) throw new Error("Telefon raqamini to'g'ri kiriting.");
+      const trimmedCode = code.trim();
+      if (!trimmedCode) throw new Error("Tasdiqlash kodini kiriting.");
+      const { error } = await supabase.auth.verifyOtp({ phone: normalized, token: trimmedCode, type: "sms" });
+      if (error) throw new Error(mapDriverAuthError(error, "verify"));
+      // Session/role resolution flows through the existing
+      // onAuthStateChange listener -> applySession, exactly like
+      // password-based sign-in above -- no special-cased finalization
+      // needed here (unlike verifyCustomerOtp, nothing needs the result
+      // synchronously the instant this promise resolves).
     },
     addToCart: (item) => setCart((current) => addCartLine(current,item,publicConfig?.maximumItemQuantity||50)),
     updateQuantity: (id, delta) => setCart((current) => current.map((entry) => entry.id === id ? { ...entry, quantity: Math.min(entry.quantity + delta,publicConfig?.maximumItemQuantity||50) } : entry).filter((entry) => entry.quantity > 0)),
