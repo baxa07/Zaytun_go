@@ -342,6 +342,18 @@ secrets = "env(SEND_SMS_HOOK_SECRETS)"
 enabled = true
 verify_jwt = false
 
+# Telegram Entry v1 (@ZaytunKafeNavoiy_bot). Telegram doesn't send a
+# Supabase-issued JWT, so platform-level verification must stay off here
+# too -- the function does its own check instead, against
+# TELEGRAM_WEBHOOK_SECRET via Telegram's X-Telegram-Bot-Api-Secret-Token
+# header (same "do our own auth since JWT verification can't apply"
+# pattern as send-sms-hook above). Deployed with `supabase functions
+# deploy zaytun-telegram-webhook --no-verify-jwt` (never `supabase config
+# push`), so this reaches production without touching anything else.
+[functions.zaytun-telegram-webhook]
+enabled = true
+verify_jwt = false
+
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 # Enabled locally so the local Auth server accepts phone/password sign-in
 # (GoTrue refuses phone sign-in entirely unless some SMS provider is
