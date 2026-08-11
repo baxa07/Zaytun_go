@@ -107,7 +107,16 @@ test.describe("precise delivery location", () => {
     const driver = await context.newPage();
     await driver.setViewportSize({ width: 390, height: 844 });
     await driver.goto("/driver");
-    await expect(driver.getByTestId("driver-location-detail")).toContainText("40.103900, 65.368800");
+    // Raw coordinates are not part of the normal driver UI -- collapsed
+    // behind a "Texnik ma'lumot" disclosure, same pattern as the restaurant
+    // panel. Human-readable content (distance) remains directly visible.
+    const driverCoordinateText = driver.locator('[data-testid="driver-location-debug"] p');
+    await expect(driverCoordinateText).toBeHidden();
+    await expect(driver.getByTestId("driver-location-detail")).toContainText("2.4 km");
+    const driverYandex = driver.getByRole("link", { name: "Yandex Maps" });
+    await expect(driverYandex).toHaveAttribute("href", /rtext=~40\.103900%2C65\.368800/);
+    await driver.getByTestId("driver-location-debug").locator("summary").click();
+    await expect(driverCoordinateText).toHaveText("40.103900, 65.368800");
     await expect(driver.getByRole("link", { name: "Google Maps" })).toHaveAttribute("href", /destination=40\.103900%2C65\.368800/);
     await driver.screenshot({ path: evidence("08-driver-navigation") });
   });

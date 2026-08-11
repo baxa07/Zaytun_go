@@ -1913,10 +1913,15 @@ function DriverDelivery({ order }: { order: Order }) {
           </div>
         </div>
         {order.address && <div className="driver-location-summary" data-testid="driver-location-detail">
-          <span>{order.address.latitude?.toFixed(6)}, {order.address.longitude?.toFixed(6)}</span>
           {order.address.deliveryDistanceKm !== undefined && <b>{order.address.deliveryDistanceKm.toFixed(1)} km</b>}
           {order.address.confidence !== "COMPLETE" && <p className="warning">⚠ Manzilni mijoz bilan aniqlashtiring</p>}
           <small>{order.address.deliveryNotes}</small>
+          {coordinate && (
+            <details className="location-debug" data-testid="driver-location-debug">
+              <summary>Texnik ma'lumot</summary>
+              <p>{coordinate.latitude.toFixed(6)}, {coordinate.longitude.toFixed(6)}</p>
+            </details>
+          )}
         </div>}
         <div className="two-actions driver-nav-actions">
           <a
@@ -1926,12 +1931,12 @@ function DriverDelivery({ order }: { order: Order }) {
             ☎ Qo‘ng‘iroq
           </a>
           {coordinate && <a
-            className="button secondary"
+            className="button primary"
             href={navigationUrl("yandex",coordinate)}
             target="_blank"
             rel="noopener noreferrer"
           >
-            Yandex Maps
+            📍 Yandex Maps
           </a>}
           {coordinate && <a className="button secondary" href={navigationUrl("google",coordinate)} target="_blank" rel="noopener noreferrer">Google Maps</a>}
         </div>
