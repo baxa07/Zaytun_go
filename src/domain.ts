@@ -53,3 +53,22 @@ export function validateDeliveryLocation(address:Pick<CustomerAddress,'district'
 export function validateAddress(address:CustomerAddress):Record<string,string>{const e:Record<string,string>={};if(!address.customerName.trim())e.customerName='Ismingizni kiriting';if(!/^\+?[\d\s()-]{9,}$/.test(address.primaryPhone))e.primaryPhone='To‘g‘ri telefon raqamini kiriting';return{...e,...validateDeliveryLocation(address)}}
 export function validateOrderInput(type:'DELIVERY'|'PICKUP',address:CustomerAddress|undefined,payment?:PaymentMethod){const e:Record<string,string>={};if(!payment)e.paymentMethod='To‘lov usulini tanlang';if(type==='DELIVERY'){if(!address)return{...e,address:'Yetkazish manzili kerak'};Object.assign(e,validateAddress(address))}return e}
 export function createIssue(orderId:string,type:DeliveryIssueType,description:string,reportedBy:string):DeliveryIssue{if(!description.trim())throw new Error('Issue description is required');return{id:createUuid(),orderId,type,description,reportedBy,createdAt:new Date().toISOString()}}
+
+// Checkout idempotency: the server already deduplicates by orders.idempotency_key
+// (a real unique constraint, race-safe on the RPC side), but only if the client
+// sends the SAME key on a resubmission. A fresh crypto.randomUUID() minted inside
+// every submit() call defeats that entirely -- a reload, a second tab, or a
+// same-session retry after an ambiguous network result would each mint their own
+// key and the server would (correctly, per its own contract) create a separate
+// order for each. This fingerprint identifies "the same pending checkout attempt"
+// so the caller can persist {id, fingerprint} across reload/retry and reuse the
+// id whenever the fingerprint still matches -- and mint a fresh id the moment it
+// doesn't, so an old pending id can never bind to materially different contents.
+export interface PendingCheckout{id:string;fingerprint:string}
+export const checkoutFingerprint=(type:'DELIVERY'|'PICKUP',cart:Pick<CartItem,'menuItemId'|'modifierIds'|'quantity'|'instructions'>[],payment:PaymentMethod|undefined,address:CustomerAddress|undefined):string=>JSON.stringify({
+  type,
+  payment,
+  cart:cart.map(item=>({menuItemId:item.menuItemId,modifierIds:item.modifierIds.slice().sort(),quantity:item.quantity,instructions:item.instructions.trim()})),
+  address:type==='DELIVERY'&&address?{customerName:address.customerName,primaryPhone:address.primaryPhone,secondaryPhone:address.secondaryPhone,district:address.district,street:address.street,house:address.house,entrance:address.entrance,floor:address.floor,apartment:address.apartment,landmark:address.landmark,deliveryNotes:address.deliveryNotes,latitude:address.latitude,longitude:address.longitude}:undefined,
+})
+export const resolvePendingCheckoutId=(fingerprint:string,stored:PendingCheckout|null):string=>stored&&stored.fingerprint===fingerprint?stored.id:createUuid()

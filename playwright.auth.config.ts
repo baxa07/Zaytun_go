@@ -54,7 +54,7 @@ assertLocalSupabaseHost(webServerEnv.VITE_SUPABASE_URL);
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["auth-local.spec.ts", "customer-otp.spec.ts"],
+  testMatch: ["auth-local.spec.ts", "customer-otp.spec.ts", "checkout-idempotency.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,
