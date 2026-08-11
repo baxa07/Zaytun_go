@@ -29,7 +29,7 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await page.getByLabel("Uy / bino *").fill("24B");
     await page.getByLabel("Mo‘ljal", { exact: true }).fill("Maktab ro‘parasida");
     await page.getByTestId("map-picker-set").click();
-    await page.getByLabel("Pin to‘g‘ri joyda").check();
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
     await expect(page.getByTestId("server-confirmed-total")).toContainText(/136.?000/);

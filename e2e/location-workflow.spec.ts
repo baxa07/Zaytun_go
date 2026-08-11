@@ -29,20 +29,31 @@ test.describe("precise delivery location", () => {
 
     await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
     await expect(page.getByTestId("map-suggestion")).toContainText("Yangiariq MFY");
-    await expect(page.getByTestId("coordinate-summary")).toContainText("40.103900, 65.368800");
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Kirish nuqtasi xaritada belgilandi");
     await page.screenshot({ path: evidence("03-selected-marker-suggestion") });
 
     await page.getByRole("button", { name: "Tavsiya maydonlarini qo‘llash" }).click();
     await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
     await page.getByLabel("Uy / bino *").fill("24B, yashil darvoza");
     await fillRequiredAddress(page);
-    await page.getByLabel("Pin to‘g‘ri joyda").check();
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.screenshot({ path: evidence("04-confirmed-pin-address") });
 
     await page.getByTestId("map-picker-set").click({ position: { x: 40, y: 40 } });
     await expect(page.getByTestId("map-reconfirmation")).toBeVisible();
-    await expect(page.getByLabel("Pin to‘g‘ri joyda")).not.toBeChecked();
+    await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).not.toBeChecked();
     await page.screenshot({ path: evidence("05-reconfirmation-required") });
+  });
+
+  test("use-my-location prefills the pin from browser geolocation", async ({ page, context }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 40.1039, longitude: 65.3688 });
+    await openCheckout(page);
+    await expect(page.getByTestId("map-empty")).toBeVisible();
+
+    await page.getByTestId("use-my-location").click();
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Kirish nuqtasi xaritada belgilandi");
+    await expect(page.getByTestId("map-suggestion")).toContainText("Yangiariq MFY");
   });
 
   test("submits valid pins into manual operator review without claiming a radius", async ({ page }) => {
@@ -53,7 +64,7 @@ test.describe("precise delivery location", () => {
     await page.getByRole("button", { name: "Qidirish" }).click();
     await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
     await page.getByRole("button", { name: "Tavsiya maydonlarini qo‘llash" }).click();
-    await page.getByLabel("Pin to‘g‘ri joyda").check();
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
 
@@ -64,7 +75,7 @@ test.describe("precise delivery location", () => {
     await page.getByRole("button", { name: /Tashqaridagi test manzili/ }).click();
     await expect(page.getByTestId("delivery-review-notice")).toContainText("operator tomonidan tasdiqlanadi");
     await page.getByRole("button", { name: "Tavsiya maydonlarini qo‘llash" }).click();
-    await page.getByLabel("Pin to‘g‘ri joyda").check();
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
     await page.screenshot({ path: evidence("06-outside-delivery-zone") });

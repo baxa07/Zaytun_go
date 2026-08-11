@@ -26,9 +26,9 @@ test.describe("delivery address clarification", () => {
 
     // The current address is pre-populated, including the map pin.
     await expect(page.getByLabel("Uy / bino *")).toHaveValue("Bino raqami noma’lum");
-    await expect(page.getByTestId("coordinate-summary")).toContainText("40.103900, 65.368800");
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Kirish nuqtasi xaritada belgilandi");
     // A prior pin confirmation is never trusted into a fresh revision session.
-    await expect(page.getByLabel("Pin to‘g‘ri joyda")).not.toBeChecked();
+    await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).not.toBeChecked();
 
     // Submitting without a fresh confirmation is blocked.
     await page.getByTestId("submit-address-revision").click();
@@ -37,10 +37,10 @@ test.describe("delivery address clarification", () => {
     // Edit the address and move the pin; still requires a fresh confirmation.
     await page.getByLabel("Uy / bino *").fill("14-uy, yashil darvoza");
     await page.getByTestId("map-picker-set").click({ position: { x: 40, y: 40 } });
-    await expect(page.getByLabel("Pin to‘g‘ri joyda")).not.toBeChecked();
+    await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).not.toBeChecked();
 
-    await page.getByLabel("Pin to‘g‘ri joyda").check();
-    await expect(page.getByLabel("Pin to‘g‘ri joyda")).toBeChecked();
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+    await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).toBeChecked();
 
     await page.getByTestId("submit-address-revision").click();
 
@@ -67,7 +67,7 @@ test.describe("delivery address clarification", () => {
     await page.goto("/track/ord-clarify");
     await page.getByTestId("edit-delivery-address").click();
     await page.getByTestId("map-picker-set").click({ position: { x: 40, y: 40 } });
-    await page.getByLabel("Pin to‘g‘ri joyda").check();
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
 
     await page.getByTestId("submit-address-revision").dblclick();
 

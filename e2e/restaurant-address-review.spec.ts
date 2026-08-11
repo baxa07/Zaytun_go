@@ -13,7 +13,7 @@ async function placeDeliveryOrder(customer: import("@playwright/test").Page) {
   await customer.getByLabel("Uy / bino *").fill("noma’lum");
   await customer.getByLabel("Mo‘ljal", { exact: true }).fill("Maktab yonida");
   await customer.getByTestId("map-picker-set").click();
-  await customer.getByLabel("Pin to‘g‘ri joyda").check();
+  await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
   await customer.getByTestId("checkout-submit").click();
   await customer.waitForURL("**/confirmation/**");
   const orderId = customer.url().split("/confirmation/")[1];
@@ -50,7 +50,7 @@ test.describe("restaurant address review", () => {
     await customer.getByTestId("edit-delivery-address").click();
     await customer.getByLabel("Uy / bino *").fill("14-uy, ko‘k darvoza");
     await customer.getByTestId("map-picker-set").click({ position: { x: 60, y: 60 } });
-    await customer.getByLabel("Pin to‘g‘ri joyda").check();
+    await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await customer.getByTestId("submit-address-revision").click();
     await expect(customer.getByTestId("order-status")).toHaveText("Manzil tasdiqlanmoqda");
 
