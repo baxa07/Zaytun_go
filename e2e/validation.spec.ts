@@ -30,7 +30,7 @@ test.describe('checkout validation', () => {
 
     // fixing the field clears its stale error immediately, without needing to resubmit
     await page.getByTestId('map-picker-set').click()
-    await page.getByLabel('Pin to‘g‘ri joyda').check()
+    await page.getByLabel('Kirish joyi xaritada to‘g‘ri belgilangan').check()
     await expect(page.locator('.error')).toHaveCount(0)
   })
 

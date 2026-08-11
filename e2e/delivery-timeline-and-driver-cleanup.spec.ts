@@ -12,7 +12,7 @@ async function placeDeliveryOrder(customer: Page, house = "5A") {
   await customer.getByLabel("Uy / bino *").fill(house);
   await customer.getByLabel("Mo‘ljal", { exact: true }).fill("Maktab yonida");
   await customer.getByTestId("map-picker-set").click();
-  await customer.getByLabel("Pin to‘g‘ri joyda").check();
+  await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
   await customer.getByTestId("checkout-submit").click();
   await customer.waitForURL("**/confirmation/**");
   const orderId = customer.url().split("/confirmation/")[1];

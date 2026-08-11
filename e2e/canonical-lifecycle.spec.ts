@@ -53,7 +53,7 @@ test.describe('canonical order lifecycle', () => {
       await customer.getByLabel('Uy / bino *').fill('5A')
       await customer.getByLabel('Mo‘ljal', {exact: true}).fill('Maktab yonida')
       await customer.getByTestId('map-picker-set').click()
-      await customer.getByLabel('Pin to‘g‘ri joyda').check()
+      await customer.getByLabel('Kirish joyi xaritada to‘g‘ri belgilangan').check()
       await customer.getByTestId('checkout-submit').click()
       await customer.waitForURL('**/confirmation/**')
       orderId = customer.url().split('/confirmation/')[1]
@@ -108,7 +108,7 @@ test.describe('canonical order lifecycle', () => {
       await expect(staff).toHaveURL(new RegExp(orderId))
       await expect(staff.locator('.detail-head .badge')).toHaveText('Yetkazildi')
       const eventLabels = await staff.getByTestId('event-list').locator('b').allTextContents()
-      for (const label of ['Yangi', 'Tasdiqlangan', 'Tayyorlanmoqda', 'Tayyor', 'Haydovchi biriktirilgan', 'Olib ketildi', 'Yo‘lda', 'Yetib keldi', 'Yetkazildi']) {
+      for (const label of ['Yangi', 'Tasdiqlangan', 'Tayyorlanmoqda', 'Tayyor', 'Haydovchi biriktirilgan', 'Kuryer olib ketdi', 'Yo‘lda', 'Yetib keldi', 'Yetkazildi']) {
         expect(eventLabels).toContain(label)
       }
     })

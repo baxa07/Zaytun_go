@@ -19,10 +19,14 @@ import {
   publicMenuState,
   validateDeliveryLocation,
   validateOrderInput,
+  type ActorType,
+  type AddressConfidence,
   type CustomerAddress,
+  type DriverAvailability,
   type MenuItem,
   type Order,
   type OrderStatus,
+  type PaymentCollectionStatus,
   type PaymentMethod,
   type RestaurantConfig,
 } from "./domain";
@@ -68,6 +72,54 @@ const statusLabels: Record<OrderStatus, string> = {
   CANCELLED: "Bekor qilindi",
   DELIVERY_FAILED: "Yetkazilmadi",
   RETURNED: "Qaytarildi",
+};
+// PICKED_UP (courier picked the order up from the restaurant) and
+// COLLECTED (customer picked their own order up) share the same flat
+// statusLabels string ("Olib ketildi") even though they're unrelated
+// events. That's harmless everywhere else statusLabels is used today --
+// each surface only ever renders one order type -- except this
+// event-history list, which is genuinely shared across both. Disambiguate
+// only PICKED_UP here, without touching the flat map itself (also used
+// by the driver's own status badge, which must keep reading "Olib
+// ketildi") or any other status's wording.
+const eventStatusLabel = (status: OrderStatus) =>
+  status === "PICKED_UP" ? "Kuryer olib ketdi" : statusLabels[status];
+const actorLabels: Record<ActorType, string> = {
+  CUSTOMER: "Mijoz",
+  RESTAURANT: "Oshxona",
+  DISPATCHER: "Operator",
+  DRIVER: "Haydovchi",
+  SYSTEM: "Tizim",
+};
+// Free-text reporter identifiers used at DeliveryIssue creation call sites
+// (e.g. "restaurant", "driver-1") -- a display-only translation, never
+// changes the stored value, and falls back to the raw string for anything
+// unrecognized rather than hiding it.
+const reportedByLabel = (reportedBy: string) =>
+  reportedBy === "restaurant" ? "Oshxona"
+  : reportedBy.startsWith("driver") ? "Haydovchi"
+  : reportedBy === "customer" ? "Mijoz"
+  : reportedBy;
+const addressConfidenceLabels: Record<AddressConfidence, string> = {
+  COMPLETE: "To‘liq",
+  NEEDS_CLARIFICATION: "Aniqlashtirish kerak",
+  CUSTOMER_CONFIRMATION_REQUIRED: "Mijoz tasdiqlashi kerak",
+};
+const deliveryZoneLabels: Record<NonNullable<CustomerAddress["deliveryZoneResult"]>, string> = {
+  ELIGIBLE: "Yetkazish hududida",
+  OUTSIDE_ZONE: "Hududdan tashqarida",
+  DELIVERY_DISABLED: "Yetkazish o‘chirilgan",
+};
+const paymentStatusLabels: Record<PaymentCollectionStatus, string> = {
+  NOT_REQUIRED: "Talab qilinmaydi",
+  PENDING: "Kutilmoqda",
+  COLLECTED: "Olindi",
+  FAILED: "Muvaffaqiyatsiz",
+};
+const driverAvailabilityLabels: Record<DriverAvailability, string> = {
+  AVAILABLE: "Bo‘sh",
+  BUSY: "Band",
+  OFFLINE: "Oflayn",
 };
 const deliveryReviewBadges: Partial<Record<NonNullable<Order["deliveryReviewStatus"]>, { label: string; className: string }>> = {
   REVIEW_REQUIRED: { label: "Manzil tekshirilmoqda", className: "review-required" },
@@ -1488,7 +1540,7 @@ function OrderDetail() {
               <p>
                 <b>To‘lov:</b>{" "}
                 {paymentLabel(order.paymentMethod,true)}{" "}
-                · {order.paymentStatus}
+                · {paymentStatusLabels[order.paymentStatus]}
               </p>
               <p>
                 <b>Izoh:</b> {order.specialInstructions || "Yo‘q"}
@@ -1528,23 +1580,27 @@ function OrderDetail() {
                     <b>Mo‘ljal:</b> {order.address.landmark}
                   </p>
                   <p><b>Yetkazish izohi:</b> {order.address.deliveryNotes || "Yo‘q"}</p>
-                  <p>
-                    <b>Koordinata:</b> {order.address.latitude},{" "}
-                    {order.address.longitude}
-                  </p>
-                  <div className="location-facts" data-testid="restaurant-location-detail">
-                    <span><b>Manzil ishonchi</b>{order.address.confidence}</span>
-                    <span><b>Pin tasdig‘i</b>{order.address.pinConfirmedAt ? "Tasdiqlangan" : "Tasdiqlanmagan"}</span>
-                    <span><b>Masofa</b>{order.address.deliveryDistanceKm !== undefined ? `${order.address.deliveryDistanceKm.toFixed(2)} km` : "—"}</span>
-                    <span><b>Yetkazish hududi</b>{order.address.deliveryZoneResult || "—"}</span>
-                  </div>
-                  <div className="location-preview" aria-label="Yetkazish pinining ixcham xarita ko‘rinishi"><span>📍</span><small>{order.address.latitude?.toFixed(6)}, {order.address.longitude?.toFixed(6)}</small></div>
                   {order.address.latitude !== undefined && order.address.longitude !== undefined && (
                     <div className="location-actions">
-                      <a className="button secondary" href={navigationUrl("yandex",{latitude:order.address.latitude,longitude:order.address.longitude})} target="_blank" rel="noopener noreferrer">Yandex Maps</a>
+                      <a className="button primary" href={navigationUrl("yandex",{latitude:order.address.latitude,longitude:order.address.longitude})} target="_blank" rel="noopener noreferrer">📍 Yandex Maps</a>
                       <a className="button secondary" href={navigationUrl("google",{latitude:order.address.latitude,longitude:order.address.longitude})} target="_blank" rel="noopener noreferrer">Google Maps</a>
-                      <button className="button secondary" onClick={() => void navigator.clipboard?.writeText(`${order.address!.latitude}, ${order.address!.longitude}`)}>Koordinatani nusxalash</button>
                     </div>
+                  )}
+                  <div className="location-facts" data-testid="restaurant-location-detail">
+                    <span><b>Manzil ishonchi</b>{addressConfidenceLabels[order.address.confidence]}</span>
+                    <span><b>Pin tasdig‘i</b>{order.address.pinConfirmedAt ? "Tasdiqlangan" : "Tasdiqlanmagan"}</span>
+                    <span><b>Masofa</b>{order.address.deliveryDistanceKm !== undefined ? `${order.address.deliveryDistanceKm.toFixed(2)} km` : "—"}</span>
+                    <span><b>Yetkazish hududi</b>{order.address.deliveryZoneResult ? deliveryZoneLabels[order.address.deliveryZoneResult] : "—"}</span>
+                  </div>
+                  {order.address.latitude !== undefined && order.address.longitude !== undefined && (
+                    <details className="location-debug" data-testid="location-debug">
+                      <summary>Texnik ma'lumot</summary>
+                      <p>
+                        <b>Koordinata:</b> {order.address.latitude.toFixed(6)},{" "}
+                        {order.address.longitude.toFixed(6)}
+                      </p>
+                      <button className="button secondary" onClick={() => void navigator.clipboard?.writeText(`${order.address!.latitude}, ${order.address!.longitude}`)}>Koordinatani nusxalash</button>
+                    </details>
                   )}
                 </>
               ) : (
@@ -1559,7 +1615,7 @@ function OrderDetail() {
                   <b>{issueLabels[i.type] || i.type}</b>
                   <span>{i.description}</span>
                   <small>
-                    {i.reportedBy} · {time(i.createdAt)}
+                    {reportedByLabel(i.reportedBy)} · {time(i.createdAt)}
                   </small>
                   {!i.resolvedAt && (
                     <button onClick={() => resolveIssue(order.id, i.id)}>
@@ -1723,7 +1779,7 @@ function OrderDetail() {
                       <b>{d.name}</b>
                       <small>{d.vehicle}</small>
                     </span>
-                    <i>{d.availability}</i>
+                    <i>{driverAvailabilityLabels[d.availability]}</i>
                   </button>
                 ))}
                 {!drivers.some((d) => d.availability === "AVAILABLE") && (
@@ -1757,9 +1813,9 @@ function OrderDetail() {
                   <div key={e.id}>
                     <i></i>
                     <span>
-                      <b>{statusLabels[e.newStatus]}</b>
+                      <b>{eventStatusLabel(e.newStatus)}</b>
                       <small>
-                        {time(e.timestamp)} · {e.actorType}
+                        {time(e.timestamp)} · {actorLabels[e.actorType]}
                       </small>
                       {e.reason && <small>{e.reason}</small>}
                     </span>
