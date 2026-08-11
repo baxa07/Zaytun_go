@@ -55,7 +55,7 @@ Deno.test("sendSms: cold cache logs in once, then sends -- accepted", async () =
     "/api/message/sms/send": [() => jsonRes(200, { id: "msg-1", status: "waiting" })],
   });
   const client = new EskizClient(CONFIG, fetch);
-  const outcome = await client.sendSms("998901234567", "ZAYTUN GO kodi: 123456", new Deadline(2000));
+  const outcome = await client.sendSms("998901234567", "ZAYTUN GO ilovasi uchun kirish kodi: 123456", new Deadline(2000));
   assertEquals(outcome, { ok: true });
   assertEquals(calls.map((c) => c.url.replace(CONFIG.baseUrl, "")), ["/api/auth/login", "/api/message/sms/send"]);
 });
