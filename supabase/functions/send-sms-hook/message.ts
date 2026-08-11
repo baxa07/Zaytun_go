@@ -35,5 +35,5 @@ export function isValidHookOtp(otp: unknown): otp is string {
 // The code must come only from sms.otp (the caller's already-validated
 // isValidHookOtp result) -- never synthesized here.
 export function formatOtpMessage(otp: string): string {
-  return `ZAYTUN GO kodi: ${otp}`;
+  return `ZAYTUN GO ilovasi uchun kirish kodi: ${otp}`;
 }

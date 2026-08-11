@@ -45,6 +45,28 @@ Deno.test("isValidHookOtp: rejects wrong length, non-digits, non-string", () => 
   assertEquals(isValidHookOtp(undefined), false);
 });
 
-Deno.test("formatOtpMessage: builds the exact expected short message", () => {
-  assertEquals(formatOtpMessage("123456"), "ZAYTUN GO kodi: 123456");
+Deno.test("formatOtpMessage: builds the exact expected message (Eskiz operator-template format)", () => {
+  assertEquals(formatOtpMessage("123456"), "ZAYTUN GO ilovasi uchun kirish kodi: 123456");
+});
+
+Deno.test("formatOtpMessage: interpolates the otp verbatim -- no mutation, no leading-zero loss", () => {
+  assertEquals(formatOtpMessage("000000"), "ZAYTUN GO ilovasi uchun kirish kodi: 000000");
+  assertEquals(formatOtpMessage("998877"), "ZAYTUN GO ilovasi uchun kirish kodi: 998877");
+});
+
+Deno.test("formatOtpMessage: only the otp varies between calls -- rest of the message is a fixed constant", () => {
+  const a = formatOtpMessage("111111");
+  const b = formatOtpMessage("222222");
+  assertEquals(a.replace("111111", "X"), b.replace("222222", "X"));
+});
+
+Deno.test("formatOtpMessage: no extra whitespace or newlines", () => {
+  const message = formatOtpMessage("123456");
+  assertEquals(message, message.trim());
+  assertEquals(message.includes("\n"), false);
+  assertEquals(message.includes("  "), false);
+});
+
+Deno.test("formatOtpMessage: takes no sender-name parameter -- sender is not this function's concern", () => {
+  assertEquals(formatOtpMessage.length, 1);
 });
