@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest'
-import {addCartLine,calculateOrderTotal,canTransition,createEvent,createIssue,deliveryAddressWasResubmitted,isDeliveryAddressRevisable,publicMenuState,resolveOrderSubmissionMode,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
+import {addCartLine,calculateOrderTotal,canTransition,checkoutFingerprint,createEvent,createIssue,deliveryAddressWasResubmitted,isDeliveryAddressRevisable,publicMenuState,resolveOrderSubmissionMode,resolvePendingCheckoutId,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
 
 const address:CustomerAddress={customerName:'Ali',primaryPhone:'+998901234567',district:'Navoiy sh.',street:'Navoiy ko‘chasi',house:'12',landmark:'Bozor yonida',deliveryNotes:'',latitude:40.1,longitude:65.3,confidence:'COMPLETE',pinConfirmedAt:'2026-08-04T08:00:00Z',locationProvider:'mock',deliveryZoneResult:'ELIGIBLE'}
 const order:Order={id:'o1',number:'ZG-1',customer:{id:'c1',name:'Ali',primaryPhone:'+998901234567'},type:'DELIVERY',address,items:[],subtotal:0,deliveryFee:0,total:0,paymentMethod:'CASH',paymentStatus:'PENDING',specialInstructions:'',status:'NEW',createdAt:'2026-08-03T10:00:00Z',events:[],issues:[]}
@@ -45,5 +45,51 @@ describe('resubmitted-address cue (order_events inspection)',()=>{
   it('is false again once staff has approved or rejected since the last revision',()=>{
     expect(deliveryAddressWasResubmitted(withEvents('DELIVERY_ADDRESS_REVISED','DELIVERY_REVIEW_APPROVED'))).toBe(false)
     expect(deliveryAddressWasResubmitted(withEvents('DELIVERY_ADDRESS_REVISED','DELIVERY_REVIEW_REJECTED'))).toBe(false)
+  })
+})
+describe('checkout idempotency (duplicate-order launch blocker)',()=>{
+  const cart:CartItem[]=[{id:'line-1',menuItemId:'plov',name:'Osh',unitPrice:48000,quantity:1,modifierIds:['spicy'],modifierNames:['Achchiq'],instructions:'piyozsiz'}]
+  describe('checkoutFingerprint',()=>{
+    it('is identical for the exact same pickup cart+payment computed twice',()=>{
+      expect(checkoutFingerprint('PICKUP',cart,'CASH',undefined)).toBe(checkoutFingerprint('PICKUP',cart,'CASH',undefined))
+    })
+    it('is identical for the exact same delivery cart+address+payment computed twice',()=>{
+      expect(checkoutFingerprint('DELIVERY',cart,'CASH',address)).toBe(checkoutFingerprint('DELIVERY',cart,'CASH',address))
+    })
+    it('is order-independent for modifier selection (same modifiers, different array order)',()=>{
+      const reordered:CartItem[]=[{...cart[0],modifierIds:['spicy'].slice().reverse()}]
+      expect(checkoutFingerprint('PICKUP',cart,'CASH',undefined)).toBe(checkoutFingerprint('PICKUP',reordered,'CASH',undefined))
+    })
+    it('changes when the cart quantity changes',()=>{
+      const changed:CartItem[]=[{...cart[0],quantity:2}]
+      expect(checkoutFingerprint('PICKUP',cart,'CASH',undefined)).not.toBe(checkoutFingerprint('PICKUP',changed,'CASH',undefined))
+    })
+    it('changes when the payment method changes',()=>{
+      expect(checkoutFingerprint('PICKUP',cart,'CASH',undefined)).not.toBe(checkoutFingerprint('PICKUP',cart,'CARD_AT_PICKUP',undefined))
+    })
+    it('changes when the delivery address changes',()=>{
+      const movedAddress={...address,house:'99'}
+      expect(checkoutFingerprint('DELIVERY',cart,'CASH',address)).not.toBe(checkoutFingerprint('DELIVERY',cart,'CASH',movedAddress))
+    })
+    it('changes between pickup and delivery for the identical cart',()=>{
+      expect(checkoutFingerprint('PICKUP',cart,'CASH',undefined)).not.toBe(checkoutFingerprint('DELIVERY',cart,'CASH',address))
+    })
+  })
+  describe('resolvePendingCheckoutId',()=>{
+    it('mints a fresh id when nothing is stored yet',()=>{
+      const fingerprint=checkoutFingerprint('PICKUP',cart,'CASH',undefined)
+      const id=resolvePendingCheckoutId(fingerprint,null)
+      expect(id).toMatch(/^[0-9a-f-]{36}$/)
+    })
+    it('reuses the stored id when the fingerprint still matches -- the reload/retry case', () => {
+      const fingerprint=checkoutFingerprint('PICKUP',cart,'CASH',undefined)
+      expect(resolvePendingCheckoutId(fingerprint,{id:'stored-id',fingerprint})).toBe('stored-id')
+    })
+    it('mints a fresh id when the fingerprint no longer matches -- an old pending id must never bind to different contents',()=>{
+      const oldFingerprint=checkoutFingerprint('PICKUP',cart,'CASH',undefined)
+      const newFingerprint=checkoutFingerprint('PICKUP',[{...cart[0],quantity:5}],'CASH',undefined)
+      const id=resolvePendingCheckoutId(newFingerprint,{id:'stored-id',fingerprint:oldFingerprint})
+      expect(id).not.toBe('stored-id')
+    })
   })
 })

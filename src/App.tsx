@@ -13,10 +13,12 @@ import {
 import {
   calculateOrderTotal,
   canTransition,
+  checkoutFingerprint,
   createEvent,
   deliveryAddressWasResubmitted,
   isDeliveryAddressRevisable,
   publicMenuState,
+  resolvePendingCheckoutId,
   validateDeliveryLocation,
   validateOrderInput,
   type ActorType,
@@ -28,6 +30,7 @@ import {
   type OrderStatus,
   type PaymentCollectionStatus,
   type PaymentMethod,
+  type PendingCheckout,
   type RestaurantConfig,
 } from "./domain";
 import { useApp, CustomerAuthRequiredError } from "./state";
@@ -57,6 +60,34 @@ const time = (s: string) =>
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(s));
+// Checkout idempotency persistence: sessionStorage (not localStorage) so a
+// genuinely new tab/session never inherits a stale pending id, but the SAME
+// tab surviving a reload does. Read/write live only here; the fingerprint
+// match/mismatch decision itself is the pure, unit-tested
+// resolvePendingCheckoutId in domain.ts.
+const PENDING_CHECKOUT_KEY = "zgo.pendingCheckout";
+const readPendingCheckout = (): PendingCheckout | null => {
+  try {
+    const raw = sessionStorage.getItem(PENDING_CHECKOUT_KEY);
+    return raw ? (JSON.parse(raw) as PendingCheckout) : null;
+  } catch {
+    return null;
+  }
+};
+const writePendingCheckout = (value: PendingCheckout) => {
+  try {
+    sessionStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify(value));
+  } catch {
+    /* sessionStorage unavailable (private mode, quota) -- checkout still works, just without reload/retry id stability */
+  }
+};
+const clearPendingCheckout = () => {
+  try {
+    sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
+  } catch {
+    /* nothing to clean up if sessionStorage was never reachable */
+  }
+};
 const statusLabels: Record<OrderStatus, string> = {
   NEW: "Yangi",
   CONFIRMED: "Tasdiqlangan",
@@ -626,7 +657,16 @@ function Checkout() {
     }
     submittingRef.current = true;
     setSubmitting(true);
-    const id = createUuid();
+    // Idempotency: reuse the pending checkout's id/idempotencyKey across a
+    // reload or a same-session retry (network timeout, ambiguous response,
+    // etc.) as long as it's still materially the same order. Persisted
+    // *before* the RPC fires, so an interrupted request still has its key
+    // sitting in sessionStorage for the retry to find. A fingerprint
+    // mismatch (cart/address/payment genuinely changed) always mints a
+    // fresh id -- an old pending id can never bind to different contents.
+    const fingerprint = checkoutFingerprint(type, cart, payment, type === "DELIVERY" ? address : undefined);
+    const id = resolvePendingCheckoutId(fingerprint, readPendingCheckout());
+    writePendingCheckout({ id, fingerprint });
     const order: Order = {
       id,
       number: `ZG-${String(Date.now()).slice(-4)}`,
@@ -660,6 +700,12 @@ function Checkout() {
   const finishSubmit = async (order: Order) => {
     try {
       const saved = await submitOrderRef.current(order);
+      // Only a genuine success clears the pending-checkout id -- the
+      // CustomerAuthRequiredError branch below and the generic failure
+      // branch both deliberately leave it in place so a retry (or the
+      // OTP-verified resubmission) still reuses the same id instead of
+      // minting a new one and risking a second order.
+      clearPendingCheckout();
       clearCart();
       nav(`/confirmation/${saved.id}`);
     } catch (error) {
@@ -1484,6 +1530,12 @@ function OrderDetail() {
     transitionPending,
   } = useApp();
   const order = orders.find((o) => o.id === id);
+  // assignedDriverId is never cleared once set (confirmed server-side: the
+  // transition RPC only flips the driver's own availability back to
+  // AVAILABLE on a terminal status, it never touches orders.assigned_driver_id)
+  // -- so this stays populated through DELIVERED/DELIVERY_FAILED/RETURNED too,
+  // which is exactly the "who handled this order" historical record staff need.
+  const assignedDriver = order?.assignedDriverId ? drivers.find((d) => d.id === order.assignedDriverId) : undefined;
   const [reason, setReason] = useState("");
   const [estimate, setEstimateValue] = useState("35");
   const [reviewReason, setReviewReason] = useState("");
@@ -1638,6 +1690,29 @@ function OrderDetail() {
                 Manzil muammosini bildirish
               </button>
             </section>
+            {order.type === "DELIVERY" && order.assignedDriverId && (
+              <section className="panel assigned-driver" data-testid="assigned-driver">
+                <h2>Haydovchi</h2>
+                {assignedDriver ? (
+                  <>
+                    <p>
+                      <b>{assignedDriver.name}</b>
+                    </p>
+                    <a
+                      href={`tel:${assignedDriver.phone}`}
+                      className="button secondary"
+                    >
+                      ☎ {assignedDriver.phone}
+                    </a>
+                    <p>
+                      <small>Holat: {driverAvailabilityLabels[assignedDriver.availability]}</small>
+                    </p>
+                  </>
+                ) : (
+                  <p className="warning">Haydovchi ma'lumoti topilmadi</p>
+                )}
+              </section>
+            )}
           </div>
           <aside className="panel action-panel">
             <h2>Keyingi amal</h2>
