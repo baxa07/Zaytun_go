@@ -119,6 +119,11 @@ type State = {
   authReady: boolean;
   session: Session | null;
   role: AppRole | null;
+  // The authenticated user's own profiles.display_name, if any -- null for
+  // customer sessions (no profiles row) and while unauthenticated. Used to
+  // greet a signed-in DRIVER by their real identity instead of a hard-coded
+  // placeholder name.
+  profileDisplayName: string | null;
   authError: string;
   // True once a session exists AND it's confirmed not to be a staff/driver
   // session (role===null after authReady). Never conflated with "signed
@@ -169,6 +174,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [authReady, setAuthReady] = useState(!supabaseConfigured);
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
+  const [profileDisplayName, setProfileDisplayName] = useState<string | null>(null);
   const [authError, setAuthError] = useState("");
   const pendingTransitions = useRef(new Set<string>());
   const [pendingTransitionState, setPendingTransitionState] = useState<Record<string, boolean>>({});
@@ -192,6 +198,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const applySession = useCallback(async (nextSession: Session | null) => {
     setSession(nextSession);
     setRole(null);
+    setProfileDisplayName(null);
     setAuthError("");
     if (!nextSession || !supabase) {
       setAuthReady(true);
@@ -204,11 +211,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // to every customer who signs in.
     const { data, error } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role,display_name")
       .eq("id", nextSession.user.id)
       .maybeSingle();
     if (error) throw new Error(`Xodim roli yuklanmadi: ${error.message}`);
     setRole((data?.role as AppRole | undefined) ?? null);
+    setProfileDisplayName((data?.display_name as string | undefined) ?? null);
     setAuthReady(true);
   }, []);
 
@@ -370,6 +378,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     authReady,
     session,
     role,
+    profileDisplayName,
     authError,
     isCustomerAuthenticated,
     refresh,
@@ -494,7 +503,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
-  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, withOrderLock]);
+  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, withOrderLock]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }
