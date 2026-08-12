@@ -34,7 +34,7 @@ export interface DeliveryIssue {id:string;orderId:string;type:DeliveryIssueType;
 export interface Driver {id:string;name:string;phone:string;vehicle:string;availability:DriverAvailability}
 export interface DriverAssignment {id:string;orderId:string;driverId:string;assignedAt:string;acceptedAt?:string}
 export type DeliveryReviewStatus='NOT_REQUIRED'|'REVIEW_REQUIRED'|'CLARIFICATION_REQUESTED'|'APPROVED'|'REJECTED'
-export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string}
+export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback}
 
 export const legalTransitions:Record<OrderStatus,OrderStatus[]>={NEW:['CONFIRMED','REJECTED','CANCELLED'],CONFIRMED:['PREPARING','CANCELLED'],PREPARING:['READY','CANCELLED'],READY:['COLLECTED','DRIVER_ASSIGNED','CANCELLED'],COLLECTED:[],DRIVER_ASSIGNED:['PICKED_UP','CANCELLED'],PICKED_UP:['ON_THE_WAY','DELIVERY_FAILED','RETURNED'],ON_THE_WAY:['ARRIVED','DELIVERY_FAILED','RETURNED'],ARRIVED:['DELIVERED','DELIVERY_FAILED','RETURNED'],DELIVERED:[],REJECTED:[],CANCELLED:[],DELIVERY_FAILED:['RETURNED'],RETURNED:[]}
 export const canTransition=(from:OrderStatus,to:OrderStatus)=>legalTransitions[from].includes(to)
@@ -90,3 +90,105 @@ export const driverGreetingName=(displayName:string|null|undefined):string|null=
   const first=displayName?.trim().split(/\s+/)[0]
   return first?first.toUpperCase():null
 }
+
+// H1: Order History. Every date preset/custom range is resolved
+// server-side (Asia/Tashkent business timezone) by the History RPC --
+// the frontend only ever sends the symbolic preset (or explicit calendar
+// dates for CUSTOM), never a browser-computed timestamp range.
+export type HistoryDatePreset='TODAY'|'YESTERDAY'|'LAST_7_DAYS'|'THIS_MONTH'|'CUSTOM'
+export interface OrderHistoryFilters {
+  preset:HistoryDatePreset
+  customFrom?:string
+  customTo?:string
+  branchId?:string
+  driverId?:string
+  status?:OrderStatus
+  fulfillment?:'DELIVERY'|'PICKUP'
+  paymentMethod?:PaymentMethod
+  search?:string
+  limit?:number
+  offset?:number
+}
+export interface OrderHistoryRow {
+  id:string
+  number:string
+  createdAt:string
+  finishedAt?:string
+  branchId:string
+  branchName:string
+  customerName:string
+  type:'DELIVERY'|'PICKUP'
+  status:OrderStatus
+  assignedDriverId?:string
+  driverName?:string
+  paymentMethod:PaymentMethod
+  total:number
+  hasFeedback:boolean
+}
+export interface OrderHistoryPage {rows:OrderHistoryRow[];totalCount:number}
+export interface OrderHistorySummary {totalOrders:number;delivered:number;cancelled:number;failed:number;totalValue:number}
+export const HISTORY_PAGE_SIZE=25
+
+// H2: Driver Delivery Ledger. Credit comes only from
+// driver_assignments.status (never orders.assigned_driver_id) so
+// reassignment can never misattribute completed work -- see the RPC
+// migration for the full reasoning. This is a work-verification report,
+// never payroll: no rate, no earnings, no salary field exists here.
+export interface DriverLedgerSummaryRow {
+  driverId:string
+  driverName:string
+  totalAssignments:number
+  accepted:number
+  completed:number
+  failed:number
+  returned:number
+  declined:number
+  superseded:number
+  feedbackReceived:number
+  feedbackFast:number
+  feedbackNormal:number
+  feedbackLate:number
+  feedbackIssue:number
+}
+export interface DriverLedgerEntry {
+  id:string
+  orderId:string
+  orderNumber:string
+  branchId:string
+  branchName:string
+  district?:string
+  type:'DELIVERY'|'PICKUP'
+  assignedAt:string
+  acceptedAt?:string
+  endedAt?:string
+  status:'ASSIGNED'|'ACCEPTED'|'DECLINED'|'SUPERSEDED'|'COMPLETED'|'FAILED'|'RETURNED'|'CANCELLED'
+  total:number
+}
+export interface DriverLedgerPage {rows:DriverLedgerEntry[];totalCount:number}
+
+// H3: Customer Feedback v1. Stable machine values only, never translated
+// display text -- copy can change freely without a data migration.
+export type FeedbackDeliveryRating='FAST'|'NORMAL'|'LATE'|'ISSUE'
+export type FeedbackDeliveryIssueReason='SPILLED_OR_TIPPED'|'POOR_HANDLING'|'LOCATION_DIFFICULTY'|'VERY_LATE'|'OTHER'
+export type FeedbackFoodRating='EXCELLENT'|'GOOD'|'OKAY'|'BAD'
+export type FeedbackFoodIssueReason='COLD'|'TASTE'|'PREPARATION'|'MISSING_ITEM'|'OTHER'
+export interface OrderFeedback {
+  deliveryRating?:FeedbackDeliveryRating
+  deliveryIssueReason?:FeedbackDeliveryIssueReason
+  foodRating:FeedbackFoodRating
+  foodIssueReason?:FeedbackFoodIssueReason
+  comment?:string
+  submittedAt:string
+}
+export interface OrderFeedbackSubmission {
+  foodRating:FeedbackFoodRating
+  deliveryRating?:FeedbackDeliveryRating
+  deliveryIssueReason?:FeedbackDeliveryIssueReason
+  foodIssueReason?:FeedbackFoodIssueReason
+  comment?:string
+}
+// Feedback only becomes submittable once the order has actually reached
+// the customer -- DELIVERED for delivery orders, COLLECTED for pickup
+// (which never asks the courier question at all). Never while still active.
+export const canSubmitOrderFeedback=(order:Pick<Order,'type'|'status'|'feedback'>):boolean=>
+  !order.feedback&&(order.type==='DELIVERY'?order.status==='DELIVERED':order.status==='COLLECTED')

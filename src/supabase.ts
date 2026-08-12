@@ -15,6 +15,14 @@ import type {
   OrderStatus,
   ActorType,
   DeliveryIssueType,
+  OrderHistoryFilters,
+  OrderHistoryPage,
+  OrderHistoryRow,
+  OrderHistorySummary,
+  DriverLedgerSummaryRow,
+  DriverLedgerPage,
+  DriverLedgerEntry,
+  OrderFeedbackSubmission,
 } from "./domain";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
@@ -142,10 +150,30 @@ const mapOrder = (r: Row): Order => {
       reportedBy: String(i.reported_by || ""),
       resolvedAt: i.resolved_at ? String(i.resolved_at) : undefined,
     })),
+    feedback: mapFeedback(r),
+  };
+};
+// H3: two different response shapes carry feedback -- get_order_tracking's
+// jsonb already returns a flat, camelCase `feedback` object; the raw
+// `.from('orders').select(orderSelect)` path (staff surfaces) embeds the
+// related table as `order_feedback`, snake_case, possibly array-wrapped
+// (a to-one FK embed can come back either way depending on PostgREST
+// version). Both are normalized to the same OrderFeedback shape here.
+const mapFeedback = (r: Row): Order["feedback"] => {
+  const embedded = Array.isArray(r.order_feedback) ? r.order_feedback[0] : r.order_feedback;
+  const f = (r.feedback ?? embedded) as Row | null | undefined;
+  if (!f) return undefined;
+  return {
+    deliveryRating: (f.deliveryRating ?? f.delivery_rating) as Order["feedback"] extends infer O ? (O extends { deliveryRating?: infer D } ? D : never) : never,
+    deliveryIssueReason: (f.deliveryIssueReason ?? f.delivery_issue_reason) as Order["feedback"] extends infer O ? (O extends { deliveryIssueReason?: infer D } ? D : never) : never,
+    foodRating: (f.foodRating ?? f.food_rating) as Order["feedback"] extends infer O ? (O extends { foodRating: infer D } ? D : never) : never,
+    foodIssueReason: (f.foodIssueReason ?? f.food_issue_reason) as Order["feedback"] extends infer O ? (O extends { foodIssueReason?: infer D } ? D : never) : never,
+    comment: f.comment ? String(f.comment) : undefined,
+    submittedAt: String(f.submittedAt ?? f.submitted_at),
   };
 };
 const orderSelect =
-  "*,customer_addresses(*),order_items(*),order_events(*),delivery_issues(*)";
+  "*,customer_addresses(*),order_items(*),order_events(*),delivery_issues(*),order_feedback(*)";
 export const toAddressPayload = (address: CustomerAddress) => ({
   district: address.district,
   street: address.street,
@@ -288,6 +316,28 @@ export class SupabaseStore {
     });
     fail(tracked.error);
     return tracked.data ? mapOrder(tracked.data as Row) : undefined;
+  }
+  // H3: submission is authorized the exact same way every other public
+  // order-mutating RPC is -- id + the same tracking_token getTracked()
+  // already reads from localStorage, never a bare order_id. Returns the
+  // fresh tracking response so the caller can render the confirmed state
+  // immediately, with no extra round trip.
+  async submitOrderFeedback(id: string, submission: OrderFeedbackSubmission) {
+    const token = (
+      JSON.parse(localStorage.getItem("zgo.tracking") || "{}") as Record<string, string>
+    )[id];
+    if (!token) throw new Error("Bu buyurtma uchun kuzatish ruxsati topilmadi");
+    const { data, error } = await supabase!.rpc("submit_order_feedback", {
+      p_order_id: id,
+      p_tracking_token: token,
+      p_food_rating: submission.foodRating,
+      p_delivery_rating: submission.deliveryRating ?? null,
+      p_delivery_issue_reason: submission.deliveryIssueReason ?? null,
+      p_food_issue_reason: submission.foodIssueReason ?? null,
+      p_comment: submission.comment ?? null,
+    });
+    fail(error);
+    return mapOrder(data as Row);
   }
   async save(order: Order) {
     return this.submitOrderVia("create_public_order", order);
@@ -464,5 +514,134 @@ export class SupabaseStore {
   }
   async session(): Promise<Session | null> {
     return (await supabase!.auth.getSession()).data.session;
+  }
+  // H1: Order History. Both RPCs resolve date presets/custom ranges
+  // server-side (Asia/Tashkent) and enforce staff-only access themselves
+  // -- this is a thin passthrough, never a client-side filter over the
+  // full order history.
+  async fetchOrderHistory(filters: OrderHistoryFilters): Promise<OrderHistoryPage> {
+    const { data, error } = await supabase!.rpc("list_restaurant_order_history", {
+      p_preset: filters.preset,
+      p_custom_from: filters.customFrom ?? null,
+      p_custom_to: filters.customTo ?? null,
+      p_branch_id: filters.branchId ?? null,
+      p_driver_id: filters.driverId ?? null,
+      p_status: filters.status ?? null,
+      p_fulfillment: filters.fulfillment ?? null,
+      p_payment_method: filters.paymentMethod ?? null,
+      p_search: filters.search ?? null,
+      p_limit: filters.limit ?? 25,
+      p_offset: filters.offset ?? 0,
+    });
+    fail(error);
+    const rows = ((data || []) as Row[]).map(
+      (r): OrderHistoryRow => ({
+        id: String(r.id),
+        number: String(r.number),
+        createdAt: String(r.created_at),
+        finishedAt: r.finished_at ? String(r.finished_at) : undefined,
+        branchId: String(r.branch_id),
+        branchName: String(r.branch_name),
+        customerName: String(r.customer_name),
+        type: r.order_type as OrderHistoryRow["type"],
+        status: r.status as OrderStatus,
+        assignedDriverId: r.assigned_driver_id ? String(r.assigned_driver_id) : undefined,
+        driverName: r.driver_name ? String(r.driver_name) : undefined,
+        paymentMethod: r.payment_method as OrderHistoryRow["paymentMethod"],
+        total: Number(r.total),
+        hasFeedback: Boolean(r.has_feedback),
+      }),
+    );
+    const totalCount = data && data.length > 0 ? Number((data[0] as Row).total_count) : 0;
+    return { rows, totalCount };
+  }
+  async fetchOrderHistorySummary(
+    filters: Omit<OrderHistoryFilters, "limit" | "offset">,
+  ): Promise<OrderHistorySummary> {
+    const { data, error } = await supabase!.rpc("get_restaurant_order_history_summary", {
+      p_preset: filters.preset,
+      p_custom_from: filters.customFrom ?? null,
+      p_custom_to: filters.customTo ?? null,
+      p_branch_id: filters.branchId ?? null,
+      p_driver_id: filters.driverId ?? null,
+      p_status: filters.status ?? null,
+      p_fulfillment: filters.fulfillment ?? null,
+      p_payment_method: filters.paymentMethod ?? null,
+      p_search: filters.search ?? null,
+    });
+    fail(error);
+    const summary = (data || {}) as Row;
+    return {
+      totalOrders: Number(summary.totalOrders || 0),
+      delivered: Number(summary.delivered || 0),
+      cancelled: Number(summary.cancelled || 0),
+      failed: Number(summary.failed || 0),
+      totalValue: Number(summary.totalValue || 0),
+    };
+  }
+  // H2: Driver Delivery Ledger. Both RPCs enforce staff-only access
+  // themselves and derive credit strictly from driver_assignments.status.
+  async fetchDriverLedgerSummary(
+    filters: Omit<OrderHistoryFilters, "limit" | "offset" | "status" | "fulfillment" | "paymentMethod" | "driverId" | "search">,
+  ): Promise<DriverLedgerSummaryRow[]> {
+    const { data, error } = await supabase!.rpc("list_driver_ledger_summary", {
+      p_preset: filters.preset,
+      p_custom_from: filters.customFrom ?? null,
+      p_custom_to: filters.customTo ?? null,
+      p_branch_id: filters.branchId ?? null,
+    });
+    fail(error);
+    return ((data || []) as Row[]).map(
+      (r): DriverLedgerSummaryRow => ({
+        driverId: String(r.driver_id),
+        driverName: String(r.driver_name),
+        totalAssignments: Number(r.total_assignments),
+        accepted: Number(r.accepted),
+        completed: Number(r.completed),
+        failed: Number(r.failed),
+        returned: Number(r.returned),
+        declined: Number(r.declined),
+        superseded: Number(r.superseded),
+        feedbackReceived: Number(r.feedback_received),
+        feedbackFast: Number(r.feedback_fast),
+        feedbackNormal: Number(r.feedback_normal),
+        feedbackLate: Number(r.feedback_late),
+        feedbackIssue: Number(r.feedback_issue),
+      }),
+    );
+  }
+  async fetchDriverLedgerEntries(
+    driverId: string,
+    filters: Omit<OrderHistoryFilters, "limit" | "offset" | "status" | "fulfillment" | "paymentMethod" | "driverId" | "search" | "branchId">,
+    limit: number,
+    offset: number,
+  ): Promise<DriverLedgerPage> {
+    const { data, error } = await supabase!.rpc("list_driver_assignment_ledger", {
+      p_driver_id: driverId,
+      p_preset: filters.preset,
+      p_custom_from: filters.customFrom ?? null,
+      p_custom_to: filters.customTo ?? null,
+      p_limit: limit,
+      p_offset: offset,
+    });
+    fail(error);
+    const rows = ((data || []) as Row[]).map(
+      (r): DriverLedgerEntry => ({
+        id: String(r.id),
+        orderId: String(r.order_id),
+        orderNumber: String(r.order_number),
+        branchId: String(r.branch_id),
+        branchName: String(r.branch_name),
+        district: r.district ? String(r.district) : undefined,
+        type: r.order_type as DriverLedgerEntry["type"],
+        assignedAt: String(r.assigned_at),
+        acceptedAt: r.accepted_at ? String(r.accepted_at) : undefined,
+        endedAt: r.ended_at ? String(r.ended_at) : undefined,
+        status: r.status as DriverLedgerEntry["status"],
+        total: Number(r.total),
+      }),
+    );
+    const totalCount = data && data.length > 0 ? Number((data[0] as Row).total_count) : 0;
+    return { rows, totalCount };
   }
 }

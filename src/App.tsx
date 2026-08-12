@@ -22,12 +22,24 @@ import {
   resolvePendingCheckoutId,
   validateDeliveryLocation,
   validateOrderInput,
+  HISTORY_PAGE_SIZE,
+  canSubmitOrderFeedback,
   type ActorType,
   type AddressConfidence,
   type CustomerAddress,
   type DriverAvailability,
+  type DriverLedgerEntry,
+  type DriverLedgerSummaryRow,
+  type FeedbackDeliveryIssueReason,
+  type FeedbackDeliveryRating,
+  type FeedbackFoodIssueReason,
+  type FeedbackFoodRating,
+  type HistoryDatePreset,
   type MenuItem,
   type Order,
+  type OrderHistoryFilters,
+  type OrderHistoryRow,
+  type OrderHistorySummary,
   type OrderStatus,
   type PaymentCollectionStatus,
   type PaymentMethod,
@@ -63,6 +75,17 @@ const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m
 const DRIVER_OTP_RESEND_COOLDOWN_SECONDS = 30;
 const time = (s: string) =>
   new Intl.DateTimeFormat("uz-UZ", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(s));
+// H1: Order History spans multiple days, so its rows need a date alongside
+// the time -- rendered in the viewing staff member's own browser, same as
+// every other on-screen timestamp in this app (only the History RPC's date
+// *range* boundaries are computed server-side, in business time).
+const historyDateTime = (s: string) =>
+  new Intl.DateTimeFormat("uz-UZ", {
+    day: "2-digit",
+    month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(s));
@@ -1288,8 +1311,183 @@ function Track() {
             </p>
           )}
         </section>
+        <OrderFeedbackCard order={order} />
       </main>
     </Shell>
+  );
+}
+const deliveryRatingLabels: Record<FeedbackDeliveryRating, string> = {
+  FAST: "Tez",
+  NORMAL: "Normal",
+  LATE: "Kechikdi",
+  ISSUE: "Muammo bo‘ldi",
+};
+const deliveryIssueReasonLabels: Record<FeedbackDeliveryIssueReason, string> = {
+  SPILLED_OR_TIPPED: "Taom ag‘darilgan / to‘kilgan",
+  POOR_HANDLING: "Buyurtma ehtiyotsiz olib kelingan",
+  LOCATION_DIFFICULTY: "Kuryer manzilni topishda qiynaldi",
+  VERY_LATE: "Juda kech keldi",
+  OTHER: "Boshqa",
+};
+const foodRatingLabels: Record<FeedbackFoodRating, string> = {
+  EXCELLENT: "A’lo",
+  GOOD: "Yaxshi",
+  OKAY: "Qoniqarli",
+  BAD: "Yomon",
+};
+const foodIssueReasonLabels: Record<FeedbackFoodIssueReason, string> = {
+  COLD: "Sovuq edi",
+  TASTE: "Ta’mi yoqmadi",
+  PREPARATION: "Noto‘g‘ri tayyorlangan",
+  MISSING_ITEM: "Mahsulot/buyurtma yetishmadi",
+  OTHER: "Boshqa",
+};
+// H3: a compact, optional, dismissible post-delivery/post-pickup feedback
+// card. Never blocks tracking, never appears before the order has actually
+// reached the customer, and only ever asks the delivery question for
+// DELIVERY orders (PICKUP feedback is food-only).
+function OrderFeedbackCard({ order }: { order: Order }) {
+  const { submitOrderFeedback } = useApp();
+  const [dismissed, setDismissed] = useState(false);
+  const [deliveryRating, setDeliveryRating] = useState<FeedbackDeliveryRating | undefined>(undefined);
+  const [deliveryIssueReason, setDeliveryIssueReason] = useState<FeedbackDeliveryIssueReason | undefined>(undefined);
+  const [foodRating, setFoodRating] = useState<FeedbackFoodRating | undefined>(undefined);
+  const [foodIssueReason, setFoodIssueReason] = useState<FeedbackFoodIssueReason | undefined>(undefined);
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  if (order.feedback) {
+    return (
+      <section className="form-card feedback-card" data-testid="feedback-submitted">
+        <h2>Fikringiz uchun rahmat!</h2>
+        {order.type === "DELIVERY" && order.feedback.deliveryRating && (
+          <p>
+            <b>Yetkazib berish:</b> {deliveryRatingLabels[order.feedback.deliveryRating]}
+          </p>
+        )}
+        <p>
+          <b>Taom:</b> {foodRatingLabels[order.feedback.foodRating]}
+        </p>
+      </section>
+    );
+  }
+  if (!canSubmitOrderFeedback(order) || dismissed) return null;
+  const isDelivery = order.type === "DELIVERY";
+  const canSubmit = foodRating && (!isDelivery || deliveryRating);
+  const submit = async () => {
+    if (!foodRating || (isDelivery && !deliveryRating) || submitting) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      await submitOrderFeedback(order.id, {
+        foodRating,
+        deliveryRating: isDelivery ? deliveryRating : undefined,
+        deliveryIssueReason: isDelivery && deliveryRating === "ISSUE" ? deliveryIssueReason : undefined,
+        foodIssueReason: foodRating === "OKAY" || foodRating === "BAD" ? foodIssueReason : undefined,
+        comment: comment.trim() || undefined,
+      });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Fikrni yuborib bo‘lmadi");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  return (
+    <section className="form-card feedback-card" data-testid="feedback-card">
+      <h2>{isDelivery ? "Buyurtmangiz qanday yetib keldi?" : "Taom sizga qanday yoqdi?"}</h2>
+      {isDelivery && (
+        <div className="feedback-question">
+          <p className="feedback-question-label">Yetkazib berish qanday bo‘ldi?</p>
+          <div className="feedback-options">
+            {(Object.keys(deliveryRatingLabels) as FeedbackDeliveryRating[]).map((value) => (
+              <button
+                type="button"
+                key={value}
+                className={deliveryRating === value ? "active" : ""}
+                onClick={() => setDeliveryRating(value)}
+                data-testid={`feedback-delivery-${value}`}
+              >
+                {deliveryRatingLabels[value]}
+              </button>
+            ))}
+          </div>
+          {deliveryRating === "ISSUE" && (
+            <div className="feedback-issue-reasons" data-testid="feedback-delivery-issue-reasons">
+              {(Object.keys(deliveryIssueReasonLabels) as FeedbackDeliveryIssueReason[]).map((value) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={deliveryIssueReason === value ? "active" : ""}
+                  onClick={() => setDeliveryIssueReason(value)}
+                  data-testid={`feedback-delivery-issue-${value}`}
+                >
+                  {deliveryIssueReasonLabels[value]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="feedback-question">
+        <p className="feedback-question-label">Taom qanday edi?</p>
+        <div className="feedback-options">
+          {(Object.keys(foodRatingLabels) as FeedbackFoodRating[]).map((value) => (
+            <button
+              type="button"
+              key={value}
+              className={foodRating === value ? "active" : ""}
+              onClick={() => setFoodRating(value)}
+              data-testid={`feedback-food-${value}`}
+            >
+              {foodRatingLabels[value]}
+            </button>
+          ))}
+        </div>
+        {(foodRating === "OKAY" || foodRating === "BAD") && (
+          <div className="feedback-issue-reasons" data-testid="feedback-food-issue-reasons">
+            {(Object.keys(foodIssueReasonLabels) as FeedbackFoodIssueReason[]).map((value) => (
+              <button
+                type="button"
+                key={value}
+                className={foodIssueReason === value ? "active" : ""}
+                onClick={() => setFoodIssueReason(value)}
+                data-testid={`feedback-food-issue-${value}`}
+              >
+                {foodIssueReasonLabels[value]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <label className="feedback-comment-label">
+        Qo‘shimcha fikr (ixtiyoriy)
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value.slice(0, 500))}
+          maxLength={500}
+          data-testid="feedback-comment"
+        />
+      </label>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="feedback-actions">
+        <button type="button" className="button secondary" onClick={() => setDismissed(true)} data-testid="feedback-dismiss">
+          Keyinroq
+        </button>
+        <button
+          type="button"
+          className="button primary"
+          disabled={!canSubmit || submitting}
+          onClick={() => void submit()}
+          data-testid="feedback-submit"
+        >
+          {submitting ? "Yuborilmoqda…" : "Yuborish"}
+        </button>
+      </div>
+    </section>
   );
 }
 function AddressRevisionEditor({
@@ -1586,6 +1784,7 @@ function Restaurant() {
   }, [orders]);
   return (
     <Shell surface="staff">
+      <RestaurantSubNav active="board" />
       <main className="ops">
         {!loaded && <div className="empty" role="status">Buyurtmalar yuklanmoqda…</div>}
         {operationalError && <p className="error" role="alert">{operationalError}</p>}
@@ -1729,6 +1928,521 @@ function OrderCard({ order, onOpen }: { order: Order; onOpen?: (id: string) => v
     </Link>
   );
 }
+// H1: compact secondary nav scoped to restaurant-authenticated pages only
+// -- Shell's own top nav is shared by every staff/driver/login-gate page
+// and deliberately stays untouched (generic Buyurtma/Restoran/Haydovchi).
+function RestaurantSubNav({ active }: { active: "board" | "history" | "drivers" }) {
+  return (
+    <div className="restaurant-subnav">
+      <Link to="/restaurant" className={active === "board" ? "active" : ""}>
+        Buyurtmalar
+      </Link>
+      <Link to="/restaurant/history" className={active === "history" ? "active" : ""}>
+        Tarix
+      </Link>
+      <Link to="/restaurant/drivers/history" className={active === "drivers" ? "active" : ""}>
+        Haydovchilar
+      </Link>
+    </div>
+  );
+}
+const assignmentStatusLabels: Record<DriverLedgerEntry["status"], string> = {
+  ASSIGNED: "Biriktirilgan",
+  ACCEPTED: "Qabul qilingan",
+  DECLINED: "Rad etildi",
+  SUPERSEDED: "Almashtirildi",
+  COMPLETED: "Bajarildi",
+  FAILED: "Muvaffaqiyatsiz",
+  RETURNED: "Qaytarildi",
+  CANCELLED: "Bekor qilindi",
+};
+function DriverLedgerDetail({
+  driverId,
+  driverName,
+  filters,
+  onBack,
+}: {
+  driverId: string;
+  driverName: string;
+  filters: Pick<OrderHistoryFilters, "preset" | "customFrom" | "customTo">;
+  onBack: () => void;
+}) {
+  const { fetchDriverLedgerEntries } = useApp();
+  const [page, setPage] = useState(0);
+  const [rows, setRows] = useState<DriverLedgerEntry[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    fetchDriverLedgerEntries(driverId, filters, HISTORY_PAGE_SIZE, page * HISTORY_PAGE_SIZE)
+      .then((result) => {
+        if (cancelled) return;
+        setRows(result.rows);
+        setTotalCount(result.totalCount);
+      })
+      .catch((failure) => {
+        if (!cancelled) setError(failure instanceof Error ? failure.message : "Ledgerni yuklab bo‘lmadi");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [driverId, filters, page, fetchDriverLedgerEntries]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / HISTORY_PAGE_SIZE));
+  return (
+    <div className="driver-ledger-detail">
+      <button type="button" className="button text" onClick={onBack} data-testid="ledger-back">
+        ← Haydovchilarga qaytish
+      </button>
+      <h2>{driverName}</h2>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {loading ? (
+        <div className="empty" role="status">
+          Yuklanmoqda…
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="empty" data-testid="ledger-detail-empty">
+          Bu davr uchun topshiriqlar topilmadi
+        </div>
+      ) : (
+        <>
+          <div className="ledger-entries">
+            {rows.map((r) => (
+              <Link to={`/restaurant/orders/${r.orderId}`} key={r.id} className="ledger-entry" data-testid={`ledger-entry-${r.id}`}>
+                <div className="ledger-entry-top">
+                  <b>{r.orderNumber}</b>
+                  <span>{money(r.total)}</span>
+                </div>
+                <p>
+                  {historyDateTime(r.assignedAt)} · {r.branchName}
+                  {r.district ? ` · ${r.district}` : ""}
+                </p>
+                <div className="ledger-entry-timeline">
+                  <span>Biriktirildi {time(r.assignedAt)}</span>
+                  {r.acceptedAt && <span>Qabul qilindi {time(r.acceptedAt)}</span>}
+                  {r.endedAt && <span>Yakunlandi {time(r.endedAt)}</span>}
+                </div>
+                <span className={`badge s-${r.status.toLowerCase()}`}>{assignmentStatusLabels[r.status]}</span>
+              </Link>
+            ))}
+          </div>
+          <div className="history-pagination">
+            <button type="button" disabled={page === 0} onClick={() => setPage((p) => p - 1)} data-testid="ledger-prev-page">
+              ← Oldingi
+            </button>
+            <span>
+              {page + 1} / {totalPages}
+            </span>
+            <button type="button" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)} data-testid="ledger-next-page">
+              Keyingi →
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+function DriverLedger() {
+  const { fetchDriverLedgerSummary } = useApp();
+  const [preset, setPreset] = useState<HistoryDatePreset>("TODAY");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [rows, setRows] = useState<DriverLedgerSummaryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedDriver, setSelectedDriver] = useState<{ id: string; name: string } | null>(null);
+  const customRangeIncomplete = preset === "CUSTOM" && (!customFrom || !customTo);
+  const filters = useMemo<Pick<OrderHistoryFilters, "preset" | "customFrom" | "customTo">>(
+    () => ({
+      preset,
+      customFrom: preset === "CUSTOM" ? customFrom || undefined : undefined,
+      customTo: preset === "CUSTOM" ? customTo || undefined : undefined,
+    }),
+    [preset, customFrom, customTo],
+  );
+  useEffect(() => {
+    if (customRangeIncomplete) return;
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    fetchDriverLedgerSummary(filters)
+      .then((result) => {
+        if (!cancelled) setRows(result);
+      })
+      .catch((failure) => {
+        if (!cancelled) setError(failure instanceof Error ? failure.message : "Ledgerni yuklab bo‘lmadi");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [filters, customRangeIncomplete, fetchDriverLedgerSummary]);
+  return (
+    <Shell surface="staff">
+      <RestaurantSubNav active="drivers" />
+      <main className="ops history">
+        <div className="ops-head">
+          <div>
+            <p className="eyebrow">HISOBOT</p>
+            <h1>Haydovchilar — yetkazish tarixi</h1>
+          </div>
+        </div>
+        {!selectedDriver && (
+          <>
+            <div className="history-filters">
+              <div className="segmented" data-testid="ledger-date-presets">
+                {HISTORY_PRESETS.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    className={preset === p.value ? "active" : ""}
+                    onClick={() => setPreset(p.value)}
+                    data-testid={`ledger-preset-${p.value}`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {preset === "CUSTOM" && (
+                <div className="history-custom-range">
+                  <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} data-testid="ledger-custom-from" />
+                  <span>—</span>
+                  <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} data-testid="ledger-custom-to" />
+                </div>
+              )}
+            </div>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            {customRangeIncomplete ? (
+              <div className="empty">Sana oralig‘ini to‘liq tanlang</div>
+            ) : loading ? (
+              <div className="empty" role="status">
+                Yuklanmoqda…
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="empty" data-testid="ledger-empty">
+                Bu davr uchun topshiriqlar topilmadi
+              </div>
+            ) : (
+              <div className="driver-ledger-list">
+                {rows.map((r) => (
+                  <button
+                    type="button"
+                    key={r.driverId}
+                    className="driver-ledger-row"
+                    onClick={() => setSelectedDriver({ id: r.driverId, name: r.driverName })}
+                    data-testid={`ledger-driver-${r.driverId}`}
+                  >
+                    <b>{r.driverName}</b>
+                    <div className="driver-ledger-stats">
+                      <span>
+                        <b>{r.completed}</b> Bajarildi
+                      </span>
+                      <span>
+                        <b>{r.accepted}</b> Qabul qilingan
+                      </span>
+                      <span>
+                        <b>{r.failed}</b> Muvaffaqiyatsiz
+                      </span>
+                      <span>
+                        <b>{r.returned}</b> Qaytarildi
+                      </span>
+                      <span>
+                        <b>{r.declined}</b> Rad etildi
+                      </span>
+                      <span>
+                        <b>{r.superseded}</b> Almashtirildi
+                      </span>
+                    </div>
+                    {r.feedbackReceived > 0 && (
+                      <div className="driver-ledger-feedback" data-testid={`ledger-feedback-${r.driverId}`}>
+                        Yetkazib berish fikri: {r.feedbackReceived} · Tez {r.feedbackFast} · Normal {r.feedbackNormal} · Kechikdi {r.feedbackLate} · Muammo {r.feedbackIssue}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        {selectedDriver && (
+          <DriverLedgerDetail
+            driverId={selectedDriver.id}
+            driverName={selectedDriver.name}
+            filters={filters}
+            onBack={() => setSelectedDriver(null)}
+          />
+        )}
+      </main>
+    </Shell>
+  );
+}
+const HISTORY_PRESETS: { value: HistoryDatePreset; label: string }[] = [
+  { value: "TODAY", label: "Bugun" },
+  { value: "YESTERDAY", label: "Kecha" },
+  { value: "LAST_7_DAYS", label: "7 kun" },
+  { value: "THIS_MONTH", label: "Shu oy" },
+  { value: "CUSTOM", label: "Sana oralig‘i" },
+];
+const historyFulfillmentLabel = (type: Order["type"]) => (type === "DELIVERY" ? "Yetkazish" : "Olib ketish");
+function History() {
+  const nav = useNavigate();
+  const { fetchOrderHistory, fetchOrderHistorySummary, drivers } = useApp();
+  const [preset, setPreset] = useState<HistoryDatePreset>("TODAY");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [status, setStatus] = useState<OrderStatus | "">("");
+  const [fulfillment, setFulfillment] = useState<"DELIVERY" | "PICKUP" | "">("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
+  const [driverId, setDriverId] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [rows, setRows] = useState<OrderHistoryRow[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [summary, setSummary] = useState<OrderHistorySummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const customRangeIncomplete = preset === "CUSTOM" && (!customFrom || !customTo);
+  const filters = useMemo<Omit<OrderHistoryFilters, "limit" | "offset">>(
+    () => ({
+      preset,
+      customFrom: preset === "CUSTOM" ? customFrom || undefined : undefined,
+      customTo: preset === "CUSTOM" ? customTo || undefined : undefined,
+      status: status || undefined,
+      fulfillment: fulfillment || undefined,
+      paymentMethod: paymentMethod || undefined,
+      driverId: driverId || undefined,
+      search: search.trim() || undefined,
+    }),
+    [preset, customFrom, customTo, status, fulfillment, paymentMethod, driverId, search],
+  );
+  useEffect(() => {
+    setPage(0);
+  }, [filters]);
+  useEffect(() => {
+    if (customRangeIncomplete) return;
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    Promise.all([
+      fetchOrderHistory({ ...filters, limit: HISTORY_PAGE_SIZE, offset: page * HISTORY_PAGE_SIZE }),
+      fetchOrderHistorySummary(filters),
+    ])
+      .then(([historyPage, historySummary]) => {
+        if (cancelled) return;
+        setRows(historyPage.rows);
+        setTotalCount(historyPage.totalCount);
+        setSummary(historySummary);
+      })
+      .catch((failure) => {
+        if (!cancelled) setError(failure instanceof Error ? failure.message : "Tarixni yuklab bo‘lmadi");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [filters, page, customRangeIncomplete, fetchOrderHistory, fetchOrderHistorySummary]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / HISTORY_PAGE_SIZE));
+  return (
+    <Shell surface="staff">
+      <RestaurantSubNav active="history" />
+      <main className="ops history">
+        <div className="ops-head">
+          <div>
+            <p className="eyebrow">HISOBOT</p>
+            <h1>Buyurtmalar tarixi</h1>
+          </div>
+        </div>
+        <div className="history-filters">
+          <div className="segmented" data-testid="history-date-presets">
+            {HISTORY_PRESETS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                className={preset === p.value ? "active" : ""}
+                onClick={() => setPreset(p.value)}
+                data-testid={`history-preset-${p.value}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {preset === "CUSTOM" && (
+            <div className="history-custom-range">
+              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} data-testid="history-custom-from" />
+              <span>—</span>
+              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} data-testid="history-custom-to" />
+            </div>
+          )}
+          <div className="history-filter-row">
+            <select value={fulfillment} onChange={(e) => setFulfillment(e.target.value as typeof fulfillment)} data-testid="history-filter-fulfillment">
+              <option value="">Barcha turlar</option>
+              <option value="DELIVERY">Yetkazish</option>
+              <option value="PICKUP">Olib ketish</option>
+            </select>
+            <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} data-testid="history-filter-status">
+              <option value="">Barcha holatlar</option>
+              {Object.entries(statusLabels)
+                .filter(([value]) => value !== "PICKED_UP")
+                .map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+            </select>
+            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)} data-testid="history-filter-payment">
+              <option value="">Barcha to‘lovlar</option>
+              <option value="CASH">Naqd</option>
+              <option value="CARD_ON_DELIVERY">Karta (yetkazishda)</option>
+              <option value="CARD_AT_PICKUP">Karta (restoranda)</option>
+              <option value="CLICK">Click</option>
+              <option value="PAYME">Payme</option>
+            </select>
+            <select value={driverId} onChange={(e) => setDriverId(e.target.value)} data-testid="history-filter-driver">
+              <option value="">Barcha haydovchilar</option>
+              {drivers.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="search"
+              placeholder="Buyurtma raqami"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              data-testid="history-search"
+            />
+          </div>
+        </div>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        {summary && (
+          <div className="metrics history-summary">
+            <span>
+              <b>{summary.totalOrders}</b> Jami
+            </span>
+            <span>
+              <b>{summary.delivered}</b> Yetkazildi / Olib ketildi
+            </span>
+            <span>
+              <b>{summary.cancelled}</b> Bekor / Rad
+            </span>
+            <span>
+              <b>{summary.failed}</b> Yetkazilmadi / Qaytarildi
+            </span>
+            <span>
+              <b>{money(summary.totalValue)}</b> Jami summa
+            </span>
+          </div>
+        )}
+        {customRangeIncomplete ? (
+          <div className="empty">Sana oralig‘ini to‘liq tanlang</div>
+        ) : loading ? (
+          <div className="empty" role="status">
+            Yuklanmoqda…
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="empty" data-testid="history-empty">
+            Tanlangan davr uchun buyurtmalar topilmadi
+          </div>
+        ) : (
+          <>
+            <table className="history-table" data-testid="history-table">
+              <thead>
+                <tr>
+                  <th>Buyurtma</th>
+                  <th>Sana</th>
+                  <th>Filial</th>
+                  <th>Mijoz</th>
+                  <th>Turi</th>
+                  <th>Haydovchi</th>
+                  <th>To‘lov</th>
+                  <th>Summa</th>
+                  <th>Holat</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id} onClick={() => nav(`/restaurant/orders/${r.id}`)} data-testid={`history-row-${r.id}`}>
+                    <td>{r.number}</td>
+                    <td>{historyDateTime(r.createdAt)}</td>
+                    <td>{r.branchName}</td>
+                    <td>{r.customerName}</td>
+                    <td>{historyFulfillmentLabel(r.type)}</td>
+                    <td>{r.driverName || "—"}</td>
+                    <td>{paymentLabel(r.paymentMethod, true)}</td>
+                    <td>{money(r.total)}</td>
+                    <td>{statusLabels[r.status]}</td>
+                    <td>{r.hasFeedback && <span className="feedback-indicator" data-testid={`history-feedback-${r.id}`}>Fikr bor</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="history-cards">
+              {rows.map((r) => (
+                <Link to={`/restaurant/orders/${r.id}`} key={r.id} className="history-card" data-testid={`history-card-${r.id}`}>
+                  <div className="history-card-top">
+                    <b>{r.number}</b>
+                    <span>{money(r.total)}</span>
+                  </div>
+                  <p>
+                    {historyDateTime(r.createdAt)} · {r.branchName}
+                    {r.hasFeedback && (
+                      <span className="feedback-indicator" data-testid={`history-feedback-${r.id}`}>
+                        {" "}
+                        · Fikr bor
+                      </span>
+                    )}
+                  </p>
+                  <p>
+                    {r.customerName} · {historyFulfillmentLabel(r.type)}
+                    {r.driverName ? ` · ${r.driverName}` : ""}
+                  </p>
+                  <div className="history-card-bottom">
+                    <span>{paymentLabel(r.paymentMethod, true)}</span>
+                    <span className={`badge s-${r.status.toLowerCase()}`}>{statusLabels[r.status]}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+            <div className="history-pagination">
+              <button type="button" disabled={page === 0} onClick={() => setPage((p) => p - 1)} data-testid="history-prev-page">
+                ← Oldingi
+              </button>
+              <span>
+                {page + 1} / {totalPages}
+              </span>
+              <button type="button" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)} data-testid="history-next-page">
+                Keyingi →
+              </button>
+            </div>
+          </>
+        )}
+      </main>
+    </Shell>
+  );
+}
 function OrderDetail() {
   const { id } = useParams();
   const {
@@ -1845,6 +2559,26 @@ function OrderDetail() {
                 </p>
               )}
             </section>
+            {order.feedback && (
+              <section className="panel" data-testid="order-feedback-panel">
+                <h2>Mijoz fikri</h2>
+                {order.type === "DELIVERY" && order.feedback.deliveryRating && (
+                  <p>
+                    <b>Yetkazib berish:</b> {deliveryRatingLabels[order.feedback.deliveryRating]}
+                    {order.feedback.deliveryIssueReason && ` — ${deliveryIssueReasonLabels[order.feedback.deliveryIssueReason]}`}
+                  </p>
+                )}
+                <p>
+                  <b>Taom:</b> {foodRatingLabels[order.feedback.foodRating]}
+                  {order.feedback.foodIssueReason && ` — ${foodIssueReasonLabels[order.feedback.foodIssueReason]}`}
+                </p>
+                {order.feedback.comment && (
+                  <p>
+                    <b>Izoh:</b> {order.feedback.comment}
+                  </p>
+                )}
+              </section>
+            )}
             <section className="panel">
               <h2>Manzil va aloqa</h2>
               <a
@@ -2583,6 +3317,22 @@ export default function App() {
         element={
           <AuthGate surface="restaurant">
             <OrderDetail />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/restaurant/history"
+        element={
+          <AuthGate surface="restaurant">
+            <History />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/restaurant/drivers/history"
+        element={
+          <AuthGate surface="restaurant">
+            <DriverLedger />
           </AuthGate>
         }
       />

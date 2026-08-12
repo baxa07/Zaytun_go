@@ -18,9 +18,15 @@ import type {
   CustomerAddress,
   DeliveryIssueType,
   Driver,
+  DriverLedgerPage,
+  DriverLedgerSummaryRow,
   MenuCategory,
   MenuItem,
   Order,
+  OrderFeedbackSubmission,
+  OrderHistoryFilters,
+  OrderHistoryPage,
+  OrderHistorySummary,
   OrderStatus,
   RestaurantConfig,
 } from "./domain";
@@ -199,6 +205,24 @@ type State = {
   reviseDeliveryAddress: (orderId: string, address: CustomerAddress) => Promise<void>;
   reportIssue: (orderId: string, type: DeliveryIssueType, description: string, reporter: string) => Promise<void>;
   resolveIssue: (orderId: string, issueId: string) => Promise<void>;
+  // H1: Order History -- a separate, staff-only, server-side-filtered and
+  // paginated report, independent of the live-board `orders` state above.
+  fetchOrderHistory: (filters: OrderHistoryFilters) => Promise<OrderHistoryPage>;
+  fetchOrderHistorySummary: (filters: Omit<OrderHistoryFilters, "limit" | "offset">) => Promise<OrderHistorySummary>;
+  // H2: Driver Delivery Ledger -- credit sourced strictly from
+  // driver_assignments.status server-side, never orders.assigned_driver_id.
+  fetchDriverLedgerSummary: (
+    filters: Pick<OrderHistoryFilters, "preset" | "customFrom" | "customTo" | "branchId">,
+  ) => Promise<DriverLedgerSummaryRow[]>;
+  fetchDriverLedgerEntries: (
+    driverId: string,
+    filters: Pick<OrderHistoryFilters, "preset" | "customFrom" | "customTo">,
+    limit: number,
+    offset: number,
+  ) => Promise<DriverLedgerPage>;
+  // H3: Customer Feedback -- tracking-token authorized, same capability
+  // model as every other public order-mutating call.
+  submitOrderFeedback: (orderId: string, submission: OrderFeedbackSubmission) => Promise<Order>;
 };
 
 const C = createContext<State | null>(null);
@@ -407,6 +431,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return tracked;
   }, []);
 
+  const submitOrderFeedback = useCallback(async (orderId: string, submission: OrderFeedbackSubmission) => {
+    const updated = await store.submitOrderFeedback(orderId, submission);
+    setOrders((current) => [updated, ...current.filter((order) => order.id !== updated.id)]);
+    return updated;
+  }, []);
+
   const isCustomerAuthenticated = authReady && isVerifiedCustomerSession(session, role);
 
   const value = useMemo<State>(() => ({
@@ -557,6 +587,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     transitionPending: (id) => Boolean(pendingTransitionState[id]),
     getOrder: (id) => store.get(id),
+    fetchOrderHistory: (filters) => store.fetchOrderHistory(filters),
+    fetchOrderHistorySummary: (filters) => store.fetchOrderHistorySummary(filters),
+    fetchDriverLedgerSummary: (filters) => store.fetchDriverLedgerSummary(filters),
+    fetchDriverLedgerEntries: (driverId, filters, limit, offset) =>
+      store.fetchDriverLedgerEntries(driverId, filters, limit, offset),
+    submitOrderFeedback,
     assign: (orderId, driverId) => withOrderLock(orderId, async () => {
       const order = await store.get(orderId);
       const driver = drivers.find((entry) => entry.id === driverId);
@@ -574,7 +610,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
-  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, withOrderLock]);
+  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, submitOrderFeedback, withOrderLock]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }
