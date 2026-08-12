@@ -28,7 +28,7 @@ set status = 'DRIVER_ASSIGNED', assigned_driver_id = '10000000-0000-0000-0000-00
 where id = '20000000-0000-0000-0000-000000000001';
 insert into public.driver_assignments(order_id, driver_id, assigned_by)
 values ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002')
-on conflict (order_id) do update set driver_id = excluded.driver_id, accepted_at = null, ended_at = null;
+on conflict (order_id) where ended_at is null do update set driver_id = excluded.driver_id, accepted_at = null, ended_at = null;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
 set local role authenticated;
