@@ -198,6 +198,11 @@ type State = {
   getOrder: (id: string) => Promise<Order | undefined>;
   assign: (orderId: string, driverId: string) => Promise<void>;
   acceptAssignment: (orderId: string) => Promise<void>;
+  // P4.1: self-service work-state toggle -- acts on the current driver's
+  // own row only (enforced server-side by start_shift/end_shift, which
+  // key off auth.uid(), never a passed-in id).
+  startShift: () => Promise<void>;
+  endShift: () => Promise<void>;
   setEstimate: (orderId: string, minutes: number) => Promise<void>;
   reviewDelivery: (orderId:string,approved:boolean,reason?:string)=>Promise<void>;
   requestClarification: (orderId: string, reason: string) => Promise<void>;
@@ -327,7 +332,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (refreshInFlight.current) return refreshInFlight.current;
     const task = (async () => {
       const nextOrders = await store.list(surface ?? undefined);
-      const nextDrivers = !supabaseConfigured || role === "RESTAURANT" || role === "DISPATCHER"
+      // P4.1: a DRIVER also needs `drivers` populated -- not to see other
+      // couriers (driver_read's own RLS policy restricts a non-staff caller
+      // to id=auth.uid() only), but so the driver surface can read/control
+      // its own shift_status/dispatch_status via the exact same listDrivers()
+      // call RESTAURANT/DISPATCHER already use.
+      const nextDrivers = !supabaseConfigured || role === "RESTAURANT" || role === "DISPATCHER" || role === "DRIVER"
         ? await store.listDrivers()
         : [];
       setOrders(nextOrders);
@@ -600,6 +610,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await store.assign(order, driver);
     }),
     acceptAssignment: (orderId) => withOrderLock(orderId, () => store.acceptAssignment(orderId)),
+    startShift: () => runOperation(() => store.startShift()),
+    endShift: () => runOperation(() => store.endShift()),
     setEstimate: async (orderId, minutes) => runOperation(() => store.setEstimate(orderId, minutes)),
     reviewDelivery: (orderId, approved, reason) => withOrderLock(orderId, () => store.reviewDelivery(orderId, approved, reason)),
     requestClarification: (orderId, reason) => withOrderLock(orderId, () => store.requestClarification(orderId, reason)),

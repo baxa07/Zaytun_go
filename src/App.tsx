@@ -24,9 +24,11 @@ import {
   validateOrderInput,
   HISTORY_PAGE_SIZE,
   canSubmitOrderFeedback,
+  driverAcceptsNewWork,
   type ActorType,
   type AddressConfidence,
   type CustomerAddress,
+  type Driver,
   type DriverAvailability,
   type DriverLedgerEntry,
   type DriverLedgerSummaryRow,
@@ -2879,62 +2881,242 @@ function OrderDetail() {
     </Shell>
   );
 }
-function DriverApp() {
-  const { orders, loaded, operationalError, profileDisplayName } = useApp();
-  const greetingName = driverGreetingName(profileDisplayName);
-  const active = orders.find(
-    (o) =>
-      o.type === "DELIVERY" &&
-      o.assignedDriverId &&
-      !["DELIVERED", "CANCELLED", "RETURNED", "DELIVERY_FAILED"].includes(
-        o.status,
-      ),
+// P4: statuses a driver's own delivery leaves the "active work" set at.
+const terminalDeliveryStatuses: OrderStatus[] = ["DELIVERED", "CANCELLED", "RETURNED", "DELIVERY_FAILED"];
+// The moment an order's canonical DRIVER_ASSIGNED event landed -- used only
+// to order a driver's own multiple simultaneous assignments (current vs.
+// queued), never to invent a second source of truth for status itself.
+const driverAssignedAt = (order: Order): string =>
+  order.events.find((e) => e.newStatus === "DRIVER_ASSIGNED")?.timestamp ?? order.createdAt;
+function DriverAvailabilityToggle({
+  driver,
+  busy,
+  hasActiveWork,
+  onStart,
+  onEnd,
+}: {
+  driver: Driver | undefined;
+  busy: boolean;
+  hasActiveWork: boolean;
+  onStart: () => void;
+  onEnd: () => void;
+}) {
+  if (!driver) return null;
+  const onDuty = driverAcceptsNewWork(driver);
+  return (
+    <div className={`driver-availability ${onDuty ? "on" : "off"}`} data-testid="driver-availability">
+      <div>
+        <b data-testid="driver-availability-status">{onDuty ? "🟢 Ishga tayyor" : "⚪ Hozir ishlamayapman"}</b>
+        <small>{onDuty ? "Yangi buyurtmalar avtomatik biriktiriladi" : "Yangi buyurtma kelmaydi"}</small>
+      </div>
+      <button
+        type="button"
+        className="button primary"
+        data-testid="driver-shift-toggle"
+        disabled={busy || (onDuty && hasActiveWork)}
+        title={onDuty && hasActiveWork ? "Faol yetkazish tugagach ishni tugatishingiz mumkin" : undefined}
+        onClick={() => (onDuty ? onEnd() : onStart())}
+      >
+        {onDuty ? "Ishni tugatish" : "Ishni boshlash"}
+      </button>
+    </div>
   );
+}
+function DriverApp() {
+  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift } = useApp();
+  const greetingName = driverGreetingName(profileDisplayName);
+  // driver_read's own RLS policy restricts a non-staff caller to id=auth.uid()
+  // only, so this array holds exactly the current driver's own row.
+  const myDriver = drivers[0] as Driver | undefined;
+  const [shiftBusy, setShiftBusy] = useState(false);
+  const activeAssignments = useMemo(
+    () =>
+      orders
+        .filter((o) => o.type === "DELIVERY" && o.assignedDriverId && !terminalDeliveryStatuses.includes(o.status))
+        .sort((a, b) => driverAssignedAt(a).localeCompare(driverAssignedAt(b))),
+    [orders],
+  );
+  const current = activeAssignments[0];
+  const queued = activeAssignments.slice(1);
+  // P4.11: attention sound for a genuinely new assignment -- identical
+  // lazy-AudioContext-armed-on-first-gesture and
+  // seen-ids-baseline-on-first-render pattern as the restaurant new-order
+  // alert (Restaurant(), above), so a reload with an already-known
+  // assignment never replays the sound, and an ordinary realtime refresh
+  // that returns the same assignment set never re-fires it either.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  useEffect(() => {
+    const arm = () => {
+      if (audioCtxRef.current) return;
+      try {
+        audioCtxRef.current = new AudioContext();
+      } catch {
+        /* the visual assignment card remains the source of truth */
+      }
+    };
+    document.addEventListener("pointerdown", arm, { once: true });
+    document.addEventListener("keydown", arm, { once: true });
+    return () => {
+      document.removeEventListener("pointerdown", arm);
+      document.removeEventListener("keydown", arm);
+    };
+  }, []);
+  const previousAssignmentIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentIds = new Set(activeAssignments.map((o) => o.id));
+    const hasNewArrival = [...currentIds].some((id) => !previousAssignmentIds.current.has(id));
+    previousAssignmentIds.current = currentIds;
+    if (!hasNewArrival) return;
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    try {
+      const playNote = (frequency: number, startOffset: number, duration: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = frequency;
+        gain.gain.value = 0.2;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + startOffset);
+        osc.stop(ctx.currentTime + startOffset + duration);
+      };
+      playNote(660, 0, 0.16);
+      playNote(880, 0.2, 0.22);
+    } catch {
+      /* the visual assignment card remains the source of truth */
+    }
+  }, [activeAssignments]);
+  // Only a positively-known OFF_SHIFT driver sees the off-duty screen --
+  // while `myDriver` hasn't loaded yet (e.g. local/offline provider, or a
+  // brief moment before the first refresh completes), this must not be
+  // mistaken for "not working" and must fall through to the normal
+  // idle-ready state instead.
+  const knownOffDuty = myDriver ? !driverAcceptsNewWork(myDriver) : false;
   return (
     <Shell surface="driver">
       <main className="driver-page">
-        {!loaded && <div className="empty" role="status">Topshiriqlar yuklanmoqda…</div>}
+        {!loaded && <div className="empty" role="status">Yuklanmoqda…</div>}
         {operationalError && <p className="error" role="alert">{operationalError}</p>}
         <div className="driver-head">
           <div>
             <p className="eyebrow">XAYRLI KUN{greetingName ? `, ${greetingName}` : ""}</p>
             <h1>Bugungi yetkazish</h1>
           </div>
-          <span className="online">● Band</span>
         </div>
-        {active ? (
-          <DriverDelivery order={active} />
+        <DriverAvailabilityToggle
+          driver={myDriver}
+          busy={shiftBusy}
+          hasActiveWork={activeAssignments.length > 0}
+          onStart={() => {
+            setShiftBusy(true);
+            void startShift().finally(() => setShiftBusy(false));
+          }}
+          onEnd={() => {
+            setShiftBusy(true);
+            void endShift().finally(() => setShiftBusy(false));
+          }}
+        />
+        {knownOffDuty && !current ? (
+          <div className="empty" data-testid="driver-off-duty">
+            <p>Hozir ishlamayapsiz.</p>
+          </div>
+        ) : current ? (
+          current.status === "DRIVER_ASSIGNED" && !current.assignmentAcceptedAt ? (
+            <DriverAssignmentCard order={current} />
+          ) : (
+            <DriverDelivery order={current} />
+          )
         ) : (
           <div className="empty" data-testid="driver-no-active">
-            <span>✓</span>
-            <h2>Faol yetkazish yo‘q</h2>
-            <p>Yangi topshiriq shu yerda ko‘rinadi.</p>
+            <span>🟢</span>
+            <h2>Buyurtma olishga tayyor</h2>
+            <p>Yangi buyurtma kelganda shu yerda ko‘rinadi.</p>
           </div>
+        )}
+        {queued.length > 0 && (
+          <section className="driver-queue" data-testid="driver-queue">
+            <h3>KEYINGI</h3>
+            {queued.map((o) => (
+              <div className="driver-queue-item" key={o.id} data-testid={`driver-queue-${o.id}`}>
+                <b>{o.number}</b>
+                <span>{o.address?.district || "—"}</span>
+              </div>
+            ))}
+          </section>
         )}
       </main>
     </Shell>
   );
 }
+// P4.2/P4.3: the prominent "new delivery" presentation for an assignment
+// the driver hasn't accepted yet. Decline ("Ololmayman") is deliberately
+// NOT wired to a real action here -- Smart Dispatch Phase 6
+// (decline/reassignment) has not shipped any decline/reassign RPC yet
+// (confirmed: no such function exists in the schema), so a working button
+// would have nowhere real to send the decision. Shown disabled with an
+// honest explanation instead of either a fake action or a silently
+// missing button that leaves the courier with no path at all.
+function DriverAssignmentCard({ order }: { order: Order }) {
+  const { acceptAssignment, transitionPending, publicConfig } = useApp();
+  return (
+    <section className="assignment-card" data-testid="driver-assignment-card">
+      <p className="assignment-badge">YANGI YETKAZISH</p>
+      <h2>{order.number}</h2>
+      <div className="assignment-route">
+        <div>
+          <small>OLIB KETISH</small>
+          <b>{publicConfig?.restaurantName || "Zaytun Kafe"}</b>
+        </div>
+        <div>
+          <small>MANZIL</small>
+          <b>{order.address?.district || "—"}</b>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="button primary wide big"
+        data-testid="driver-primary-action"
+        disabled={transitionPending(order.id)}
+        onClick={() => void acceptAssignment(order.id)}
+      >
+        Qabul qilish
+      </button>
+      <button type="button" className="button secondary wide" data-testid="driver-decline-assignment" disabled>
+        Ololmayman
+      </button>
+      <small className="assignment-decline-note">
+        Hozircha qo‘llab-quvvatlanmaydi. Muammo bo‘lsa, restoranga qo‘ng‘iroq qiling.
+      </small>
+    </section>
+  );
+}
+function driverPaymentSummary(order: Order): { label: string; amount?: string } {
+  if (isRemotePaymentMethod(order.paymentMethod)) {
+    return { label: `${paymentLabel(order.paymentMethod, true)} — restoran tekshiradi` };
+  }
+  return {
+    label: order.paymentMethod === "CARD_ON_DELIVERY" ? "Karta (yetkazishda)" : "Naqd",
+    amount: money(order.total),
+  };
+}
 function DriverDelivery({ order }: { order: Order }) {
-  const { transition, acceptAssignment, reportIssue, publicConfig, transitionPending } = useApp();
+  const { transition, reportIssue, transitionPending } = useApp();
   const [issueOpen, setIssueOpen] = useState(false);
   const [issue, setIssue] = useState("");
   const next: Partial<Record<OrderStatus, OrderStatus>> = {
-    DRIVER_ASSIGNED: "PICKED_UP",
     PICKED_UP: "ON_THE_WAY",
     ON_THE_WAY: "ARRIVED",
     ARRIVED: "DELIVERED",
   };
   const labels: Partial<Record<OrderStatus, string>> = {
-    DRIVER_ASSIGNED: "Olib ketdim",
+    DRIVER_ASSIGNED: "Buyurtmani oldim",
     PICKED_UP: "Yo‘lga chiqdim",
     ON_THE_WAY: "Yetib keldim",
     ARRIVED: "Yetkazildi",
   };
-  const target = next[order.status];
-  const needsAcceptance =
-    order.status === "DRIVER_ASSIGNED" && !order.assignmentAcceptedAt;
+  const target = order.status === "DRIVER_ASSIGNED" ? "PICKED_UP" : next[order.status];
   const coordinate = order.address?.latitude !== undefined && order.address.longitude !== undefined ? {latitude:order.address.latitude,longitude:order.address.longitude} : undefined;
+  const payment = driverPaymentSummary(order);
   return (
     <>
       <section className="delivery-card">
@@ -2943,96 +3125,100 @@ function DriverDelivery({ order }: { order: Order }) {
           <Badge status={order.status} />
         </div>
         <h2>{order.number}</h2>
-        <div className="pickup">
-          <i>R</i>
-          <div>
-            <small>OLIB KETISH</small>
-            <b>{publicConfig?.restaurantName||"Zaytun Cafe"}</b>
-            <span>{publicConfig?.restaurantAddress||"Restoran manzili yuklanmoqda"}</span>
-          </div>
-        </div>
-        <div className="route-line"></div>
-        <div className="pickup customer-dot">
-          <i>C</i>
-          <div>
-            <small>MIJOZ</small>
-            <b>{order.customer.name}</b>
-            <span>
-              {order.address &&
-                `${order.address.district}, ${order.address.street}, ${order.address.house}`}
-            </span>
-            <em>{order.address?.landmark}</em>
-          </div>
-        </div>
-        {order.address && <div className="driver-location-summary" data-testid="driver-location-detail">
-          {order.address.deliveryDistanceKm !== undefined && <b>{order.address.deliveryDistanceKm.toFixed(1)} km</b>}
-          {order.address.confidence !== "COMPLETE" && <p className="warning">⚠ Manzilni mijoz bilan aniqlashtiring</p>}
-          <small>{order.address.deliveryNotes}</small>
-          {coordinate && (
-            <details className="location-debug" data-testid="driver-location-debug">
-              <summary>Texnik ma'lumot</summary>
-              <p>{coordinate.latitude.toFixed(6)}, {coordinate.longitude.toFixed(6)}</p>
-            </details>
-          )}
-        </div>}
-        <div className="two-actions driver-nav-actions">
-          <a
-            className="button secondary"
-            href={`tel:${order.customer.primaryPhone}`}
-          >
-            ☎ Qo‘ng‘iroq
-          </a>
-          {coordinate && <a
-            className="button primary"
-            href={navigationUrl("yandex",coordinate)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            📍 Yandex Maps
-          </a>}
-          {coordinate && <a className="button secondary" href={navigationUrl("google",coordinate)} target="_blank" rel="noopener noreferrer">Google Maps</a>}
-        </div>
-        <div className="collect">
-          <span>
-            Undirish kerak
-            <br />
-            <small>
-              {order.paymentMethod === "CASH" ? "Naqd pul" : "Karta"}
-            </small>
-          </span>
-          <b>{money(order.total)}</b>
-        </div>
-        {order.specialInstructions && (
-          <p className="driver-note">
-            <b>Buyurtma izohi:</b> {order.specialInstructions}
-          </p>
-        )}
-        {order.address?.deliveryNotes && (
-          <p className="driver-note">
-            <b>Yetkazish izohi:</b> {order.address.deliveryNotes}
-          </p>
-        )}
-        {needsAcceptance ? (
+        {/* P4.5 order-information hierarchy: next action first (the
+            primary button below), then destination/navigation, then
+            customer contact, then delivery notes, then payment, then
+            order contents last -- the courier does not need
+            restaurant-admin-weight detail on every field. */}
+        {target && (
           <button
             className="button primary wide big"
             data-testid="driver-primary-action"
             disabled={transitionPending(order.id)}
-            onClick={() => void acceptAssignment(order.id)}
+            onClick={() => void transition(order.id, target, "DRIVER")}
           >
-            Topshiriqni qabul qilish
+            {labels[order.status]}
           </button>
-        ) : (
-          target && (
-            <button
-              className="button primary wide big"
-              data-testid="driver-primary-action"
-              disabled={transitionPending(order.id)}
-              onClick={() => void transition(order.id, target, "DRIVER")}
-            >
-              {labels[order.status]}
-            </button>
-          )
         )}
+        <div className="pickup customer-dot">
+          <i>C</i>
+          <div>
+            <small>MANZIL</small>
+            <b>{order.address?.district}</b>
+            <span>{order.address && `${order.address.street}, ${order.address.house}`}</span>
+            <em>{order.address?.landmark}</em>
+          </div>
+        </div>
+        {order.address && (order.address.deliveryDistanceKm !== undefined || order.address.confidence !== "COMPLETE" || coordinate) && (
+          <div className="driver-location-summary" data-testid="driver-location-detail">
+            {order.address.deliveryDistanceKm !== undefined && <b>{order.address.deliveryDistanceKm.toFixed(1)} km</b>}
+            {order.address.confidence !== "COMPLETE" && <p className="warning">⚠ Manzilni mijoz bilan aniqlashtiring</p>}
+            {/* P4.6: raw coordinates are never part of the normal driver
+                UI -- collapsed behind an opt-in disclosure, same pattern
+                as the restaurant's own location panel. Exact coordinates
+                stay fully available for support/troubleshooting, just not
+                displayed by default. */}
+            {coordinate && (
+              <details className="location-debug" data-testid="driver-location-debug">
+                <summary>Texnik ma'lumot</summary>
+                <p>
+                  {coordinate.latitude.toFixed(6)}, {coordinate.longitude.toFixed(6)}
+                </p>
+              </details>
+            )}
+          </div>
+        )}
+        <div className="two-actions driver-nav-actions">
+          <a className="button secondary" href={`tel:${order.customer.primaryPhone}`} data-testid="driver-call-customer">
+            ☎ Mijozga qo‘ng‘iroq
+          </a>
+          {coordinate && (
+            <a
+              className="button primary"
+              href={navigationUrl("yandex", coordinate)}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="driver-open-navigation"
+            >
+              📍 Yo‘nalishni ochish
+            </a>
+          )}
+        </div>
+        {coordinate && (
+          <a className="driver-alt-nav" href={navigationUrl("google", coordinate)} target="_blank" rel="noopener noreferrer">
+            Google Maps’da ochish
+          </a>
+        )}
+        {(order.specialInstructions || order.address?.deliveryNotes) && (
+          <div className="driver-notes">
+            {order.address?.deliveryNotes && (
+              <p className="driver-note">
+                <b>Yetkazish izohi:</b> {order.address.deliveryNotes}
+              </p>
+            )}
+            {order.specialInstructions && (
+              <p className="driver-note">
+                <b>Buyurtma izohi:</b> {order.specialInstructions}
+              </p>
+            )}
+          </div>
+        )}
+        <div className="collect">
+          <span>
+            {payment.amount ? "Undirish kerak" : "To‘lov"}
+            <br />
+            <small>{payment.label}</small>
+          </span>
+          {payment.amount && <b>{payment.amount}</b>}
+        </div>
+        <details className="driver-order-contents">
+          <summary>Buyurtma tarkibi</summary>
+          {order.items.map((i) => (
+            <p key={i.id}>
+              {i.quantity} × {i.name}
+            </p>
+          ))}
+        </details>
         <button
           className="button text wide"
           data-testid="driver-report-issue-toggle"

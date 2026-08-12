@@ -68,7 +68,7 @@ test.describe("customer delivery timeline: approved 7-stage mapping", () => {
     await expect(customer.getByTestId("order-status")).not.toHaveText("Haydovchiga berildi");
 
     await driver.goto("/driver");
-    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Topshiriqni qabul qilish");
+    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Qabul qilish");
     await driver.getByTestId("driver-primary-action").click(); // accept
     await customer.reload();
     // Accepted but not yet physically picked up: still Tayyorlanmoqda.

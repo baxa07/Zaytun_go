@@ -114,7 +114,7 @@ test.describe("precise delivery location", () => {
     const driverCoordinateText = driver.locator('[data-testid="driver-location-debug"] p');
     await expect(driverCoordinateText).toBeHidden();
     await expect(driver.getByTestId("driver-location-detail")).toContainText("2.4 km");
-    const driverYandex = driver.getByRole("link", { name: "Yandex Maps" });
+    const driverYandex = driver.getByRole("link", { name: "Yo‘nalishni ochish" });
     await expect(driverYandex).toHaveAttribute("href", /rtext=~40\.103900%2C65\.368800/);
     await driver.getByTestId("driver-location-debug").locator("summary").click();
     await expect(driverCoordinateText).toHaveText("40.103900, 65.368800");

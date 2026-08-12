@@ -67,10 +67,11 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await page.goto("/driver");
     await expect(page.getByRole("heading", { name: "Kirish" })).toBeVisible();
     await signIn(page, "driver@zaytun.local");
-    await expect(page.locator(".delivery-card")).toContainText(orderNumber);
-    await expect(page.getByTestId("driver-primary-action")).toHaveText("Topshiriqni qabul qilish");
+    await expect(page.locator(".assignment-card")).toContainText(orderNumber);
+    await expect(page.getByTestId("driver-primary-action")).toHaveText("Qabul qilish");
     await page.getByTestId("driver-primary-action").click();
-    await expect(page.getByTestId("driver-primary-action")).toHaveText("Olib ketdim");
+    await expect(page.locator(".delivery-card")).toBeVisible();
+    await expect(page.getByTestId("driver-primary-action")).toHaveText("Buyurtmani oldim");
     await page.getByTestId("driver-primary-action").click();
     await expect(page.locator(".delivery-top .badge")).toHaveText("Olib ketildi");
   });

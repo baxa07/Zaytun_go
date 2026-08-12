@@ -979,6 +979,121 @@ h2 {
 .collect b {
   font-size: 20px;
 }
+.driver-availability {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 16px 0;
+}
+.driver-availability.on {
+  background: #edf3ef;
+  border-color: #bcd8c6;
+}
+.driver-availability b {
+  display: block;
+  font-size: 15px;
+}
+.driver-availability small {
+  color: var(--muted);
+}
+.driver-availability button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+.assignment-card {
+  background: #fff;
+  border: 2px solid var(--gold);
+  border-radius: 18px;
+  padding: 20px;
+  margin: 16px 0;
+  text-align: center;
+}
+.assignment-badge {
+  display: inline-block;
+  background: var(--gold);
+  color: #402f0a;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  margin: 0 0 10px;
+}
+.assignment-card h2 {
+  font-size: 30px;
+  margin: 0 0 18px;
+}
+.assignment-route {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 20px;
+  text-align: left;
+}
+.assignment-route > div {
+  background: #f2f4f2;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.assignment-route small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+.assignment-decline-note {
+  display: block;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.driver-alt-nav {
+  display: block;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  margin: 6px 0 16px;
+  text-decoration: underline;
+}
+.driver-notes {
+  margin: 16px 0;
+}
+.driver-order-contents {
+  margin: 16px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.driver-order-contents summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #1d2922;
+}
+.driver-order-contents p {
+  margin: 8px 0 0;
+}
+.driver-queue {
+  margin-top: 16px;
+}
+.driver-queue h3 {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.driver-queue-item {
+  display: flex;
+  justify-content: space-between;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
 .driver-note {
   background: #faf4e4;
   padding: 12px;

@@ -35,6 +35,8 @@ export interface OrderRepository {
 export interface DriverRepository {
   listDrivers(): Promise<Driver[]>;
   saveDriver(driver: Driver): Promise<Driver>;
+  startShift(): Promise<void>;
+  endShift(): Promise<void>;
 }
 export interface AssignmentRepository {
   listAssignments(): Promise<DriverAssignment[]>;
@@ -321,6 +323,9 @@ export const seedDrivers: Driver[] = [
     phone: "+998 93 555 12 12",
     vehicle: "Chevrolet Spark · 01 A 777 AA",
     availability: "BUSY",
+    shiftStatus: "ON_SHIFT",
+    dispatchStatus: "ACTIVE",
+    deliveryCapacity: 1,
   },
   {
     id: "driver-2",
@@ -328,6 +333,9 @@ export const seedDrivers: Driver[] = [
     phone: "+998 91 222 90 90",
     vehicle: "Skuter · 414",
     availability: "OFFLINE",
+    shiftStatus: "OFF_SHIFT",
+    dispatchStatus: "ACTIVE",
+    deliveryCapacity: 1,
   },
 ];
 export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Kafe — LOCAL PILOT',restaurantAddress:'Guliston mavzesi 649, Navoiy shahri',restaurantPhone:'+998507440005',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'10:00–00:00'},deliveryEnabled:true,deliveryPolicyMode:'MANUAL_CITY_REVIEW',deliveryReviewMessage:'Navoiy shahri bo‘ylab yetkazib berish bepul. Manzil operator tomonidan tasdiqlanadi.',deliveryRadiusKm:null,deliveryAreaDescription:'Navoiy shahri',minimumDeliverySubtotal:100000,baseDeliveryFee:0,freeDeliveryThreshold:null,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_AT_PICKUP'],pickupPaymentMethods:['CASH','CARD_AT_PICKUP'],deliveryPaymentMethods:['CASH','CLICK','PAYME'],estimatedPreparationMinutes:null,estimatedDeliveryMinutes:null,defaultMapZoom:17,customerAuthRequired:false}
@@ -447,6 +455,24 @@ class LocalStore
     this.drivers[i] = driver;
     this.persist();
     return driver;
+  }
+  // P4.1: local/offline demo provider has no real per-session driver
+  // identity -- "driver-1" is the one every local driver e2e flow already
+  // exercises, so self-service shift control acts on that row.
+  async startShift() {
+    const i = this.drivers.findIndex((d) => d.id === "driver-1");
+    if (i >= 0) this.drivers[i] = { ...this.drivers[i], shiftStatus: "ON_SHIFT", dispatchStatus: "ACTIVE" };
+    this.persist();
+  }
+  async endShift() {
+    const i = this.drivers.findIndex((d) => d.id === "driver-1");
+    if (i < 0) return;
+    const hasActive = this.orders.some(
+      (o) => o.assignedDriverId === "driver-1" && !["DELIVERED", "CANCELLED", "RETURNED", "DELIVERY_FAILED"].includes(o.status),
+    );
+    if (hasActive) throw new Error("Faol yetkazishlar tugagach ishni tugating");
+    this.drivers[i] = { ...this.drivers[i], shiftStatus: "OFF_SHIFT" };
+    this.persist();
   }
   async listAssignments() {
     return structuredClone(this.assignments);

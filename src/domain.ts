@@ -31,7 +31,17 @@ export interface CustomerAddress {customerName:string;primaryPhone:string;second
 export interface OrderItem extends CartItem {total:number}
 export interface OrderEvent {id:string;orderId:string;actorType:ActorType;actorId:string;previousStatus:OrderStatus|null;newStatus:OrderStatus;timestamp:string;reason?:string;notes?:string}
 export interface DeliveryIssue {id:string;orderId:string;type:DeliveryIssueType;description:string;createdAt:string;reportedBy:string;resolvedAt?:string}
-export interface Driver {id:string;name:string;phone:string;vehicle:string;availability:DriverAvailability}
+// P4.1: the canonical work-state model (Smart Dispatch Phase 1) --
+// shift_status ("am I working at all") and dispatch_status ("should I
+// receive NEW assignments right now") are orthogonal. The driver-facing
+// "Ishga tayyor" ON/OFF control maps to shift_status alone (start_shift/
+// end_shift already set dispatch_status='ACTIVE' together with it) --
+// dispatch_status's own pause/resume is a separate, finer-grained control
+// this phase does not surface. `availability` (legacy) is left alone.
+export type DriverShiftStatus='OFF_SHIFT'|'ON_SHIFT'
+export type DriverDispatchStatus='ACTIVE'|'PAUSED'
+export interface Driver {id:string;name:string;phone:string;vehicle:string;availability:DriverAvailability;shiftStatus:DriverShiftStatus;dispatchStatus:DriverDispatchStatus;deliveryCapacity:number}
+export const driverAcceptsNewWork=(driver:Pick<Driver,'shiftStatus'|'dispatchStatus'>):boolean=>driver.shiftStatus==='ON_SHIFT'&&driver.dispatchStatus==='ACTIVE'
 export interface DriverAssignment {id:string;orderId:string;driverId:string;assignedAt:string;acceptedAt?:string}
 export type DeliveryReviewStatus='NOT_REQUIRED'|'REVIEW_REQUIRED'|'CLARIFICATION_REQUESTED'|'APPROVED'|'REJECTED'
 export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback}

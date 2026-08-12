@@ -388,7 +388,20 @@ export class SupabaseStore {
       phone: r.phone,
       vehicle: r.vehicle,
       availability: r.availability,
+      shiftStatus: r.shift_status,
+      dispatchStatus: r.dispatch_status,
+      deliveryCapacity: Number(r.delivery_capacity),
     })) as Driver[];
+  }
+  // P4.1: self-service only -- both RPCs act on auth.uid() alone, a driver
+  // can never touch another driver's row.
+  async startShift() {
+    const { error } = await supabase!.rpc("start_shift");
+    fail(error);
+  }
+  async endShift() {
+    const { error } = await supabase!.rpc("end_shift");
+    fail(error);
   }
   async saveDriver(driver: Driver) {
     return driver;

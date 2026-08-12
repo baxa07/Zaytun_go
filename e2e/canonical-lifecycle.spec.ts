@@ -87,10 +87,11 @@ test.describe('canonical order lifecycle', () => {
 
     await test.step('driver accepts the assignment and progresses to delivered', async () => {
       await driver.goto('/driver')
-      await expect(driver.locator('.delivery-card')).toBeVisible()
-      await expect(driver.getByTestId('driver-primary-action')).toHaveText('Topshiriqni qabul qilish')
+      await expect(driver.locator('.assignment-card')).toBeVisible()
+      await expect(driver.getByTestId('driver-primary-action')).toHaveText('Qabul qilish')
       await driver.getByTestId('driver-primary-action').click() // accept
-      await expect(driver.getByTestId('driver-primary-action')).toHaveText('Olib ketdim')
+      await expect(driver.locator('.delivery-card')).toBeVisible()
+      await expect(driver.getByTestId('driver-primary-action')).toHaveText('Buyurtmani oldim')
       await driver.getByTestId('driver-primary-action').click() // PICKED_UP
       await driver.getByTestId('driver-primary-action').click() // ON_THE_WAY
       await driver.getByTestId('driver-primary-action').click() // ARRIVED

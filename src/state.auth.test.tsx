@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { AppProvider, useApp, isVerifiedCustomerSession, mapCustomerAuthError, mapDriverAuthError, type AppRole } from "./state";
-import type { Order, OrderStatus, RestaurantConfig } from "./domain";
+import type { Driver, Order, OrderStatus, RestaurantConfig } from "./domain";
 
 const publicConfig: RestaurantConfig = {
   restaurantName: "Test Zaytun",
@@ -174,13 +174,20 @@ describe("route-aware Supabase loading", () => {
     expect(mocks.subscribe).toHaveBeenCalledWith(expect.any(Function), "restaurant", expect.any(Function));
   });
 
-  it("loads only RLS-filtered orders and no roster for an authenticated driver", async () => {
+  it("loads RLS-filtered orders and its own driver row (never a roster) for an authenticated driver", async () => {
+    // P4.1: a driver now also calls listDrivers() so the driver surface can
+    // read/control its own shift_status via the exact same RPC path
+    // RESTAURANT/DISPATCHER already use -- driver_read's own RLS policy
+    // (id=auth.uid() or is_staff()) is what actually keeps this from ever
+    // becoming a full roster for a non-staff caller, not the frontend
+    // choosing not to call it at all.
     mocks.session = { user: { id: "driver-1" } };
     mocks.role = "DRIVER";
     mocks.list.mockResolvedValue([{ id: "assigned-order" } as Order]);
+    mocks.listDrivers.mockResolvedValue([{ id: "driver-1" } as Driver]);
     renderAt("/driver", <OperationalProbe />);
     expect(await screen.findByText("loaded:1")).toBeTruthy();
-    expect(mocks.listDrivers).not.toHaveBeenCalled();
+    expect(mocks.listDrivers).toHaveBeenCalledOnce();
     expect(mocks.subscribe).toHaveBeenCalledWith(expect.any(Function), "driver", expect.any(Function));
   });
 
@@ -610,11 +617,11 @@ describe("driver work surface: Keyingi yetkazish removed, active assignment pres
     mocks.get.mockResolvedValue(accepted);
     renderAt("/driver");
 
-    expect((await screen.findByTestId("driver-primary-action")).textContent).toContain("Topshiriqni qabul qilish");
+    expect((await screen.findByTestId("driver-primary-action")).textContent).toContain("Qabul qilish");
     fireEvent.click(screen.getByTestId("driver-primary-action"));
     await waitFor(() => expect(mocks.acceptAssignment).toHaveBeenCalledWith("assigned-1"));
 
-    expect((await screen.findByTestId("driver-primary-action")).textContent).toContain("Olib ketdim");
+    expect((await screen.findByTestId("driver-primary-action")).textContent).toContain("Buyurtmani oldim");
     fireEvent.click(screen.getByTestId("driver-primary-action"));
     await waitFor(() => expect(mocks.transition).toHaveBeenCalledWith("assigned-1", "PICKED_UP", "DRIVER", undefined));
 
@@ -674,7 +681,7 @@ describe("acceptAssignment duplicate-interaction guard", () => {
     fireEvent.click(button);
     expect(mocks.acceptAssignment).toHaveBeenCalledOnce();
     resolveAccept();
-    expect(await screen.findByText("Olib ketdim")).toBeTruthy();
+    expect(await screen.findByText("Buyurtmani oldim")).toBeTruthy();
   });
 
   it("clears the lock after a failed accept, surfaces a visible error, and allows a retry", async () => {
