@@ -223,6 +223,45 @@ h2 {
   font-size: 13px;
   margin: 8px 0;
 }
+/* Deliberately hard to miss: bright, stays put until acknowledged (no
+   auto-dismiss timer), not a subtle toast. */
+.new-order-alert {
+  background: #fff3cd;
+  border: 2px solid #e0a800;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  animation: new-order-pulse 1.6s ease-in-out infinite;
+}
+.new-order-alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.new-order-alert-head b {
+  font-size: 16px;
+  color: #7a5200;
+}
+.new-order-alert-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.new-order-alert-item {
+  background: #fff;
+  border: 1px solid #e0a800;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #7a5200;
+}
+@keyframes new-order-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 168, 0, 0.35); }
+  50% { box-shadow: 0 0 0 8px rgba(224, 168, 0, 0); }
+}
 .chips {
   display: flex;
   gap: 10px;

@@ -1474,28 +1474,106 @@ const groups: BoardGroup[] = [
     ],
   },
 ];
+// Stable, order-identity-based (not count-based) acknowledgement, so a
+// Realtime refresh/reconnect never replays an already-seen order as a
+// fresh alert, and each genuinely new order is tracked independently.
+// Persisted so a page reload doesn't re-alert for orders staff already saw.
+const ACKNOWLEDGED_ORDERS_KEY = "zaytun-go:acknowledged-new-orders";
+function loadAcknowledgedOrders(): Set<string> {
+  try {
+    const raw = localStorage.getItem(ACKNOWLEDGED_ORDERS_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+function saveAcknowledgedOrders(ids: Set<string>) {
+  try {
+    localStorage.setItem(ACKNOWLEDGED_ORDERS_KEY, JSON.stringify([...ids]));
+  } catch {
+    /* alert simply won't persist across reload -- not critical */
+  }
+}
 function Restaurant() {
   const { orders, loaded, operationalError } = useApp();
-  const [newSeen, setNewSeen] = useState(
-    orders.filter((o) => o.status === "NEW").length,
+  const [acknowledged, setAcknowledged] = useState<Set<string>>(() =>
+    loadAcknowledgedOrders(),
   );
+  const unacknowledgedNew = orders.filter(
+    (o) => o.status === "NEW" && !acknowledged.has(o.id),
+  );
+  const acknowledgeOrder = (id: string) => {
+    setAcknowledged((current) => {
+      if (current.has(id)) return current;
+      const next = new Set(current).add(id);
+      saveAcknowledgedOrders(next);
+      return next;
+    });
+  };
+  const acknowledgeAllVisible = () => {
+    setAcknowledged((current) => {
+      const next = new Set(current);
+      for (const o of unacknowledgedNew) next.add(o.id);
+      saveAcknowledgedOrders(next);
+      return next;
+    });
+  };
+  // Armed on the first interaction anywhere on the page (the sign-in click
+  // itself qualifies) -- browsers block audio playback before a genuine
+  // user gesture, so the AudioContext is created lazily here rather than
+  // assumed to work from mount. If it's ever unavailable/blocked, the
+  // persistent visual alert below is unaffected -- nothing about order
+  // processing ever depends on sound succeeding.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  useEffect(() => {
+    const arm = () => {
+      if (audioCtxRef.current) return;
+      try {
+        audioCtxRef.current = new AudioContext();
+      } catch {
+        /* persistent visual alert remains the source of truth */
+      }
+    };
+    document.addEventListener("pointerdown", arm, { once: true });
+    document.addEventListener("keydown", arm, { once: true });
+    return () => {
+      document.removeEventListener("pointerdown", arm);
+      document.removeEventListener("keydown", arm);
+    };
+  }, []);
+  const previousUnacknowledgedIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentIds = new Set(unacknowledgedNew.map((o) => o.id));
+    // Only a genuinely NEW unacknowledged id (not present last render)
+    // triggers a fresh alert sound -- an ordinary Realtime refresh/
+    // reconnect that returns the same still-unacknowledged orders never
+    // replays them as new.
+    const hasNewArrival = [...currentIds].some(
+      (id) => !previousUnacknowledgedIds.current.has(id),
+    );
+    previousUnacknowledgedIds.current = currentIds;
+    if (!hasNewArrival) return;
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    try {
+      const playNote = (frequency: number, startOffset: number, duration: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = frequency;
+        gain.gain.value = 0.2;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + startOffset);
+        osc.stop(ctx.currentTime + startOffset + duration);
+      };
+      playNote(880, 0, 0.18);
+      playNote(1108, 0.22, 0.24);
+    } catch {
+      /* visible alert remains the source of truth -- never block on audio */
+    }
+  }, [unacknowledgedNew]);
   const boardRef = useRef<HTMLDivElement>(null);
   const [scrollable, setScrollable] = useState(false);
-  useEffect(() => {
-    const count = orders.filter((o) => o.status === "NEW").length;
-    if (count > newSeen) {
-      setNewSeen(count);
-      try {
-        const ctx = new AudioContext();
-        const osc = ctx.createOscillator();
-        osc.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.15);
-      } catch {
-        /* visible alert remains */
-      }
-    }
-  }, [orders, newSeen]);
   useEffect(() => {
     const check = () =>
       setScrollable(
@@ -1511,6 +1589,34 @@ function Restaurant() {
       <main className="ops">
         {!loaded && <div className="empty" role="status">Buyurtmalar yuklanmoqda…</div>}
         {operationalError && <p className="error" role="alert">{operationalError}</p>}
+        {unacknowledgedNew.length > 0 && (
+          <div className="new-order-alert" role="alert" data-testid="new-order-alert">
+            <div className="new-order-alert-head">
+              <b>🔔 {unacknowledgedNew.length} ta yangi buyurtma!</b>
+              <button
+                type="button"
+                className="button text"
+                data-testid="acknowledge-all-orders"
+                onClick={acknowledgeAllVisible}
+              >
+                Barchasini ko‘rdim
+              </button>
+            </div>
+            <div className="new-order-alert-list">
+              {unacknowledgedNew.map((o) => (
+                <Link
+                  key={o.id}
+                  to={`/restaurant/orders/${o.id}`}
+                  className="new-order-alert-item"
+                  data-testid={`new-order-alert-${o.id}`}
+                  onClick={() => acknowledgeOrder(o.id)}
+                >
+                  {o.number} — {o.customer.name}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="ops-head">
           <div>
             <p className="eyebrow">DUSHANBA · 3 AVGUST</p>
@@ -1564,7 +1670,7 @@ function Restaurant() {
                 {orders
                   .filter((o) => g.statuses.includes(o.status))
                   .map((o) => (
-                    <OrderCard order={o} key={o.id} />
+                    <OrderCard order={o} key={o.id} onOpen={acknowledgeOrder} />
                   ))}
               </section>
             ))}
@@ -1574,12 +1680,13 @@ function Restaurant() {
     </Shell>
   );
 }
-function OrderCard({ order }: { order: Order }) {
+function OrderCard({ order, onOpen }: { order: Order; onOpen?: (id: string) => void }) {
   const waitingOnCustomer = isDeliveryAddressRevisable(order);
   const reviewBadge = deliveryReviewBadges[order.deliveryReviewStatus as NonNullable<Order["deliveryReviewStatus"]>];
   return (
     <Link
       to={`/restaurant/orders/${order.id}`}
+      onClick={() => onOpen?.(order.id)}
       data-testid={`order-card-${order.id}`}
       className={`order-card ${order.status === "NEW" && !waitingOnCustomer ? "new" : ""} ${waitingOnCustomer ? "waiting-customer" : ""}`}
     >
