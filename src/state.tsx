@@ -183,6 +183,13 @@ type State = {
   submitOrder: (order: Order) => Promise<Order>;
   transition: (id: string, to: OrderStatus, actor: ActorType, reason?: string) => Promise<void>;
   transitionPending: (id: string) => boolean;
+  // H0: the shared `orders` list is now filtered (live restaurant board
+  // only, when surface==='restaurant') -- an individual order detail page
+  // for an order NOT on that list (e.g. an old, already-finished one,
+  // reached via direct URL/bookmark/history) needs its own unfiltered
+  // fetch. store.get() already exists and is RLS-scoped exactly like
+  // everything else (staff or the assigned driver); this just exposes it.
+  getOrder: (id: string) => Promise<Order | undefined>;
   assign: (orderId: string, driverId: string) => Promise<void>;
   acceptAssignment: (orderId: string) => Promise<void>;
   setEstimate: (orderId: string, minutes: number) => Promise<void>;
@@ -295,7 +302,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (refreshInFlight.current) return refreshInFlight.current;
     const task = (async () => {
-      const nextOrders = await store.list();
+      const nextOrders = await store.list(surface ?? undefined);
       const nextDrivers = !supabaseConfigured || role === "RESTAURANT" || role === "DISPATCHER"
         ? await store.listDrivers()
         : [];
@@ -310,7 +317,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       refreshInFlight.current = null;
     }
-  }, [role]);
+  }, [role, surface]);
 
   useEffect(() => {
     if (!supabaseConfigured) {
@@ -549,6 +556,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }),
     transitionPending: (id) => Boolean(pendingTransitionState[id]),
+    getOrder: (id) => store.get(id),
     assign: (orderId, driverId) => withOrderLock(orderId, async () => {
       const order = await store.get(orderId);
       const driver = drivers.find((entry) => entry.id === driverId);

@@ -237,7 +237,27 @@ export class SupabaseStore {
       })),
     })) as MenuItem[];
   }
-  async list() {
+  async list(surface?: "restaurant" | "driver") {
+    // H0: the live restaurant board is an operational workspace, not an
+    // unlimited archive -- list_live_restaurant_order_ids() (server-side,
+    // business-day-aware) decides which orders belong on it. Every other
+    // surface (driver, or this method's own generic callers) keeps the
+    // exact previous unfiltered behavior -- this is a restaurant
+    // read-model change only.
+    if (surface === "restaurant") {
+      const { data: ids, error: liveIdsError } = await supabase!.rpc(
+        "list_live_restaurant_order_ids",
+      );
+      fail(liveIdsError);
+      if (!ids || ids.length === 0) return [];
+      const { data, error } = await supabase!
+        .from("orders")
+        .select(orderSelect)
+        .in("id", ids)
+        .order("created_at", { ascending: false });
+      fail(error);
+      return (data || []).map((r) => mapOrder(r as Row));
+    }
     const { data, error } = await supabase!
       .from("orders")
       .select(orderSelect)

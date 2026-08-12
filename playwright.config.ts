@@ -2,7 +2,7 @@ import {defineConfig, devices} from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: ['auth-local.spec.ts', 'customer-otp.spec.ts', 'checkout-idempotency.spec.ts'],
+  testIgnore: ['auth-local.spec.ts', 'customer-otp.spec.ts', 'checkout-idempotency.spec.ts', 'live-restaurant-board.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: 0,

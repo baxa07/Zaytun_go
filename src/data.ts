@@ -18,7 +18,7 @@ export interface MenuRepository {
 }
 export interface ConfigurationRepository { getRestaurantConfig():Promise<RestaurantConfig> }
 export interface OrderRepository {
-  list(): Promise<Order[]>;
+  list(surface?: "restaurant" | "driver"): Promise<Order[]>;
   get(id: string): Promise<Order | undefined>;
   save(order: Order): Promise<Order>;
 }

@@ -1744,8 +1744,28 @@ function OrderDetail() {
     reviewDelivery,
     requestClarification,
     transitionPending,
+    getOrder,
   } = useApp();
-  const order = orders.find((o) => o.id === id);
+  const listedOrder = orders.find((o) => o.id === id);
+  // H0: the shared `orders` list is now filtered to the live restaurant
+  // board -- an older, already-finished order reached via direct URL,
+  // bookmark, or browser history won't be in it. Fall back to an
+  // unfiltered single-order fetch rather than incorrectly treating "not
+  // on the live board" as "doesn't exist" and redirecting away.
+  const [fallbackOrder, setFallbackOrder] = useState<Order | undefined>(undefined);
+  const [fallbackChecked, setFallbackChecked] = useState(false);
+  const fallbackAttempted = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!id || listedOrder || !loaded) return;
+    if (fallbackAttempted.current === id) return;
+    fallbackAttempted.current = id;
+    setFallbackChecked(false);
+    void getOrder(id).then((found) => {
+      setFallbackOrder(found);
+      setFallbackChecked(true);
+    });
+  }, [id, listedOrder, loaded, getOrder]);
+  const order = listedOrder ?? (fallbackOrder?.id === id ? fallbackOrder : undefined);
   // assignedDriverId is never cleared once set (confirmed server-side: the
   // transition RPC only flips the driver's own availability back to
   // AVAILABLE on a terminal status, it never touches orders.assigned_driver_id)
@@ -1756,7 +1776,7 @@ function OrderDetail() {
   const [estimate, setEstimateValue] = useState("35");
   const [reviewReason, setReviewReason] = useState("");
   if (!order)
-    return loaded ? (
+    return !id || (loaded && fallbackChecked) ? (
       <Navigate to="/restaurant" />
     ) : (
       <Shell surface="staff">
