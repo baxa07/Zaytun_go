@@ -354,6 +354,16 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# Outbound restaurant new-order notifications. Invoked by our own database
+# (a notification_outbox row + pg_net trigger), never by an end user, so
+# there is no Supabase-issued JWT to verify either -- same "do our own
+# check instead" reasoning as the two functions above, via a shared-secret
+# Authorization header (TELEGRAM_NOTIFY_SECRET) instead of a webhook
+# signature header.
+[functions.zaytun-telegram-notify]
+enabled = true
+verify_jwt = false
+
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 # Enabled locally so the local Auth server accepts phone/password sign-in
 # (GoTrue refuses phone sign-in entirely unless some SMS provider is
