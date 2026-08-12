@@ -28,7 +28,14 @@ insert into public.menu_items values('chicken','grill','Zaytun tovuq grili','Mar
 insert into public.menu_modifiers values('spicy','chicken','Achchiq',0,true),('sauce','chicken','Qo‘shimcha sous',5000,true);
 select public.create_order('{"id":"20000000-0000-0000-0000-000000000001","idempotencyKey":"20000000-0000-0000-0000-000000000001","customer":{"name":"Dilnoza Karimova","primaryPhone":"+998 90 123 45 67"},"type":"DELIVERY","paymentMethod":"CASH","specialInstructions":"Sousni alohida soling","address":{"district":"Karmana tumani, Yangiariq MFY","street":"Amir Temur ko‘chasi","house":"24B","landmark":"12-maktab ro‘parasida","deliveryNotes":"Ko‘k darvoza","latitude":40.1039,"longitude":65.3688,"confidence":"COMPLETE","pinConfirmedAt":"2026-08-04T08:00:00Z","locationProvider":"mock"},"items":[{"menuItemId":"chicken","quantity":2,"modifierIds":[],"instructions":""}]}'::jsonb);
 select public.create_order('{"id":"20000000-0000-0000-0000-000000000002","idempotencyKey":"20000000-0000-0000-0000-000000000002","customer":{"name":"Kamola Rustamova","primaryPhone":"+998 91 222 33 44"},"type":"DELIVERY","paymentMethod":"CASH","address":{"district":"Navoiy shahar","street":"Navoiy ko‘chasi","house":"Bino raqami noma’lum","landmark":"","deliveryNotes":"Mijoz bilan aniqlashtirish kerak","latitude":40.1,"longitude":65.36,"confidence":"NEEDS_CLARIFICATION","pinConfirmedAt":"2026-08-04T08:00:00Z","locationProvider":"mock"},"items":[{"menuItemId":"plov","quantity":3,"modifierIds":[],"instructions":""}]}'::jsonb);
-update public.orders set status='READY',delivery_review_status='APPROVED',delivery_reviewed_at=now() where id='20000000-0000-0000-0000-000000000001';
+-- Smart Dispatch v1 (Phase 3): this demo order used to sit indefinitely
+-- in READY with no driver, as a manual-assignment demo fixture. Under
+-- automatic dispatch, ANY other order's READY/terminal transition now
+-- triggers a sweep that would opportunistically pick this one up too,
+-- making it a nondeterministic cross-test contamination risk rather than
+-- a stable demo data point. Cancelled instead -- still a realistic demo
+-- history row, no longer sitting in the live dispatch queue.
+update public.orders set status='CANCELLED',cancellation_reason='Demo fixture',delivery_review_status='APPROVED',delivery_reviewed_at=now() where id='20000000-0000-0000-0000-000000000001';
 insert into public.order_events(order_id,actor_type,actor_id,previous_status,new_status) values
 ('20000000-0000-0000-0000-000000000001','RESTAURANT','seed','NEW','CONFIRMED'),('20000000-0000-0000-0000-000000000001','RESTAURANT','seed','CONFIRMED','PREPARING'),('20000000-0000-0000-0000-000000000001','RESTAURANT','seed','PREPARING','READY');
 insert into public.delivery_issues(order_id,issue_type,description,reported_by) values('20000000-0000-0000-0000-000000000002','ADDRESS_CLARIFICATION','Mijoz bino raqamini tasdiqlashi kerak','10000000-0000-0000-0000-000000000001');

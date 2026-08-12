@@ -54,9 +54,10 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await page.getByTestId("action-confirm").click();
     await page.getByTestId("action-start-prep").click();
     await page.getByTestId("action-mark-ready").click();
-    const availableDriver = page.locator('[data-testid^="assign-driver-"]:not([disabled])').first();
-    await expect(availableDriver).toBeVisible();
-    await availableDriver.click();
+    // Smart Dispatch v1 (Phase 3): READY now automatically dispatches
+    // server-side -- no manual driver click is needed or, once dispatched,
+    // even possible (the manual picker only renders while status is still
+    // READY).
     await expect(page.locator(".detail-head .badge")).toHaveText("Haydovchi biriktirilgan");
     await page.getByRole("button", { name: "Chiqish" }).click();
     await expect(page.getByRole("heading", { name: "Kirish" })).toBeVisible();

@@ -1,5 +1,5 @@
 begin;
-select plan(15);
+select plan(16);
 
 -- Smart Dispatch v1, Phase 2: driver_assignments gains an explicit status
 -- classification and a partial (active-only) uniqueness constraint,
@@ -7,13 +7,29 @@ select plan(15);
 -- supersede get their own dedicated RPC-level tests in Phase 6; here we
 -- verify the schema itself (constraint shape, and every transition_order-
 -- driven ending) is correct.
+--
+-- Phase 3 made READY auto-dispatch, so driver-1 (...004) is paused for
+-- this whole file: it keeps automatic dispatch deterministic (always
+-- driver-1 Aziz, ...003, the only ON_SHIFT+ACTIVE candidate), which is
+-- what this file's assertions were written against -- it isn't testing
+-- WHICH driver gets picked, only what happens to the assignment row once
+-- one exists.
+update public.drivers set dispatch_status='PAUSED' where id='10000000-0000-0000-0000-000000000004';
+-- The seeded fixture order (seed.sql's "ord-active"-style READY-with-no-
+-- driver order, used elsewhere as a deliberate no-driver-available
+-- fixture) is now itself genuinely dispatch-eligible under Phase 3 -- any
+-- sweep triggered anywhere in this transaction would otherwise also sweep
+-- it up and consume this file's one available driver behind the scenes.
+-- Neutralized here so this file's capacity accounting stays exact.
+update public.orders set status='CANCELLED' where id='20000000-0000-0000-0000-000000000001' and status='READY';
 
 select has_column('public','driver_assignments','status','driver_assignments record why an assignment ended');
 select has_column('public','driver_assignments','declined_at','driver_assignments record decline timing separately');
 select ok(not exists(select 1 from pg_constraint where conname='driver_assignments_order_id_key'),'the old whole-lifetime UNIQUE(order_id) constraint is gone');
 select ok(exists(select 1 from pg_indexes where indexname='driver_assignments_active_order_idx'),'a partial unique index protects at-most-one-active-assignment');
 
--- assign -> accept -> DELIVERED leaves a COMPLETED history row.
+-- READY now auto-dispatches (Phase 3) -- assign -> accept -> DELIVERED
+-- leaves a COMPLETED history row.
 select public.create_public_order('{"id":"97000000-0000-4000-8000-000000000001","customer":{"name":"History Complete","primaryPhone":"+998900000040"},"type":"DELIVERY","paymentMethod":"CASH","address":{"district":"Navoiy","street":"Test","latitude":40.09,"longitude":65.40,"pinConfirmedAt":"2026-08-12T08:00:00Z","locationProvider":"mock"},"items":[{"menuItemId":"plov","quantity":3,"modifierIds":[]}]}'::jsonb);
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
@@ -21,9 +37,9 @@ select public.review_delivery_request('97000000-0000-4000-8000-000000000001',tru
 select public.transition_order('97000000-0000-4000-8000-000000000001','CONFIRMED',null,null);
 select public.transition_order('97000000-0000-4000-8000-000000000001','PREPARING',null,null);
 select public.transition_order('97000000-0000-4000-8000-000000000001','READY',null,null);
-select public.assign_driver('97000000-0000-4000-8000-000000000001','10000000-0000-0000-0000-000000000003');
 reset role;
-select is((select status::text from public.driver_assignments where order_id='97000000-0000-4000-8000-000000000001'),'ASSIGNED','assign_driver leaves ASSIGNED');
+select is((select status::text from public.driver_assignments where order_id='97000000-0000-4000-8000-000000000001'),'ASSIGNED','READY auto-dispatches and leaves ASSIGNED');
+select is((select assigned_driver_id from public.orders where id='97000000-0000-4000-8000-000000000001'),'10000000-0000-0000-0000-000000000003'::uuid,'the only ON_SHIFT+ACTIVE driver (Aziz) is the one auto-assigned');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
@@ -57,7 +73,6 @@ select public.review_delivery_request('97000000-0000-4000-8000-000000000002',tru
 select public.transition_order('97000000-0000-4000-8000-000000000002','CONFIRMED',null,null);
 select public.transition_order('97000000-0000-4000-8000-000000000002','PREPARING',null,null);
 select public.transition_order('97000000-0000-4000-8000-000000000002','READY',null,null);
-select public.assign_driver('97000000-0000-4000-8000-000000000002','10000000-0000-0000-0000-000000000003');
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
@@ -85,7 +100,6 @@ select public.review_delivery_request('97000000-0000-4000-8000-000000000004',tru
 select public.transition_order('97000000-0000-4000-8000-000000000004','CONFIRMED',null,null);
 select public.transition_order('97000000-0000-4000-8000-000000000004','PREPARING',null,null);
 select public.transition_order('97000000-0000-4000-8000-000000000004','READY',null,null);
-select public.assign_driver('97000000-0000-4000-8000-000000000004','10000000-0000-0000-0000-000000000003');
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
@@ -95,7 +109,8 @@ select public.transition_order('97000000-0000-4000-8000-000000000004','RETURNED'
 reset role;
 select is((select status::text from public.driver_assignments where order_id='97000000-0000-4000-8000-000000000004'),'RETURNED','a direct (not failed-first) RETURNED correctly classifies the still-active assignment as RETURNED');
 
--- A third order, cancelled while a courier was actively assigned.
+-- A third order, cancelled while a courier was actively assigned
+-- (auto-dispatched, same as the others in this file).
 select public.create_public_order('{"id":"97000000-0000-4000-8000-000000000003","customer":{"name":"History Cancelled","primaryPhone":"+998900000042"},"type":"DELIVERY","paymentMethod":"CASH","address":{"district":"Navoiy","street":"Test","latitude":40.09,"longitude":65.40,"pinConfirmedAt":"2026-08-12T08:00:00Z","locationProvider":"mock"},"items":[{"menuItemId":"plov","quantity":3,"modifierIds":[]}]}'::jsonb);
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
@@ -103,7 +118,6 @@ select public.review_delivery_request('97000000-0000-4000-8000-000000000003',tru
 select public.transition_order('97000000-0000-4000-8000-000000000003','CONFIRMED',null,null);
 select public.transition_order('97000000-0000-4000-8000-000000000003','PREPARING',null,null);
 select public.transition_order('97000000-0000-4000-8000-000000000003','READY',null,null);
-select public.assign_driver('97000000-0000-4000-8000-000000000003','10000000-0000-0000-0000-000000000004');
 select public.transition_order('97000000-0000-4000-8000-000000000003','CANCELLED','Mijoz bekor qildi',null);
 reset role;
 select is((select status::text from public.driver_assignments where order_id='97000000-0000-4000-8000-000000000003'),'CANCELLED','CANCELLED while assigned leaves CANCELLED');
@@ -111,7 +125,9 @@ select is((select status::text from public.driver_assignments where order_id='97
 -- The partial unique index: a second row is allowed once the first has
 -- ended (this is the whole point of Phase 2 -- proves reassignment is now
 -- structurally possible), but two simultaneously-active rows are still
--- rejected exactly as before.
+-- rejected exactly as before. Raw inserts here deliberately bypass the
+-- RPC-level eligibility checks -- this section verifies the constraint
+-- shape itself, already proven auto-dispatch-driven above.
 select lives_ok(
   $$insert into public.driver_assignments(order_id,driver_id,assigned_by,status) values('97000000-0000-4000-8000-000000000003','10000000-0000-0000-0000-000000000004','10000000-0000-0000-0000-000000000001','ASSIGNED')$$,
   'a new active row is allowed once the prior one has ended_at set'
