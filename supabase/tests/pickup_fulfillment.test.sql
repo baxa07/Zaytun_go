@@ -1,10 +1,10 @@
 begin;
 select plan(20);
 
-select enum_has_labels('public','payment_method',array['CASH','CARD_ON_DELIVERY','CARD_AT_PICKUP'],'pickup card method added without removing legacy enum value');
+select enum_has_labels('public','payment_method',array['CASH','CARD_ON_DELIVERY','CARD_AT_PICKUP','CLICK','PAYME'],'pickup card and Payment Preference v1 methods added without removing legacy enum values');
 select enum_has_labels('public','order_status',array['NEW','CONFIRMED','PREPARING','READY','DRIVER_ASSIGNED','PICKED_UP','ON_THE_WAY','ARRIVED','DELIVERED','REJECTED','CANCELLED','DELIVERY_FAILED','RETURNED','COLLECTED'],'collected terminal status added');
 select is((public.get_public_restaurant_config()->'pickupPaymentMethods')::text,'["CASH", "CARD_AT_PICKUP"]','public config exposes pickup methods');
-select is((public.get_public_restaurant_config()->'deliveryPaymentMethods')::text,'["CASH"]','public config exposes delivery methods');
+select is((public.get_public_restaurant_config()->'deliveryPaymentMethods')::text,'["CASH", "CLICK", "PAYME"]','public config exposes delivery methods (local dev config -- production stays CASH-only until separately opted in)');
 
 select lives_ok($$select public.create_public_order('{"id":"80000000-0000-4000-8000-000000000001","customer":{"name":"Cash Pickup","primaryPhone":"+998900000001"},"type":"PICKUP","paymentMethod":"CASH","items":[{"menuItemId":"ayran","quantity":1,"modifierIds":[]}]}'::jsonb)$$,'pickup cash accepted');
 select lives_ok($$select public.create_public_order('{"id":"80000000-0000-4000-8000-000000000002","customer":{"name":"Card Pickup","primaryPhone":"+998900000002"},"type":"PICKUP","paymentMethod":"CARD_AT_PICKUP","cardNumber":"never-store","items":[{"menuItemId":"plov","quantity":1,"modifierIds":[]}]}'::jsonb)$$,'pickup card at restaurant accepted');

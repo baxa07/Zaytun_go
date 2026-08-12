@@ -9,8 +9,7 @@ async function placeDeliveryOrder(customer: Page, house = "5A") {
   await customer.getByLabel("Telefon *").fill("+998901112233");
   await customer.getByLabel("Mahalla yoki tuman *").fill("Karmana tumani");
   await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Bunyodkor ko‘chasi");
-  await customer.getByLabel("Uy / bino *").fill(house);
-  await customer.getByLabel("Mo‘ljal", { exact: true }).fill("Maktab yonida");
+  await customer.getByLabel("Uy / bino (ixtiyoriy)").fill(house);
   await customer.getByTestId("map-picker-set").click();
   await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
   await customer.getByTestId("checkout-submit").click();

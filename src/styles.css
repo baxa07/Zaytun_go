@@ -178,6 +178,13 @@ h2 {
   color: var(--green);
   background: transparent;
 }
+.disclosure-toggle {
+  width: 100%;
+  justify-content: space-between;
+  padding: 12px 4px;
+  font-size: 14px;
+  margin: 4px 0 2px;
+}
 .button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -206,6 +213,15 @@ h2 {
   border-radius: 24px;
   padding: 11px 16px;
   font-weight: 700;
+}
+.success-notice {
+  background: #edf3ef;
+  color: var(--green);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 13px;
+  margin: 8px 0;
 }
 .chips {
   display: flex;
@@ -257,9 +273,12 @@ h2 {
   font-size: 80px;
   overflow: hidden;
   min-width: 0;
+  position: relative;
 }
 .product-image-element {
   display: block;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -270,6 +289,8 @@ h2 {
 .product-image-placeholder {
   display: grid;
   place-items: center;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   color: var(--green);
@@ -425,6 +446,10 @@ h2 {
 .form-card h2 {
   border-bottom: 1px solid #eee;
   padding-bottom: 14px;
+}
+.form-card-lead {
+  color: var(--muted);
+  margin: -6px 0 14px;
 }
 .segmented {
   display: grid;
@@ -746,6 +771,19 @@ h2 {
   border-radius: 8px;
   font-size: 12px;
 }
+.payment-signal {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+/* Visually noticeable but deliberately not an error style -- CLICK/PAYME is
+   an unverified intent to pay, never a "something is wrong" state. */
+.remote-payment-flag {
+  display: block;
+  color: #9a6511;
+  font-weight: 600;
+  margin-top: 4px;
+}
 .pilot-notice,.delivery-review-panel{background:#fff7db;border:1px solid #e8d695;border-radius:12px;padding:12px}.delivery-review-panel{display:grid;gap:10px;margin-bottom:14px}.delivery-review-panel p{margin:0;color:var(--muted);font-size:13px}
 .clarification-card{display:grid;gap:10px;margin-bottom:14px}.clarification-card h2{margin:0;font-size:16px}.clarification-card p{margin:0;color:var(--muted);font-size:13px;overflow-wrap:anywhere}.clarification-card button{justify-self:start}
 .detail {
@@ -923,7 +961,7 @@ h2 {
 .danger-link {
   color: #9b3028;
 }
-.address-explainer{background:#f5f1e7;border-radius:12px;padding:12px;margin:16px 0}.address-explainer p{font-size:12px;margin:5px 0}.location-picker{display:grid;gap:12px;margin-top:18px}.map-search{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}.map-search .field{margin:0}.search-status{min-height:18px;font-size:12px;color:var(--muted)}.map-results{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}.map-results button{width:100%;display:grid;gap:4px;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;padding:13px;min-height:52px}.map-results small{color:var(--muted)}.map-frame{position:relative;min-width:0}.map-canvas{width:100%;height:280px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#e8eee9;position:relative}.map-loading{position:absolute;inset:0;display:grid;place-items:center;border-radius:16px;background:#e8eee9;color:var(--muted);font-weight:700}.mock-map-surface{width:100%;height:100%;border:0;cursor:crosshair;position:relative;background:linear-gradient(30deg,#dde8dc 25%,transparent 25%) 0 0/40px 40px,linear-gradient(120deg,#e7dfc9 25%,#edf2ea 25%) 0 0/50px 50px}.mock-map-surface:before{content:'NAVOIY · MOCK MAP';position:absolute;top:12px;left:12px;background:#fff;padding:6px 9px;border-radius:8px;font-size:10px;font-weight:800}.mock-pin,.yandex-pin{position:absolute;left:50%;top:50%;font-size:38px;filter:drop-shadow(0 3px 3px #0004);transform:translate(-50%,-100%)}.coordinate-summary,.map-suggestion,.map-error{display:grid;gap:5px;border-radius:12px;padding:13px}.coordinate-summary{background:#edf3ef}.coordinate-summary code{font-size:14px}.coordinate-summary small{color:var(--muted)}.map-suggestion{background:#fff7db}.map-suggestion button,.map-error button{justify-self:start;min-height:40px}.map-error{background:#fff0ee;color:#8f312b}.pin-confirm{display:flex;align-items:flex-start;gap:12px;border:2px solid #b9c9be;background:#fff;border-radius:12px;padding:15px;min-height:56px}.pin-confirm input{width:22px;height:22px}.pin-confirm span>*{display:block}.pin-confirm small{color:var(--muted);margin-top:4px}.location-signal{display:block;margin-bottom:10px;color:var(--muted)}.location-facts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}.location-facts span{background:#f2f4f2;padding:10px;border-radius:9px;font-size:12px}.location-facts b{display:block;margin-bottom:4px}.location-preview{height:150px;border-radius:14px;background:linear-gradient(135deg,#dfeadd,#f0e6cc);display:grid;place-items:center}.location-preview span{font-size:42px}.location-preview small{background:#fff;padding:6px 8px;border-radius:7px}.location-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.location-debug{margin-top:10px;font-size:12px;color:var(--muted)}.location-debug summary{cursor:pointer;font-weight:700}.location-debug p{margin:8px 0}.location-debug .button{margin-top:4px}.driver-location-summary{background:#edf3ef;padding:12px;border-radius:10px;margin:15px 0;display:flex;gap:10px;flex-wrap:wrap}.driver-location-summary small,.driver-location-summary p{width:100%;margin:0}
+.location-picker{display:grid;gap:12px;margin-top:18px}.map-search{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}.map-search .field{margin:0}.search-status{min-height:18px;font-size:12px;color:var(--muted)}.map-results{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}.map-results button{width:100%;display:grid;gap:4px;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;padding:13px;min-height:52px}.map-results small{color:var(--muted)}.map-frame{position:relative;min-width:0}.map-canvas{width:100%;height:280px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#e8eee9;position:relative}.map-loading{position:absolute;inset:0;display:grid;place-items:center;border-radius:16px;background:#e8eee9;color:var(--muted);font-weight:700}.mock-map-surface{width:100%;height:100%;border:0;cursor:crosshair;position:relative;background:linear-gradient(30deg,#dde8dc 25%,transparent 25%) 0 0/40px 40px,linear-gradient(120deg,#e7dfc9 25%,#edf2ea 25%) 0 0/50px 50px}.mock-map-surface:before{content:'NAVOIY · MOCK MAP';position:absolute;top:12px;left:12px;background:#fff;padding:6px 9px;border-radius:8px;font-size:10px;font-weight:800}.mock-pin,.yandex-pin{position:absolute;left:50%;top:50%;font-size:38px;filter:drop-shadow(0 3px 3px #0004);transform:translate(-50%,-100%)}.coordinate-summary,.map-suggestion,.map-error,.location-status{display:grid;gap:5px;border-radius:12px;padding:13px}.coordinate-summary{background:#edf3ef}.coordinate-summary code{font-size:14px}.coordinate-summary small{color:var(--muted)}.map-suggestion{background:#fff7db}.map-suggestion button,.map-error button{justify-self:start;min-height:40px}.map-error{background:#fff0ee;color:#8f312b}.location-status--empty{background:#f2f4f2;color:var(--muted)}.location-status--attention{background:#fff7db}.location-status--confirmed{background:#edf3ef}.location-status--error{background:#fff0ee;color:#8f312b}.location-status button{justify-self:start;min-height:36px}.map-suggestion-inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff7db;border-radius:10px;padding:8px 12px;font-size:13px}.map-suggestion-inline button{min-height:36px}.pin-confirm{display:flex;align-items:flex-start;gap:12px;border:2px solid #b9c9be;background:#fff;border-radius:12px;padding:15px;min-height:56px}.pin-confirm input{width:22px;height:22px}.pin-confirm span>*{display:block}.pin-confirm small{color:var(--muted);margin-top:4px}.location-signal{display:block;margin-bottom:10px;color:var(--muted)}.location-facts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}.location-facts span{background:#f2f4f2;padding:10px;border-radius:9px;font-size:12px}.location-facts b{display:block;margin-bottom:4px}.location-preview{height:150px;border-radius:14px;background:linear-gradient(135deg,#dfeadd,#f0e6cc);display:grid;place-items:center}.location-preview span{font-size:42px}.location-preview small{background:#fff;padding:6px 8px;border-radius:7px}.location-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.location-debug{margin-top:10px;font-size:12px;color:var(--muted)}.location-debug summary{cursor:pointer;font-weight:700}.location-debug p{margin:8px 0}.location-debug .button{margin-top:4px}.driver-location-summary{background:#edf3ef;padding:12px;border-radius:10px;margin:15px 0;display:flex;gap:10px;flex-wrap:wrap}.driver-location-summary small,.driver-location-summary p{width:100%;margin:0}
 @media (max-width: 760px) {
   header {
     height: 62px;
@@ -951,20 +989,24 @@ h2 {
     padding: 12px 3px;
   }
   .home {
-    min-height: calc(100vh - 124px);
+    min-height: auto;
     display: flex;
     flex-direction: column;
-    padding: 56px 20px;
+    padding: 32px 20px 24px;
   }
   .home h1 {
-    font-size: 44px;
+    font-size: 34px;
   }
   .hero-food {
-    width: 88%;
-    font-size: 130px;
+    width: 60%;
+    max-width: 220px;
+    font-size: 80px;
+    margin: 0 auto;
   }
   .actions {
     flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
   }
   .page,
   .narrow,
@@ -989,14 +1031,92 @@ h2 {
     grid-template-columns: 1fr;
   }
   .menu-card {
-    grid-template-columns: 34% 66%;
-    min-height: 170px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    min-height: 150px;
   }
   .food-img {
-    font-size: 55px;
+    font-size: 70px;
+    min-width: 0;
   }
   .menu-card > div {
-    padding: 18px;
+    padding: 12px 13px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .menu-card footer {
+    margin-top: auto;
+  }
+  .round {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+  .chips {
+    padding: 14px 0;
+    gap: 8px;
+  }
+  .chips button {
+    padding: 8px 14px;
+    min-height: 36px;
+    font-size: 13px;
+  }
+  .menu-card h3 {
+    font-size: 17px;
+    line-height: 1.25;
+    margin-bottom: 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .menu-card p {
+    font-size: 14px;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .product-hero {
+    height: 170px;
+    border-radius: 16px;
+    font-size: 70px;
+    margin-bottom: 16px;
+  }
+  .checkout h1 {
+    font-size: 24px;
+    margin-bottom: 16px;
+  }
+  .checkout form {
+    gap: 10px;
+  }
+  .form-card {
+    padding: 14px;
+  }
+  .form-card h2 {
+    padding-bottom: 8px;
+    font-size: 15px;
+  }
+  .form-card-lead {
+    font-size: 12px;
+  }
+  .field {
+    margin: 10px 0;
+  }
+  .segmented button {
+    padding: 9px 12px;
+    font-size: 13px;
+  }
+  .narrow .stack {
+    gap: 8px;
+  }
+  .narrow .line-item {
+    padding: 14px;
+  }
+  .narrow .summary {
+    margin: 14px 0;
+    gap: 8px;
   }
   .field-row {
     grid-template-columns: 1fr 1fr;
@@ -1030,11 +1150,19 @@ h2 {
     align-items: stretch;
     flex-direction: column;
   }
-  .product-action-buttons{grid-template-columns:1fr}
+  .product-action-buttons{grid-template-columns:1fr 1.4fr}
   .success {
     padding-bottom: 90px;
   }
   .map-search{grid-template-columns:1fr}.map-search .button{width:100%}.map-canvas{height:230px}.location-facts{grid-template-columns:1fr}.driver-nav-actions{grid-template-columns:1fr}.location-actions .button{width:100%}
+}
+/* Very narrow phones only: 50/50 leaves too little room for title/price/button,
+   so nudge slightly toward content. Comes after the 760px block so it wins
+   the cascade at these widths without touching the 375-430px target split. */
+@media (max-width: 349px) {
+  .menu-card {
+    grid-template-columns: minmax(0, 46%) minmax(0, 54%);
+  }
 }
 @media (min-width: 761px) and (max-width: 1100px) {
   .board {

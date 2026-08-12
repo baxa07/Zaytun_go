@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { beginReverse, confirmSelection, initialSelection, receiveSuggestion, selectCoordinate } from "../maps/core";
+import { mapCustomerFacingLocationError } from "../maps/customerLocationErrorCopy";
 import { createMapAdapter, defaultMapLocation } from "../maps/factory";
 import type { AddressSuggestion, MapController, MapLocationSelection } from "../maps/types";
 
@@ -37,7 +38,7 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
       const suggestion = await ("reverseGeocode" in adapter ? adapter.reverseGeocode(coordinate) : Promise.resolve(null));
       emit(receiveSuggestion(selected, suggestion));
     } catch (error) {
-      emit({ ...selected, state: "ERROR", error: error instanceof Error ? error.message : "Manzil aniqlanmadi" });
+      emit({ ...selected, state: "ERROR", error: mapCustomerFacingLocationError(error, "reverseGeocode") });
     }
   }, [adapter, emit]);
 
@@ -74,25 +75,56 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
     void adapter.load()
       .then(() => disposed || !container.current ? undefined : adapter.initialize(container.current, { center: { latitude: defaults.latitude, longitude: defaults.longitude }, zoom: defaults.zoom, selected: selectionRef.current.coordinate, onSelect: (coordinate) => void choose(coordinate) }))
       .then((nextController) => { if (!nextController) return; if (disposed) nextController.dispose(); else { controller.current = nextController; setMapState("READY"); setMapError(""); } })
-      .catch((error) => { if (!disposed) { setMapState("ERROR"); setMapError(error instanceof Error ? error.message : "Xarita yuklanmadi"); } });
+      .catch((error) => { if (!disposed) { setMapState("ERROR"); setMapError(mapCustomerFacingLocationError(error, "map")); } });
     return () => { disposed = true; controller.current?.dispose(); controller.current = undefined; };
   }, [adapter, retry, choose, emit]);
 
   useEffect(() => { if (selection.coordinate) controller.current?.setCoordinate(selection.coordinate); }, [selection.coordinate]);
 
-  if (adapter instanceof Error) return <div className="map-error" role="alert"><b>Xarita sozlanmagan</b><p>{adapter.message}</p></div>;
+  if (adapter instanceof Error) return <div className="map-error" role="alert"><b>Xarita sozlanmagan</b><p>{mapCustomerFacingLocationError(adapter, "map")}</p></div>;
+
+  // One customer-friendly status card instead of several stacked
+  // success/warning/error blocks. These four states are provably mutually
+  // exclusive: confirmSelection() and beginReverse() (src/maps/core.ts)
+  // always clear `error`, and the choose() catch above always pairs
+  // state:"ERROR" with a non-empty `error`, so there is never a moment
+  // where more than one of these conditions is simultaneously true.
+  //
+  // "confirmed" here means "a pin exists and nothing's wrong with it" --
+  // it covers SELECTED/REVERSE_GEOCODING/SUGGESTION_AVAILABLE/CONFIRMED
+  // alike, matching the original coordinate-summary behavior of showing
+  // the instant a coordinate is chosen, independent of whether the
+  // customer has ticked the confirmation checkbox yet (that's a separate,
+  // explicit action below, not what this status card reports).
+  const statusVariant: "empty" | "error" | "attention" | "confirmed" = !selection.coordinate
+    ? "empty"
+    : selection.error
+      ? "error"
+      : selection.state === "NEEDS_RECONFIRMATION"
+        ? "attention"
+        : "confirmed";
+  const statusTestId = statusVariant === "empty"
+    ? "map-empty"
+    : statusVariant === "confirmed"
+      ? "coordinate-summary"
+      : statusVariant === "attention"
+        ? "map-reconfirmation"
+        : undefined;
+
   return <section className="location-picker" aria-label="Yetkazish joyini xaritada tanlash">
-    <div className="map-search"><label className="field"><span>Ko‘cha, joy yoki mo‘ljal qidirish</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Masalan: Amir Temur 24" /></label><button type="button" className="button secondary" disabled={!query.trim() || searching} onClick={async () => { setSearching(true); setResults([]); setSearchMessage(""); try { const found=await adapter.search(query); setResults(found); setSearchMessage(found.length?`${found.length} ta natija`:"Hech qanday joy topilmadi"); } catch (error) { setSearchMessage(error instanceof Error ? error.message : "Qidiruv ishlamadi"); } finally { setSearching(false); } }}>Qidirish</button></div>
+    <div className="map-search"><label className="field"><span>Ko‘cha, joy yoki mo‘ljal qidirish</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Masalan: Amir Temur 24" /></label><button type="button" className="button secondary" disabled={!query.trim() || searching} onClick={async () => { setSearching(true); setResults([]); setSearchMessage(""); try { const found=await adapter.search(query); setResults(found); setSearchMessage(found.length?`${found.length} ta natija`:"Hech qanday joy topilmadi"); } catch (error) { setSearchMessage(mapCustomerFacingLocationError(error, "search")); } finally { setSearching(false); } }}>Qidirish</button></div>
     <button type="button" className="button secondary" data-testid="use-my-location" disabled={locating} onClick={useMyLocation}>{locating ? "Aniqlanmoqda…" : "📍 Joylashuvimni aniqlash"}</button>
     <div aria-live="polite" className="search-status">{searching ? "Qidirilmoqda…" : searchMessage}</div>
     {results.length > 0 && <ul className="map-results">{results.map((result) => <li key={result.providerPlaceId || result.label}><button type="button" onClick={() => { setResults([]); controller.current?.setCoordinate(result.coordinate); void choose(result.coordinate); }}><b>{result.label}</b><small>{result.formattedAddress}</small></button></li>)}</ul>}
-    <div className="map-frame"><div ref={container} className="map-canvas" role="application" aria-label="Pin qo‘yish uchun interaktiv xarita"></div>{mapState === "LOADING" && <div className="map-loading" role="status">Yandex xaritasi yuklanmoqda…</div>}</div>
-    {mapState === "ERROR" && <div className="map-error" role="alert"><b>Xarita ishga tushmadi</b><span>{mapError}</span><button type="button" onClick={() => { setMapState("LOADING"); setMapError(""); setRetry((value) => value + 1); }}>Xaritani qayta yuklash</button></div>}
-    {selection.coordinate ? <div className="coordinate-summary" data-testid="coordinate-summary"><span>✓ Kirish nuqtasi xaritada belgilandi</span><small>Pin yetkazish kirishi yoki mashina bora oladigan eng yaqin nuqtada bo‘lishi kerak.</small></div> : <div className="map-empty" data-testid="map-empty">Xaritadan nuqta tanlang yoki manzilni qidiring.</div>}
-    {selection.suggestion && <div className="map-suggestion" data-testid="map-suggestion"><span>Tavsiya etilgan manzil</span><b>{selection.suggestion.formattedAddress}</b><button type="button" onClick={() => onApplySuggestion(selection.suggestion!)}>Tavsiya maydonlarini qo‘llash</button></div>}
-    {selection.coordinate && selection.state === "SELECTED" && !selection.suggestion && <p className="warning">Xarita xizmati yozma manzil topmadi. Pin saqlandi; manzil maydonlarini qo‘lda tekshiring.</p>}
-    {selection.state === "NEEDS_RECONFIRMATION" && <p className="warning" data-testid="map-reconfirmation">Pin yoki manzil o‘zgardi. Joylashuvni qayta tasdiqlang.</p>}
-    {selection.error && <div className="map-error" role="alert"><b>Pin manzilini aniqlash ishlamadi</b><span>{selection.error}</span><button type="button" disabled={!selection.coordinate} onClick={() => selection.coordinate && void choose(selection.coordinate)}>Teskari geokodlashni qayta urinish</button></div>}
+    <div className="map-frame"><div ref={container} className="map-canvas" role="application" aria-label="Pin qo‘yish uchun interaktiv xarita"></div>{mapState === "LOADING" && <div className="map-loading" role="status">Xarita yuklanmoqda…</div>}</div>
+    {mapState === "ERROR" && <div className="map-error" role="alert"><b>Xarita ishga tushmadi</b><span>{mapError}</span><button type="button" onClick={() => { setMapState("LOADING"); setMapError(""); setRetry((value) => value + 1); }}>Qayta urinish</button></div>}
+    <div className={`location-status location-status--${statusVariant}`} data-testid={statusTestId}>
+      {statusVariant === "empty" && <span>Xaritadan nuqta tanlang yoki manzilni qidiring.</span>}
+      {statusVariant === "error" && <><b>Manzil avtomatik aniqlanmadi</b><span>Manzilni qo‘lda yozing yoki pinni qayta belgilang.</span><button type="button" disabled={!selection.coordinate} onClick={() => selection.coordinate && void choose(selection.coordinate)}>Qayta urinish</button></>}
+      {statusVariant === "attention" && <><b>Manzilni tekshirib chiqing</b><span>Pin kirish joyiga yaqin ekanini tasdiqlang.</span></>}
+      {statusVariant === "confirmed" && <><span>✓ Pin belgilandi</span><small>Kuryer boradigan nuqta tanlandi.</small></>}
+    </div>
+    {selection.suggestion && <div className="map-suggestion-inline" data-testid="map-suggestion"><span>Taklif: {selection.suggestion.formattedAddress}</span><button type="button" onClick={() => onApplySuggestion(selection.suggestion!)}>Manzilni qo‘llash</button></div>}
     <label className="pin-confirm"><input type="checkbox" checked={selection.state === "CONFIRMED"} disabled={!selection.coordinate} onChange={(event) => { explicitlyConfirmed.current = event.target.checked; confirmedCoordinate.current = event.target.checked ? selection.coordinate : undefined; emit(event.target.checked ? confirmSelection(selection) : { ...selection, state: "NEEDS_RECONFIRMATION", confirmedAt: undefined }); }} /><span><b>Kirish joyi xaritada to‘g‘ri belgilangan</b><small>Bu — kuryer yetib boradigan aniq nuqta, yozma manzil emas.</small></span></label>
   </section>;
 }

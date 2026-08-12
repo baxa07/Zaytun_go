@@ -25,8 +25,8 @@ test.describe("delivery address clarification", () => {
     await expect(page.getByTestId("map-picker-set")).toBeVisible();
 
     // The current address is pre-populated, including the map pin.
-    await expect(page.getByLabel("Uy / bino *")).toHaveValue("Bino raqami noma’lum");
-    await expect(page.getByTestId("coordinate-summary")).toContainText("Kirish nuqtasi xaritada belgilandi");
+    await expect(page.getByLabel("Uy / bino (ixtiyoriy)")).toHaveValue("Bino raqami noma’lum");
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
     // A prior pin confirmation is never trusted into a fresh revision session.
     await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).not.toBeChecked();
 
@@ -35,7 +35,7 @@ test.describe("delivery address clarification", () => {
     await expect(page.getByText("Pin yetkazish nuqtasida ekanini tasdiqlang")).toBeVisible();
 
     // Edit the address and move the pin; still requires a fresh confirmation.
-    await page.getByLabel("Uy / bino *").fill("14-uy, yashil darvoza");
+    await page.getByLabel("Uy / bino (ixtiyoriy)").fill("14-uy, yashil darvoza");
     await page.getByTestId("map-picker-set").click({ position: { x: 40, y: 40 } });
     await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).not.toBeChecked();
 
@@ -55,7 +55,7 @@ test.describe("delivery address clarification", () => {
     await page.getByTestId("edit-delivery-address").click();
     await expect(page.getByTestId("address-revision-editor")).toBeVisible();
 
-    await page.getByLabel("Uy / bino *").fill("O‘zgartirilgan qiymat");
+    await page.getByLabel("Uy / bino (ixtiyoriy)").fill("O‘zgartirilgan qiymat");
     await page.getByTestId("cancel-address-revision").click();
 
     await expect(page.getByTestId("address-revision-editor")).toHaveCount(0);

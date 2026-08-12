@@ -26,8 +26,7 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await page.getByLabel("Telefon *").fill("+998901234567");
     await page.getByLabel("Mahalla yoki tuman *").fill("Navoiy shahar");
     await page.getByLabel("Ko‘cha yoki joylashuv *").fill("Amir Temur ko‘chasi");
-    await page.getByLabel("Uy / bino *").fill("24B");
-    await page.getByLabel("Mo‘ljal", { exact: true }).fill("Maktab ro‘parasida");
+    await page.getByLabel("Uy / bino (ixtiyoriy)").fill("24B");
     await page.getByTestId("map-picker-set").click();
     await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.getByTestId("checkout-submit").click();

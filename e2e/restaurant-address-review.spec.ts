@@ -10,8 +10,7 @@ async function placeDeliveryOrder(customer: import("@playwright/test").Page) {
   await customer.getByLabel("Telefon *").fill("+998907778899");
   await customer.getByLabel("Mahalla yoki tuman *").fill("Karmana tumani");
   await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Bunyodkor ko‘chasi");
-  await customer.getByLabel("Uy / bino *").fill("noma’lum");
-  await customer.getByLabel("Mo‘ljal", { exact: true }).fill("Maktab yonida");
+  await customer.getByLabel("Uy / bino (ixtiyoriy)").fill("noma’lum");
   await customer.getByTestId("map-picker-set").click();
   await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
   await customer.getByTestId("checkout-submit").click();
@@ -48,7 +47,7 @@ test.describe("restaurant address review", () => {
     await expect(customer.getByTestId("order-status")).toHaveText("Manzilni aniqlashtirish kerak");
     await expect(customer.getByTestId("clarification-reason")).toContainText("Uy raqamini aniqlashtiring");
     await customer.getByTestId("edit-delivery-address").click();
-    await customer.getByLabel("Uy / bino *").fill("14-uy, ko‘k darvoza");
+    await customer.getByLabel("Uy / bino (ixtiyoriy)").fill("14-uy, ko‘k darvoza");
     await customer.getByTestId("map-picker-set").click({ position: { x: 60, y: 60 } });
     await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await customer.getByTestId("submit-address-revision").click();

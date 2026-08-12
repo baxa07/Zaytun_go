@@ -73,6 +73,14 @@ export const customerDeliveryStageEventMatchers:((e:OrderEvent)=>boolean)[]=[
   e=>e.newStatus==='ARRIVED',
   e=>e.newStatus==='DELIVERED',
 ]
-export const paymentLabel=(payment:PaymentMethod,staff=false)=>payment==='CASH'?'Naqd pul':payment==='CARD_AT_PICKUP'?(staff?'Karta — restoranda':'Restoranda karta orqali'):'Yetkazilganda karta'
+export const paymentLabel=(payment:PaymentMethod,staff=false)=>payment==='CASH'?'Naqd pul':payment==='CARD_AT_PICKUP'?(staff?'Karta — restoranda':'Restoranda karta orqali'):payment==='CLICK'?'Click':payment==='PAYME'?'Payme':'Yetkazilganda karta'
 export const pickupPaymentGuidance=(payment:PaymentMethod)=>payment==='CARD_AT_PICKUP'?'To‘lov restoranda karta orqali amalga oshiriladi.':'To‘lov buyurtmani olayotganda naqd pulda amalga oshiriladi.'
 export const paymentMethodsForFulfillment=(config:RestaurantConfig,type:Order['type'])=>type==='PICKUP'?(config.pickupPaymentMethods||config.supportedPaymentMethods):(config.deliveryPaymentMethods||config.supportedPaymentMethods)
+
+// Payment Preference v1: CLICK/PAYME record only the customer's stated
+// *intent* to pay by transfer -- never that payment was received. The
+// restaurant calls the customer and verifies receipt operationally after
+// confirming the order; nothing here marks an order paid automatically.
+export const isRemotePaymentMethod=(payment:PaymentMethod)=>payment==='CLICK'||payment==='PAYME'
+export const remotePaymentCustomerNotice='Restoran buyurtmangizni tasdiqlagach, to‘lov uchun siz bilan bog‘lanadi.'
+export const remotePaymentStaffHint='Buyurtmani tekshiring va mijoz bilan to‘lov uchun bog‘laning.'

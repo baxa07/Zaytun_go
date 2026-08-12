@@ -9,10 +9,11 @@ async function openCheckout(page: Page) {
   await page.waitForURL("**/checkout");
 }
 
+// Landmark ("Mo'ljal") is optional under the minimum delivery-address
+// contract, so this only fills the still-required contact fields.
 async function fillRequiredAddress(page: Page) {
   await page.getByLabel("Ism *").fill("Xarita Test Mijoz");
   await page.getByLabel("Telefon *").fill("+998901112233");
-  await page.getByLabel("Mo‘ljal", { exact: true }).fill("Kirish darvozasi");
 }
 
 test.describe("precise delivery location", () => {
@@ -29,12 +30,12 @@ test.describe("precise delivery location", () => {
 
     await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
     await expect(page.getByTestId("map-suggestion")).toContainText("Yangiariq MFY");
-    await expect(page.getByTestId("coordinate-summary")).toContainText("Kirish nuqtasi xaritada belgilandi");
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
     await page.screenshot({ path: evidence("03-selected-marker-suggestion") });
 
-    await page.getByRole("button", { name: "Tavsiya maydonlarini qo‘llash" }).click();
+    await page.getByRole("button", { name: "Manzilni qo‘llash" }).click();
     await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
-    await page.getByLabel("Uy / bino *").fill("24B, yashil darvoza");
+    await page.getByLabel("Uy / bino (ixtiyoriy)").fill("24B, yashil darvoza");
     await fillRequiredAddress(page);
     await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.screenshot({ path: evidence("04-confirmed-pin-address") });
@@ -52,7 +53,7 @@ test.describe("precise delivery location", () => {
     await expect(page.getByTestId("map-empty")).toBeVisible();
 
     await page.getByTestId("use-my-location").click();
-    await expect(page.getByTestId("coordinate-summary")).toContainText("Kirish nuqtasi xaritada belgilandi");
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
     await expect(page.getByTestId("map-suggestion")).toContainText("Yangiariq MFY");
   });
 
@@ -63,7 +64,7 @@ test.describe("precise delivery location", () => {
     await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
     await page.getByRole("button", { name: "Qidirish" }).click();
     await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
-    await page.getByRole("button", { name: "Tavsiya maydonlarini qo‘llash" }).click();
+    await page.getByRole("button", { name: "Manzilni qo‘llash" }).click();
     await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
@@ -74,7 +75,7 @@ test.describe("precise delivery location", () => {
     await page.getByRole("button", { name: "Qidirish" }).click();
     await page.getByRole("button", { name: /Tashqaridagi test manzili/ }).click();
     await expect(page.getByTestId("delivery-review-notice")).toContainText("operator tomonidan tasdiqlanadi");
-    await page.getByRole("button", { name: "Tavsiya maydonlarini qo‘llash" }).click();
+    await page.getByRole("button", { name: "Manzilni qo‘llash" }).click();
     await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
@@ -130,5 +131,114 @@ test.describe("precise delivery location", () => {
     await page.setViewportSize({ width: 320, height: 700 });
     await expect(page.locator("html")).toHaveJSProperty("scrollWidth", 320);
     await page.screenshot({ path: evidence("10-checkout-320x700") });
+  });
+});
+
+test.describe("minimum delivery-address contract (Pin Workflow Refinement)", () => {
+  test("automatic autofill only fills empty district/street/house fields and never overwrites a manually typed value", async ({ page }) => {
+    await openCheckout(page);
+    await fillRequiredAddress(page);
+
+    // Manually typed before any pin is placed -- this must survive the
+    // automatic autofill untouched, since autofill only ever fills fields
+    // that are still empty.
+    await page.getByLabel("Mahalla yoki tuman *").fill("Mening tumanim");
+    await expect(page.getByTestId("address-autofilled-notice")).toHaveCount(0);
+
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+    await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
+
+    // Non-blocking confirmation, not an error or alert.
+    await expect(page.getByTestId("address-autofilled-notice")).toContainText("Manzil xaritadan aniqlandi");
+    await expect(page.locator(".error")).toHaveCount(0);
+
+    // The manually typed district is untouched by the automatic lookup...
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Mening tumanim");
+    // ...while the still-empty street/house fields were quietly filled in.
+    await expect(page.getByLabel("Ko‘cha yoki joylashuv *")).toHaveValue("Amir Temur ko‘chasi");
+    await expect(page.getByLabel("Uy / bino (ixtiyoriy)")).toHaveValue("24B");
+  });
+
+  test("explicit Manzilni qo‘llash never touches the optional operational fields", async ({ page }) => {
+    await openCheckout(page);
+    await fillRequiredAddress(page);
+
+    await page.getByTestId("address-optional-toggle").click();
+    await page.getByLabel("Kirish", { exact: true }).fill("5");
+    await page.getByLabel("Mo‘ljal (ixtiyoriy)").fill("Katta supermarket yonida");
+
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+    await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
+    await page.getByRole("button", { name: "Manzilni qo‘llash" }).click();
+
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
+    await expect(page.getByLabel("Kirish", { exact: true })).toHaveValue("5");
+    await expect(page.getByLabel("Mo‘ljal (ixtiyoriy)")).toHaveValue("Katta supermarket yonida");
+  });
+
+  test("optional-details disclosure starts collapsed and preserves values across toggling", async ({ page }) => {
+    await openCheckout(page);
+
+    const toggle = page.getByTestId("address-optional-toggle");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("address-optional-details")).toHaveCount(0);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await page.getByLabel("Kirish", { exact: true }).fill("7");
+    await page.getByLabel("Xonadon").fill("12");
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("address-optional-details")).toHaveCount(0);
+
+    await toggle.click();
+    await expect(page.getByLabel("Kirish", { exact: true })).toHaveValue("7");
+    await expect(page.getByLabel("Xonadon")).toHaveValue("12");
+  });
+
+  test("fresh render shows no validation errors, and a single missing required field is the only error after Continue", async ({ page }) => {
+    await openCheckout(page);
+    await expect(page.locator(".error")).toHaveCount(0);
+
+    await page.getByLabel("Ism *").fill("Mijoz");
+    await page.getByLabel("Telefon *").fill("+998901112233");
+    await page.getByLabel("Ko‘cha yoki joylashuv *").fill("Bunyodkor ko‘chasi");
+    await page.getByTestId("map-picker-set").click();
+    // The reverse-geocoded pin autofills empty fields asynchronously -- wait
+    // for it to settle, then clear district again so exactly one field is
+    // genuinely missing (not incidentally filled by the async lookup).
+    await expect(page.getByTestId("address-autofilled-notice")).toBeVisible();
+    await page.getByLabel("Mahalla yoki tuman *").fill("");
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+
+    // Only Mahalla/tuman is genuinely missing -- everything else above is
+    // filled in, so exactly one error should appear.
+    await page.getByTestId("checkout-submit").click();
+    await expect(page.locator(".error")).toHaveText(["Mahalla yoki tumanni kiriting"]);
+
+    await page.getByLabel("Mahalla yoki tuman *").fill("Karmana tumani");
+    await expect(page.locator(".error")).toHaveCount(0);
+  });
+
+  test("regression: a normal delivery checkout succeeds with exactly the new minimum info -- district, street and a confirmed pin, everything else left empty", async ({ page }) => {
+    await openCheckout(page);
+    await fillRequiredAddress(page);
+    await page.getByLabel("Mahalla yoki tuman *").fill("Karmana tumani");
+    await page.getByLabel("Ko‘cha yoki joylashuv *").fill("Bunyodkor ko‘chasi");
+    await page.getByTestId("map-picker-set").click();
+    // Wait for the async reverse-geocode lookup to settle, then clear
+    // whatever it may have auto-filled, to prove house/entrance/floor/
+    // apartment/landmark/notes are all genuinely optional -- not just
+    // optional in the UI but coincidentally filled in.
+    await expect(page.getByTestId("map-suggestion")).toBeVisible();
+    await page.getByLabel("Uy / bino (ixtiyoriy)").fill("");
+    await expect(page.getByTestId("address-optional-details")).toHaveCount(0);
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+
+    await page.getByTestId("checkout-submit").click();
+    await expect(page).toHaveURL(/\/confirmation\//);
   });
 });

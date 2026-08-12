@@ -1,9 +1,32 @@
 import{describe,expect,it}from'vitest'
-import{customerDeliveryStageIndex,customerDeliveryStages,fulfillmentTimeline,isNormalDeliveryStatus,paymentMethodsForFulfillment,pickupPaymentGuidance}from'./fulfillmentLifecycle'
+import{customerDeliveryStageIndex,customerDeliveryStages,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint}from'./fulfillmentLifecycle'
 import{developmentRestaurantConfig}from'./data'
 import type{OrderEvent,OrderStatus}from'./domain'
 describe('fulfillment timeline',()=>{it('contains exactly five pickup-only stages',()=>{const stages=fulfillmentTimeline('PICKUP');expect(stages.map(x=>x.label)).toEqual(['Buyurtma qabul qilindi','Tasdiqlandi','Tayyorlanmoqda','Olib ketishga tayyor','Olib ketildi']);expect(stages.map(x=>x.status)).not.toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED']))});it('retains delivery stages',()=>expect(fulfillmentTimeline('DELIVERY').map(x=>x.status)).toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED'])));it('provides physical-payment guidance',()=>{expect(pickupPaymentGuidance('CARD_AT_PICKUP')).toContain('restoranda karta');expect(pickupPaymentGuidance('CASH')).toContain('naqd pulda')})})
-describe('fulfillment payments',()=>{it('offers card only for pickup',()=>{expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'PICKUP')).toEqual(['CASH','CARD_AT_PICKUP']);expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'DELIVERY')).toEqual(['CASH'])})})
+describe('fulfillment payments',()=>{
+  it('offers restaurant card only for pickup, and Click/Payme only for delivery',()=>{
+    expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'PICKUP')).toEqual(['CASH','CARD_AT_PICKUP'])
+    expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'DELIVERY')).toEqual(['CASH','CLICK','PAYME'])
+  })
+  it('renders customer-friendly labels for Click/Payme, distinct from the existing methods',()=>{
+    expect(paymentLabel('CLICK')).toBe('Click')
+    expect(paymentLabel('PAYME')).toBe('Payme')
+    expect(paymentLabel('CLICK',true)).toBe('Click')
+    expect(paymentLabel('PAYME',true)).toBe('Payme')
+    expect(paymentLabel('CASH')).toBe('Naqd pul')
+  })
+  it('flags only Click/Payme as a remote (unverified) payment intent',()=>{
+    expect(isRemotePaymentMethod('CLICK')).toBe(true)
+    expect(isRemotePaymentMethod('PAYME')).toBe(true)
+    expect(isRemotePaymentMethod('CASH')).toBe(false)
+    expect(isRemotePaymentMethod('CARD_AT_PICKUP')).toBe(false)
+  })
+  it('never tells the customer to transfer money or exposes payment-account details',()=>{
+    expect(remotePaymentCustomerNotice).not.toMatch(/karta|hisob|raqam|o‘tkazing/i)
+    expect(remotePaymentCustomerNotice).toContain('Restoran buyurtmangizni tasdiqlagach')
+    expect(remotePaymentStaffHint).toContain('bog‘laning')
+  })
+})
 
 // --- Phase D: customer-facing 7-stage delivery timeline ---
 let seq=0

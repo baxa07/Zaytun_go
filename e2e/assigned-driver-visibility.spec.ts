@@ -22,8 +22,7 @@ async function placeDeliveryOrder(customer: import("@playwright/test").Page) {
   await customer.getByLabel("Telefon *").fill("+998907778811");
   await customer.getByLabel("Mahalla yoki tuman *").fill("Karmana tumani");
   await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Bunyodkor ko‘chasi");
-  await customer.getByLabel("Uy / bino *").fill("5A");
-  await customer.getByLabel("Mo‘ljal", { exact: true }).fill("Maktab yonida");
+  await customer.getByLabel("Uy / bino (ixtiyoriy)").fill("5A");
   await customer.getByTestId("map-picker-set").click();
   await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
   await customer.getByTestId("checkout-submit").click();

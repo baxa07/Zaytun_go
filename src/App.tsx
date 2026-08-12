@@ -52,7 +52,7 @@ import { navigationUrl } from "./maps/navigation";
 import type { AddressSuggestion, MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
 import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
-import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance} from './fulfillmentLifecycle'
+import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint} from './fulfillmentLifecycle'
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
@@ -183,6 +183,8 @@ function Shell({
   children: React.ReactNode;
   surface?: "customer" | "staff" | "driver";
 }) {
+  const { cart } = useApp();
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   return (
     <div className={`app ${surface}`}>
       <header>
@@ -193,9 +195,19 @@ function Shell({
           </span>
         </Link>
         <nav>
-          <NavLink to="/menu">Buyurtma</NavLink>
-          <NavLink to="/restaurant">Restoran</NavLink>
-          <NavLink to="/driver">Haydovchi</NavLink>
+          {surface === "customer" ? (
+            <>
+              <NavLink to="/menu">Menyu</NavLink>
+              <NavLink to="/cart">Savat{cartCount > 0 ? ` · ${cartCount}` : ""}</NavLink>
+              <NavLink to="/track/ord-new">Kuzatish</NavLink>
+            </>
+          ) : (
+            <>
+              <NavLink to="/menu">Buyurtma</NavLink>
+              <NavLink to="/restaurant">Restoran</NavLink>
+              <NavLink to="/driver">Haydovchi</NavLink>
+            </>
+          )}
         </nav>
       </header>
       {children}
@@ -411,13 +423,15 @@ function Cart() {
               <span>{fulfillment.label}</span>
               <b>{fulfillment.value}</b>
             </div>
-            <Link
-              className="button primary wide"
-              to="/checkout"
-              data-testid="go-to-checkout"
-            >
-              Rasmiylashtirish
-            </Link>
+            <div className="sticky-action">
+              <Link
+                className="button primary wide"
+                to="/checkout"
+                data-testid="go-to-checkout"
+              >
+                Rasmiylashtirish
+              </Link>
+            </div>
           </>
         )}
       </main>
@@ -477,60 +491,43 @@ function DeliveryAddressFields({
   updateMapSelection: (selection: MapLocationSelection) => void;
   onApplySuggestion: (suggestion: AddressSuggestion) => void;
 }) {
+  // Starts collapsed on a fresh checkout (blankAddress has every optional
+  // field empty); starts open when reopening a form that already has
+  // optional data (e.g. AddressRevisionEditor editing an existing order)
+  // so previously-entered details are never hidden from the customer. This
+  // is component-local UI state only -- the actual field values always
+  // live in the parent's `address` state, so toggling never discards or
+  // resets anything, whether or not the disclosure's content is mounted.
+  const [detailsOpen, setDetailsOpen] = useState(
+    () => Boolean(address.entrance || address.floor || address.apartment || address.landmark || address.deliveryNotes),
+  );
+  // Automatic empty-field-only autofill (distinct from the explicit
+  // "Manzilni qo'llash" apply below): the instant a reverse-geocode
+  // suggestion resolves, quietly fill only whichever of district/street/
+  // house are still empty -- never touch a field the customer already
+  // typed into. Tracked by object identity so this fires once per genuine
+  // new suggestion, not on every unrelated re-render.
+  const autoFilledSuggestion = useRef<AddressSuggestion | undefined>(undefined);
+  const [autoFillNotice, setAutoFillNotice] = useState(false);
+  useEffect(() => {
+    const suggestion = mapSelection.suggestion;
+    if (!suggestion || suggestion === autoFilledSuggestion.current) return;
+    autoFilledSuggestion.current = suggestion;
+    let filledAny = false;
+    (["district", "street", "house"] as const).forEach((key) => {
+      const suggested = suggestion[key];
+      if (suggested && !address[key].trim()) {
+        set(key, suggested);
+        filledAny = true;
+      }
+    });
+    if (filledAny) {
+      setAutoFillNotice(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapSelection.suggestion]);
   return (
     <>
-      <Field
-        label="Mahalla yoki tuman *"
-        value={address.district}
-        error={errors.district}
-        onChange={(v) => set("district", v)}
-      />
-      <Field
-        label="Ko‘cha yoki joylashuv *"
-        value={address.street}
-        error={errors.street}
-        onChange={(v) => set("street", v)}
-      />
-      <Field
-        label="Uy / bino *"
-        value={address.house}
-        error={errors.house}
-        placeholder="Raqam bo‘lmasa, sababini yozing"
-        onChange={(v) => set("house", v)}
-      />
-      <div className="field-row">
-        <Field
-          label="Kirish"
-          value={address.entrance || ""}
-          onChange={(v) => set("entrance", v)}
-        />
-        <Field
-          label="Qavat"
-          value={address.floor || ""}
-          onChange={(v) => set("floor", v)}
-        />
-        <Field
-          label="Xonadon"
-          value={address.apartment || ""}
-          onChange={(v) => set("apartment", v)}
-        />
-      </div>
-      <Field
-        label="Mo‘ljal"
-        value={address.landmark}
-        error={errors.landmark}
-        onChange={(v) => set("landmark", v)}
-      />
-      <Field
-        label="Yetkazish izohi"
-        value={address.deliveryNotes}
-        onChange={(v) => set("deliveryNotes", v)}
-      />
-      <div className="address-explainer">
-        <p><b>Xarita joyi</b> — pin kirish nuqtasini ko‘rsatadi.</p>
-        <p><b>Yozma manzil</b> — yuqoridagi maydonlarni o‘zingiz tekshirasiz.</p>
-        <p><b>Mo‘ljal va izoh</b> — kuryerga topishga yordam beradi.</p>
-      </div>
       <MapPicker
         value={mapSelection}
         onChange={updateMapSelection}
@@ -546,6 +543,70 @@ function DeliveryAddressFields({
         <em className="error" data-testid="delivery-zone-error">
           {errors.deliveryZone || "Bu manzil yetkazish hududidan tashqarida."}
         </em>
+      )}
+      {autoFillNotice && (
+        <p className="success-notice" role="status" data-testid="address-autofilled-notice">
+          Manzil xaritadan aniqlandi
+        </p>
+      )}
+      <Field
+        label="Mahalla yoki tuman *"
+        value={address.district}
+        error={errors.district}
+        onChange={(v) => set("district", v)}
+      />
+      <Field
+        label="Ko‘cha yoki joylashuv *"
+        value={address.street}
+        error={errors.street}
+        onChange={(v) => set("street", v)}
+      />
+      <Field
+        label="Uy / bino (ixtiyoriy)"
+        value={address.house}
+        placeholder="Masalan: 24 yoki savdo markazi"
+        onChange={(v) => set("house", v)}
+      />
+      <button
+        type="button"
+        className="button text disclosure-toggle"
+        aria-expanded={detailsOpen}
+        aria-controls="address-optional-details"
+        data-testid="address-optional-toggle"
+        onClick={() => setDetailsOpen((open) => !open)}
+      >
+        Qo‘shimcha ma’lumotlar (ixtiyoriy) {detailsOpen ? "▲" : "▼"}
+      </button>
+      {detailsOpen && (
+        <div id="address-optional-details" data-testid="address-optional-details">
+          <div className="field-row">
+            <Field
+              label="Kirish"
+              value={address.entrance || ""}
+              onChange={(v) => set("entrance", v)}
+            />
+            <Field
+              label="Qavat"
+              value={address.floor || ""}
+              onChange={(v) => set("floor", v)}
+            />
+            <Field
+              label="Xonadon"
+              value={address.apartment || ""}
+              onChange={(v) => set("apartment", v)}
+            />
+          </div>
+          <Field
+            label="Mo‘ljal (ixtiyoriy)"
+            value={address.landmark}
+            onChange={(v) => set("landmark", v)}
+          />
+          <Field
+            label="Yetkazish izohi (ixtiyoriy)"
+            value={address.deliveryNotes}
+            onChange={(v) => set("deliveryNotes", v)}
+          />
+        </div>
       )}
     </>
   );
@@ -848,7 +909,8 @@ function Checkout() {
           </section>
           {type === "DELIVERY" && (
             <section className="form-card">
-              <h2>Aniq manzil</h2>
+              <h2>Yetkazib berish manzilini belgilang</h2>
+              <p className="form-card-lead">Kuryer yetib boradigan aniq nuqtani xaritada ko‘rsating.</p>
               <DeliveryAddressFields
                 address={address}
                 errors={errors}
@@ -892,6 +954,33 @@ function Checkout() {
               />
               Restoranda karta orqali
             </label>}
+            {type==='DELIVERY'&&allowedPayments.includes('CLICK')&&<label className="radio">
+              <input
+                type="radio"
+                checked={payment === "CLICK"}
+                onChange={() => {
+                  setPayment("CLICK");
+                  clearError("paymentMethod");
+                }}
+              />
+              💳 Click
+            </label>}
+            {type==='DELIVERY'&&allowedPayments.includes('PAYME')&&<label className="radio">
+              <input
+                type="radio"
+                checked={payment === "PAYME"}
+                onChange={() => {
+                  setPayment("PAYME");
+                  clearError("paymentMethod");
+                }}
+              />
+              💳 Payme
+            </label>}
+            {isRemotePaymentMethod(payment) && (
+              <p className="pilot-notice" data-testid="remote-payment-notice">
+                {remotePaymentCustomerNotice}
+              </p>
+            )}
             <Field label="Buyurtma izohi" value={notes} onChange={setNotes} />
           </section>
           <section className="form-card review">
@@ -1188,6 +1277,16 @@ function Track() {
             </p>
           ))}
           <b>{money(order.total)}</b>
+          {order.type === "DELIVERY" && (
+            <p data-testid="tracking-payment-method">
+              <b>To‘lov:</b> {paymentLabel(order.paymentMethod)}
+            </p>
+          )}
+          {order.type === "DELIVERY" && isRemotePaymentMethod(order.paymentMethod) && (
+            <p className="pilot-notice" data-testid="tracking-remote-payment-notice">
+              {remotePaymentCustomerNotice}
+            </p>
+          )}
         </section>
       </main>
     </Shell>
@@ -1499,6 +1598,10 @@ function OrderCard({ order }: { order: Order }) {
         {order.type === "DELIVERY" ? "Yetkazish" : "Olib ketish"}
       </small>
       <p>{order.items.map((i) => `${i.quantity}× ${i.name}`).join(", ")}</p>
+      <small className={isRemotePaymentMethod(order.paymentMethod) ? "remote-payment-flag" : "payment-signal"} data-testid={`order-card-payment-${order.id}`}>
+        {isRemotePaymentMethod(order.paymentMethod) && "⚠ "}
+        To‘lov: {paymentLabel(order.paymentMethod, true)}
+      </small>
       {order.address && (
         <>
           <p className="address">📍 {order.address.district}, {order.address.street}, {order.address.house}</p>
@@ -1595,11 +1698,17 @@ function OrderDetail() {
                 <span>Jami</span>
                 <b>{money(order.total)}</b>
               </div>
-              <p>
+              <p className={isRemotePaymentMethod(order.paymentMethod) ? "remote-payment-flag" : undefined} data-testid="order-payment-preference">
                 <b>To‘lov:</b>{" "}
+                {isRemotePaymentMethod(order.paymentMethod) && "⚠ "}
                 {paymentLabel(order.paymentMethod,true)}{" "}
                 · {paymentStatusLabels[order.paymentStatus]}
               </p>
+              {isRemotePaymentMethod(order.paymentMethod) && (
+                <p className="warning" data-testid="remote-payment-staff-hint">
+                  {remotePaymentStaffHint}
+                </p>
+              )}
               <p>
                 <b>Izoh:</b> {order.specialInstructions || "Yo‘q"}
               </p>
