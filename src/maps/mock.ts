@@ -24,7 +24,17 @@ export class MockMapAdapter implements MapAdapter {
     container.append(surface);
     return { setCoordinate: () => pin.classList.add("selected"), dispose: () => { container.innerHTML = ""; } };
   }
-  async search(query: string) { if (query.trim().toLowerCase() === "error") throw new MapProviderError("GEOCODING_FAILED", "Mock qidiruv vaqtincha ishlamayapti", true); return points.filter((point) => point.label.toLowerCase().includes(query.trim().toLowerCase())); }
+  async search(query: string) {
+    const normalized = query.trim().toLowerCase();
+    if (normalized === "error") throw new MapProviderError("GEOCODING_FAILED", "Mock qidiruv vaqtincha ishlamayapti", true);
+    // Simulates the exact production bug this adapter's search-config
+    // caching fixed: a Search/Geosuggest-path failure while the map core
+    // itself is already loaded and working -- must classify as a search
+    // error, never a map error, and must never disturb an existing valid
+    // selection.
+    if (normalized === "service-down") throw new MapProviderError("SEARCH_SERVICE_UNAVAILABLE", "Mock qidiruv xizmati sozlanmagan", true);
+    return points.filter((point) => point.label.toLowerCase().includes(normalized));
+  }
   async reverseGeocode(coordinate: MapCoordinate): Promise<GeocodingResult | null> { const nearest = points.map((point) => ({ point, distance: Math.hypot(point.coordinate.latitude - coordinate.latitude, point.coordinate.longitude - coordinate.longitude) })).sort((a, b) => a.distance - b.distance)[0]; return nearest?.distance < 0.08 ? { ...nearest.point, coordinate } : null; }
 }
 export { points as mockLocations };

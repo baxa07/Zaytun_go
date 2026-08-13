@@ -332,4 +332,37 @@ test.describe("map-derived address stays in sync with the pin (never a stale mer
     await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
     await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).toBeChecked();
   });
+
+  test("a search-service configuration failure shows the search-specific message, never the map-broken message, and preserves the existing valid location", async ({ page }) => {
+    await openCheckout(page);
+    await fillRequiredAddress(page);
+
+    // Valid, confirmed Location A -- the map itself is visibly working
+    // (it rendered A's pin), which is exactly the production scenario:
+    // the map core is fine, only the search-configuration path fails.
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+
+    // src/maps/mock.ts's dedicated SEARCH_SERVICE_UNAVAILABLE trigger --
+    // the same error code the real Yandex adapter now throws when
+    // Search/Geosuggest configuration itself fails.
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("service-down");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+
+    // The search-recoverable message, never the map-broken claim.
+    await expect(page.locator(".search-status")).toContainText("Manzilni hozir qidirib bo‘lmadi");
+    await expect(page.locator(".search-status")).not.toContainText("Xarita hozircha ishlamayapti");
+    await expect(page.locator(".map-error")).toHaveCount(0);
+
+    // Location A is fully intact -- coordinate, pin, address, courier
+    // field, and confirmation all untouched.
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
+    await expect(page.getByLabel("Ko‘cha yoki joylashuv *")).toHaveValue("Amir Temur ko‘chasi");
+    await expect(page.getByLabel("Uy / bino (ixtiyoriy)")).toHaveValue("24B");
+    await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).toBeChecked();
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
+  });
 });

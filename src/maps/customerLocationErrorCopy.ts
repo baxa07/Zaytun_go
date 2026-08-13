@@ -13,6 +13,11 @@ const SEARCH_CODES: MapProviderErrorCode[] = [
   "SUGGEST_FAILED",
   "SEARCH_CONFIG_MISSING",
   "SUGGEST_CONFIG_MISSING",
+  // Search/Geosuggest key configuration failing is a search-path problem,
+  // never a map-core one -- see src/maps/yandex.ts's configureSearch():
+  // it only ever runs after the map's own core script/ready step already
+  // succeeded, so by construction the map itself is not implicated.
+  "SEARCH_SERVICE_UNAVAILABLE",
   "GEOCODING_FAILED",
 ];
 const MAP_CODES: MapProviderErrorCode[] = [

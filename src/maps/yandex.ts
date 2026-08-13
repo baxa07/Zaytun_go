@@ -37,6 +37,8 @@ declare global {
   interface Window {
     ymaps3?: YMaps3;
     __zaytunYandexCoreLoader?: Promise<YMaps3>;
+    __zaytunYandexSearchConfigLoader?: Promise<YMaps3>;
+    __zaytunYandexSearchConfigKeys?: string;
   }
 }
 
@@ -116,16 +118,46 @@ const loadYandexCore = (mapsKey: string) => {
   return promise;
 };
 
-const loadYandex = async (mapsKey: string, searchKey: string, geosuggestKey: string) => {
-  const api = await loadYandexCore(mapsKey);
-  try {
-    api.getDefaultConfig().setApikeys({ search: searchKey, suggest: geosuggestKey });
-    diagnostic("Search/Geosuggest configuration succeeded", { searchPresent: Boolean(searchKey), searchLength: searchKey.length, geosuggestPresent: Boolean(geosuggestKey), geosuggestLength: geosuggestKey.length });
-  } catch (error) {
-    diagnostic("Search/Geosuggest configuration failed", errorDetails(error));
-    throw new MapProviderError("READY_FAILED", "Yandex qidiruv xizmatlari sozlanmadi", true);
+// Search/Geosuggest key configuration is a SEPARATE, one-time step from
+// loading the map core -- rendering map tiles/markers needs neither key,
+// only YMap/YMapMarker/etc from the core script. Previously this ran
+// again on every search()/reverseGeocode() call (setApikeys() was inside
+// the same function the map's own init path also called), and ANY
+// failure from it was coded READY_FAILED -- a map-core error code -- so a
+// search-path problem could show "the map isn't working" even while the
+// map sat there rendering correctly. Configuring once, cached exactly
+// like the core script loader, fixes both: setApikeys() only ever runs
+// once per page session, and a failure here gets a search-specific code
+// that can never be confused with a map-core failure.
+const configureSearch = (api: YMaps3, searchKey: string, geosuggestKey: string) => {
+  const fingerprint = `${searchKey}|${geosuggestKey}`;
+  if (window.__zaytunYandexSearchConfigLoader) {
+    // Every real YandexMapAdapter instance in this app is built from the
+    // same static import.meta.env values, so this should never actually
+    // fire -- but if it ever did (e.g. a future multi-key scenario), fail
+    // loudly rather than silently keep serving the FIRST configuration to
+    // a caller expecting the second, different one.
+    if (window.__zaytunYandexSearchConfigKeys !== fingerprint) {
+      return Promise.reject(new MapProviderError("SEARCH_SERVICE_UNAVAILABLE", "Yandex qidiruv xizmatlari boshqa kalitlar bilan allaqachon sozlangan", false));
+    }
+    return window.__zaytunYandexSearchConfigLoader;
   }
-  return api;
+  const promise = (async () => {
+    try {
+      api.getDefaultConfig().setApikeys({ search: searchKey, suggest: geosuggestKey });
+      diagnostic("Search/Geosuggest configuration succeeded", { searchPresent: Boolean(searchKey), searchLength: searchKey.length, geosuggestPresent: Boolean(geosuggestKey), geosuggestLength: geosuggestKey.length });
+    } catch (error) {
+      diagnostic("Search/Geosuggest configuration failed", errorDetails(error));
+      if (import.meta.env.DEV) console.error("[ZAYTUN map] raw Search/Geosuggest configuration error (dev-only, never logged in production, never shown to the customer):", error);
+      window.__zaytunYandexSearchConfigLoader = undefined;
+      window.__zaytunYandexSearchConfigKeys = undefined;
+      throw new MapProviderError("SEARCH_SERVICE_UNAVAILABLE", `Yandex qidiruv xizmatlari sozlanmadi${error instanceof Error ? `: ${error.name}` : ""}`, true);
+    }
+    return api;
+  })();
+  window.__zaytunYandexSearchConfigLoader = promise;
+  window.__zaytunYandexSearchConfigKeys = fingerprint;
+  return promise;
 };
 
 const textValue = (value: unknown) => typeof value === "string" ? value : typeof value === "object" && value ? String((value as { text?: unknown }).text || "") : "";
@@ -160,11 +192,21 @@ export class YandexMapAdapter implements MapAdapter {
     if (!mapsKey) throw new MapProviderError("MISSING_CONFIG", "VITE_MAP_PROVIDER=yandex, lekin VITE_YANDEX_MAPS_API_KEY belgilanmagan");
   }
 
-  private api() { return loadYandex(this.mapsKey, this.searchKey, this.geosuggestKey); }
-  async load() { await this.api(); }
+  // Map-core loading (script + ymaps3.ready) never needs Search/Geosuggest
+  // keys -- only YMap/YMapMarker/etc from the core script. Kept separate
+  // from configureSearch() so a Search/Geosuggest problem can never
+  // prevent the map itself from loading, and load()/initialize() (which
+  // gate whether the map renders at all) never depend on it succeeding.
+  private core() { return loadYandexCore(this.mapsKey); }
+  private async configured() {
+    const api = await this.core();
+    return configureSearch(api, this.searchKey, this.geosuggestKey);
+  }
+
+  async load() { await this.core(); }
 
   async initialize(container: HTMLElement, options: { center: MapCoordinate; zoom: number; selected?: MapCoordinate; onSelect: (coordinate: MapCoordinate) => void }): Promise<MapController> {
-    const yandex = await this.api();
+    const yandex = await this.core();
     const bounds = container.getBoundingClientRect();
     diagnostic("map initialization started", { width: Math.round(bounds.width), height: Math.round(bounds.height) });
     if (bounds.width <= 0 || bounds.height <= 0) throw new MapProviderError("MAP_CONTAINER_INVALID", "Xarita maydonining o‘lchami noto‘g‘ri", true);
@@ -191,9 +233,9 @@ export class YandexMapAdapter implements MapAdapter {
   }
 
   async search(query: string) {
-    const yandex = await this.api();
     if (!this.geosuggestKey) throw new MapProviderError("SUGGEST_CONFIG_MISSING", "Yandex manzil takliflari kaliti sozlanmagan");
     if (!this.searchKey) throw new MapProviderError("SEARCH_CONFIG_MISSING", "Yandex manzil qidiruv kaliti sozlanmagan");
+    const yandex = await this.configured();
     let suggested: YandexSuggestItem[];
     try {
       // Geosuggest returns text completions only, never coordinates (see
@@ -228,8 +270,8 @@ export class YandexMapAdapter implements MapAdapter {
   }
 
   async reverseGeocode(coordinate: MapCoordinate): Promise<GeocodingResult | null> {
-    const yandex = await this.api();
     if (!this.searchKey) throw new MapProviderError("SEARCH_CONFIG_MISSING", "Yandex teskari geokodlash kaliti sozlanmagan");
+    const yandex = await this.configured();
     try {
       const features = await yandex.search({ text: [coordinate.longitude, coordinate.latitude], limit: 1 });
       const result = features[0] ? parseFeature(features[0]) : null;
