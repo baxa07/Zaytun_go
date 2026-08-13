@@ -29,4 +29,31 @@ test.describe("customer surfaces never expose staff entry", () => {
     await expect(nav.getByRole("link", { name: "Kuzatish" })).toBeVisible();
     await expect(nav.getByRole("link")).toHaveCount(3);
   });
+
+  // Shell renders exactly one <nav>, styled differently at mobile widths via
+  // CSS rather than a second DOM tree -- but pilot sign-off wants this
+  // proven explicitly at a real mobile viewport, not only inferred from the
+  // desktop-viewport checks above sharing the same markup.
+  for (const route of customerRoutes) {
+    test(`mobile viewport (390x844): no staff/driver link on ${route}`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(route);
+      const nav = page.locator("header nav");
+      await expect(nav.getByRole("link", { name: "Restoran" })).toHaveCount(0);
+      await expect(nav.getByRole("link", { name: "Haydovchi" })).toHaveCount(0);
+      await expect(page.getByText("Xodimlar uchun")).toHaveCount(0);
+      await expect(page.locator('a[href="/restaurant"]')).toHaveCount(0);
+      await expect(page.locator('a[href="/driver"]')).toHaveCount(0);
+    });
+  }
+
+  test("mobile viewport (390x844): customer nav shows only Menyu / Savat / Kuzatish", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/menu");
+    const nav = page.locator("header nav");
+    await expect(nav.getByRole("link", { name: "Menyu" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /Savat/ })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Kuzatish" })).toBeVisible();
+    await expect(nav.getByRole("link")).toHaveCount(3);
+  });
 });

@@ -1347,7 +1347,7 @@ function Track() {
 }
 const deliveryRatingLabels: Record<FeedbackDeliveryRating, string> = {
   FAST: "Tez",
-  NORMAL: "Normal",
+  NORMAL: "O‘z vaqtida",
   LATE: "Kechikdi",
   ISSUE: "Muammo bo‘ldi",
 };
