@@ -929,7 +929,7 @@ function Checkout() {
             {publicConfig?.deliveryEnabled===false&&<p className="warning">Yetkazib berish vaqtincha o‘chirilgan. Olib ketishni tanlang.</p>}
             {type === "DELIVERY" && publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && (
               <p className="pilot-notice" data-testid="delivery-review-notice">
-                {publicConfig.deliveryReviewMessage || "Navoiy shahri bo‘ylab yetkazib berish bepul. Manzil operator tomonidan tasdiqlanadi."}
+                {publicConfig.deliveryReviewMessage || "Navoiy shahri bo‘ylab yetkazib berish 150.000 so‘mdan oshiq xaridlarda bepul. Undan kam buyurtmalarga 10.000 so‘m yetkazib berish narxi qo‘shiladi. Manzil operator tomonidan tasdiqlanadi."}
               </p>
             )}
             {errors.deliveryMinimum && <em className="error">{errors.deliveryMinimum}</em>}

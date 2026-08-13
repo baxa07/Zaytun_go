@@ -1,5 +1,5 @@
 begin;
-select plan(28);
+select plan(31);
 
 create function pg_temp.pricing_payload(p_id uuid, p_items jsonb, p_type text default 'PICKUP', p_payment text default 'CASH')
 returns jsonb language sql as $$
@@ -53,8 +53,12 @@ select is((select unit_price from public.order_items where order_id='40000000-00
 update public.menu_items set price=68000 where id='chicken';
 
 select lives_ok($$select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000017','[{"menuItemId":"chicken","quantity":2,"modifierIds":[]}]','DELIVERY'))$$,'delivery order accepted for manual review');
-select is((select delivery_fee from public.orders where id='40000000-0000-4000-8000-000000000017'),0,'delivery fee remains zero');
-select is((select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000017','[{"menuItemId":"chicken","quantity":2,"modifierIds":[]}]','DELIVERY'))->>'total'),'136000','response returns confirmed grand total');
+select is((select delivery_fee from public.orders where id='40000000-0000-4000-8000-000000000017'),10000,'subtotal below the free-delivery threshold is charged the base delivery fee');
+select is((select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000017','[{"menuItemId":"chicken","quantity":2,"modifierIds":[]}]','DELIVERY'))->>'total'),'146000','response returns confirmed grand total including the delivery fee');
+
+select lives_ok($$select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000018','[{"menuItemId":"chicken","quantity":3,"modifierIds":[]}]','DELIVERY'))$$,'delivery order at/above the free-delivery threshold accepted');
+select is((select delivery_fee from public.orders where id='40000000-0000-4000-8000-000000000018'),0,'subtotal at or above the free-delivery threshold is not charged a delivery fee');
+select is((select total from public.orders where id='40000000-0000-4000-8000-000000000018'),204000,'free-delivery total equals subtotal alone');
 
 set local role anon;
 select throws_ok($$insert into public.orders(number,customer_name,primary_phone,order_type,payment_method,subtotal) values('ZG-HACK','X','+998901234567','PICKUP','CASH',1)$$,'42501',null,'anonymous direct order insert remains denied');

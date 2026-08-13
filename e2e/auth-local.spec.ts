@@ -31,10 +31,10 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
-    await expect(page.getByTestId("server-confirmed-total")).toContainText(/136.?000/);
+    await expect(page.getByTestId("server-confirmed-total")).toContainText(/146.?000/);
     await page.getByTestId("track-link").click();
     await expect(page.getByTestId("order-status")).toHaveText("Manzil tasdiqlanmoqda");
-    await expect(page.locator(".track .form-card")).toContainText(/136.?000/);
+    await expect(page.locator(".track .form-card")).toContainText(/146.?000/);
     expect(anonymousOperationalFailures).toEqual([]);
   });
 
@@ -49,7 +49,7 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await expect(page.getByTestId(`order-card-${orderId}`)).toBeVisible();
     await page.getByTestId(`order-card-${orderId}`).click();
     orderNumber = (await page.locator(".detail-head .eyebrow").textContent()) || "";
-    await expect(page.locator(".panel").first()).toContainText(/136.?000/);
+    await expect(page.locator(".panel").first()).toContainText(/146.?000/);
     await page.getByTestId("approve-delivery").click();
     await page.getByTestId("action-confirm").click();
     await page.getByTestId("action-start-prep").click();
