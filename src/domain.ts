@@ -44,7 +44,16 @@ export interface Driver {id:string;name:string;phone:string;vehicle:string;avail
 export const driverAcceptsNewWork=(driver:Pick<Driver,'shiftStatus'|'dispatchStatus'>):boolean=>driver.shiftStatus==='ON_SHIFT'&&driver.dispatchStatus==='ACTIVE'
 export interface DriverAssignment {id:string;orderId:string;driverId:string;assignedAt:string;acceptedAt?:string}
 export type DeliveryReviewStatus='NOT_REQUIRED'|'REVIEW_REQUIRED'|'CLARIFICATION_REQUESTED'|'APPROVED'|'REJECTED'
-export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback}
+// Smart Dispatch Phase 6: small optional enum, canonical values only --
+// never store a translated label as the value itself, same convention as
+// every other reason/issue enum in this codebase.
+export type AssignmentDeclineReason='TOO_FAR'|'VEHICLE_ISSUE'|'CANNOT_GO_NOW'|'OTHER'
+// Per-assignment audit trail for one order (Phase 2's driver_assignments
+// row history) -- distinct from DriverAssignment above, which models only
+// the current/local assignment shape. Staff-visible only (order detail),
+// never shown to customers.
+export interface AssignmentHistoryEntry {id:string;driverId:string;driverName?:string;status:'ASSIGNED'|'ACCEPTED'|'DECLINED'|'SUPERSEDED'|'COMPLETED'|'FAILED'|'RETURNED'|'CANCELLED';assignedAt:string;acceptedAt?:string;declinedAt?:string;endedAt?:string}
+export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback;assignmentHistory:AssignmentHistoryEntry[]}
 
 export const legalTransitions:Record<OrderStatus,OrderStatus[]>={NEW:['CONFIRMED','REJECTED','CANCELLED'],CONFIRMED:['PREPARING','CANCELLED'],PREPARING:['READY','CANCELLED'],READY:['COLLECTED','DRIVER_ASSIGNED','CANCELLED'],COLLECTED:[],DRIVER_ASSIGNED:['PICKED_UP','CANCELLED'],PICKED_UP:['ON_THE_WAY','DELIVERY_FAILED','RETURNED'],ON_THE_WAY:['ARRIVED','DELIVERY_FAILED','RETURNED'],ARRIVED:['DELIVERED','DELIVERY_FAILED','RETURNED'],DELIVERED:[],REJECTED:[],CANCELLED:[],DELIVERY_FAILED:['RETURNED'],RETURNED:[]}
 export const canTransition=(from:OrderStatus,to:OrderStatus)=>legalTransitions[from].includes(to)

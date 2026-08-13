@@ -42,6 +42,7 @@ const order = {
   createdAt: new Date(0).toISOString(),
   events: [],
   issues: [],
+  assignmentHistory: [],
 } satisfies Order;
 
 describe("public order payload", () => {

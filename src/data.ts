@@ -1,4 +1,6 @@
 import type {
+  AssignmentDeclineReason,
+  AssignmentHistoryEntry,
   CustomerAddress,
   Driver,
   DriverAssignment,
@@ -187,6 +189,7 @@ function seeded(
     createdAt: ago(minutes),
     events: [createEvent(id, null, "NEW", "CUSTOMER", "guest")],
     issues: [],
+    assignmentHistory: [],
   };
   return { ...base, ...overrides };
 }
@@ -338,6 +341,9 @@ export const seedDrivers: Driver[] = [
     deliveryCapacity: 1,
   },
 ];
+// Phase 6: local-only bookkeeping beyond the shared DriverAssignment shape
+// -- see the field comment on LocalStore.assignments below.
+type LocalAssignment = DriverAssignment & { outcome?: "DECLINED" | "SUPERSEDED"; endedAt?: string; declineReason?: AssignmentDeclineReason };
 export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Kafe — LOCAL PILOT',restaurantAddress:'Guliston mavzesi 649, Navoiy shahri',restaurantPhone:'+998507440005',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'10:00–00:00'},deliveryEnabled:true,deliveryPolicyMode:'MANUAL_CITY_REVIEW',deliveryReviewMessage:'Navoiy shahri bo‘ylab yetkazib berish bepul. Manzil operator tomonidan tasdiqlanadi.',deliveryRadiusKm:null,deliveryAreaDescription:'Navoiy shahri',minimumDeliverySubtotal:100000,baseDeliveryFee:0,freeDeliveryThreshold:null,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_AT_PICKUP'],pickupPaymentMethods:['CASH','CARD_AT_PICKUP'],deliveryPaymentMethods:['CASH','CLICK','PAYME'],estimatedPreparationMinutes:null,estimatedDeliveryMinutes:null,defaultMapZoom:17,customerAuthRequired:false}
 class LocalStore
   implements
@@ -351,7 +357,14 @@ class LocalStore
 {
   private orders: Order[];
   private drivers: Driver[];
-  private assignments: DriverAssignment[] = [];
+  // `outcome` is set ONLY for the two new terminal states this phase
+  // introduces (DECLINED/SUPERSEDED); every other assignment keeps it
+  // undefined and its status continues to be derived from the order's
+  // current status via assignmentStatus(), exactly as before. This local
+  // provider still never retrofits endedAt/status tracking for ordinary
+  // COMPLETED/FAILED/RETURNED/CANCELLED terminal outcomes -- that gap
+  // predates this phase and is unrelated to decline/reassignment.
+  private assignments: LocalAssignment[];
   constructor() {
     try {
       this.orders =
@@ -359,14 +372,24 @@ class LocalStore
       this.drivers =
         JSON.parse(localStorage.getItem("zgo.drivers") || "null") ||
         seedDrivers;
+      // Was previously in-memory only, invisible to any other page/tab in
+      // the same session (each has its own JS module instance) -- fine
+      // while nothing read it back, but Phase 6's decline/supersede must
+      // find the assignment a DIFFERENT page created (e.g. staff assigns,
+      // driver later declines), so this now persists exactly like orders
+      // and drivers already do.
+      this.assignments =
+        JSON.parse(localStorage.getItem("zgo.assignments") || "null") || [];
     } catch {
       this.orders = seedOrders;
       this.drivers = seedDrivers;
+      this.assignments = [];
     }
   }
   private persist() {
     localStorage.setItem("zgo.orders", JSON.stringify(this.orders));
     localStorage.setItem("zgo.drivers", JSON.stringify(this.drivers));
+    localStorage.setItem("zgo.assignments", JSON.stringify(this.assignments));
   }
   async getCategories() {
     return categories;
@@ -376,13 +399,33 @@ class LocalStore
   }
   async getRestaurantConfig(){return structuredClone(developmentRestaurantConfig)}
   async list() {
-    return structuredClone(this.orders);
+    return structuredClone(this.orders.map((o) => ({ ...o, assignmentHistory: this.assignmentHistoryFor(o.id) })));
   }
   async listDrivers() {
     return structuredClone(this.drivers);
   }
   async get(id: string) {
-    return structuredClone(this.orders.find((o) => o.id === id));
+    const order = this.orders.find((o) => o.id === id);
+    return order ? structuredClone({ ...order, assignmentHistory: this.assignmentHistoryFor(id) }) : undefined;
+  }
+  // Staff-visible per-order audit trail (P6.10/P6.17), joined from the
+  // local assignments list -- never exposed to customer tracking, which
+  // has no path to this method at all.
+  private assignmentHistoryFor(orderId: string): AssignmentHistoryEntry[] {
+    const order = this.orders.find((o) => o.id === orderId);
+    return this.assignments
+      .filter((a) => a.orderId === orderId)
+      .map((a) => ({
+        id: a.id,
+        driverId: a.driverId,
+        driverName: this.drivers.find((d) => d.id === a.driverId)?.name,
+        status: a.outcome ?? (order ? this.assignmentStatus(order) : "ASSIGNED"),
+        assignedAt: a.assignedAt,
+        acceptedAt: a.acceptedAt,
+        declinedAt: a.outcome === "DECLINED" ? a.endedAt : undefined,
+        endedAt: a.endedAt,
+      }))
+      .sort((x, y) => x.assignedAt.localeCompare(y.assignedAt));
   }
   async save(order: Order) {
     const i = this.orders.findIndex((o) => o.id === order.id);
@@ -427,11 +470,23 @@ class LocalStore
   }
   async assign(order: Order, driver: Driver) {
     if(order.type!=="DELIVERY")throw new Error("Pickup orders cannot be assigned to drivers");
-    if (order.status !== "READY")
-      throw new Error("Only ready orders can be assigned");
+    // Phase 6: a manual reassignment while an assignment is already active
+    // (status DRIVER_ASSIGNED) is a supersede, not a first assignment --
+    // both are accepted here, exactly like assign_driver_internal's own
+    // READY-or-already-DRIVER_ASSIGNED branch.
+    if (order.status !== "READY" && order.status !== "DRIVER_ASSIGNED")
+      throw new Error("Only ready or already-assigned orders can be assigned");
     if(order.type==="DELIVERY"&&order.deliveryReviewStatus!=="APPROVED")throw new Error("Delivery review is required");
     if (driver.availability !== "AVAILABLE")
       throw new Error("Driver is not available");
+    const supersedingActive = order.status === "DRIVER_ASSIGNED";
+    if (supersedingActive) {
+      const activeIndex = this.assignments.findIndex((a) => a.orderId === order.id && !a.endedAt);
+      if (activeIndex >= 0) {
+        if (this.assignments[activeIndex].driverId === driver.id) throw new Error("Bu haydovchi allaqachon biriktirilgan");
+        this.assignments[activeIndex] = { ...this.assignments[activeIndex], outcome: "SUPERSEDED", endedAt: new Date().toISOString() };
+      }
+    }
     const assignment = {
       id: createUuid(),
       orderId: order.id,
@@ -439,16 +494,40 @@ class LocalStore
       assignedAt: new Date().toISOString(),
     };
     this.assignments.push(assignment);
-    await this.save(
-      transitionOrder(
-        { ...order, assignedDriverId: driver.id },
-        "DRIVER_ASSIGNED",
-        "DISPATCHER",
-        "dispatcher-1",
-      ),
-    );
+    if (supersedingActive) {
+      await this.save({ ...order, assignedDriverId: driver.id, assignmentAcceptedAt: undefined });
+    } else {
+      await this.save(
+        transitionOrder(
+          { ...order, assignedDriverId: driver.id },
+          "DRIVER_ASSIGNED",
+          "DISPATCHER",
+          "dispatcher-1",
+        ),
+      );
+    }
     await this.saveDriver({ ...driver, availability: "BUSY" });
     return assignment;
+  }
+  // Phase 6 (P6.1/P6.3): the assigned driver, before accepting, hands the
+  // order back. Local/offline provider has no automatic dispatch engine at
+  // all (manual assignment is already the only path here, even for the
+  // first assignment) -- so unlike the real backend, this never attempts
+  // an immediate redispatch; the order simply returns to READY and waits
+  // for the same manual-assign panel used for a first assignment.
+  async declineAssignment(id: string, reason?: AssignmentDeclineReason) {
+    const order = await this.get(id);
+    if (!order) throw new Error("Order not found");
+    if (order.type !== "DELIVERY" || order.status !== "DRIVER_ASSIGNED" || !order.assignedDriverId) {
+      throw new Error("Bu buyurtmani hozir rad etib bo‘lmaydi");
+    }
+    const driverId = order.assignedDriverId;
+    const activeIndex = this.assignments.findIndex((a) => a.orderId === id && a.driverId === driverId && !a.endedAt && !a.acceptedAt);
+    if (activeIndex < 0) throw new Error("Faol topshiriq topilmadi");
+    this.assignments[activeIndex] = { ...this.assignments[activeIndex], outcome: "DECLINED", endedAt: new Date().toISOString(), declineReason: reason };
+    const driver = this.drivers.find((d) => d.id === driverId);
+    if (driver) await this.saveDriver({ ...driver, availability: "AVAILABLE" });
+    await this.save({ ...order, assignedDriverId: undefined, assignmentAcceptedAt: undefined, status: "READY" });
   }
   async saveDriver(driver: Driver) {
     const i = this.drivers.findIndex((d) => d.id === driver.id);
@@ -499,9 +578,12 @@ class LocalStore
   async acceptAssignment(id: string) {
     const order = await this.get(id);
     if (!order) throw new Error("Order not found");
+    const acceptedAt = new Date().toISOString();
+    const activeIndex = this.assignments.findIndex((a) => a.orderId === id && !a.endedAt);
+    if (activeIndex >= 0) this.assignments[activeIndex] = { ...this.assignments[activeIndex], acceptedAt };
     await this.save({
       ...order,
-      assignmentAcceptedAt: new Date().toISOString(),
+      assignmentAcceptedAt: acceptedAt,
     });
   }
   async setEstimate(id: string, minutes: number) {
@@ -631,12 +713,14 @@ class LocalStore
       totalValue: matched.reduce((sum, o) => sum + o.total, 0),
     };
   }
-  // H2: Driver Delivery Ledger, local/offline demo provider only. The
-  // local domain model has no assignment_status/reassignment concept (real
-  // Supabase credit derivation lives entirely in SupabaseStore) -- this
-  // approximates each assignment's outcome from its order's CURRENT
-  // status, which is exact for this provider since it never supports
-  // decline/reassignment.
+  // H2: Driver Delivery Ledger, local/offline demo provider only. Used as
+  // a fallback for any assignment whose own `outcome` is unset (every
+  // status except the Phase 6 DECLINED/SUPERSEDED ones, which are read
+  // directly off the assignment row instead -- see assignmentHistoryFor
+  // and the two callers below) -- approximates the outcome from the
+  // order's CURRENT status, correct as long as at most one assignment per
+  // order is still relying on this derivation, which Phase 6 guarantees by
+  // always giving a superseded/declined row its own explicit outcome.
   private assignmentStatus(order: Order): DriverLedgerEntry["status"] {
     if (order.status === "DELIVERED" || order.status === "COLLECTED") return "COMPLETED";
     if (order.status === "DELIVERY_FAILED") return "FAILED";
@@ -654,7 +738,7 @@ class LocalStore
         return true;
       })
       .map((a) => ({ assignment: a, order: this.orders.find((o) => o.id === a.orderId) }))
-      .filter((row): row is { assignment: DriverAssignment; order: Order } => !!row.order)
+      .filter((row): row is { assignment: LocalAssignment; order: Order } => !!row.order)
       .sort((a, b) => b.assignment.assignedAt.localeCompare(a.assignment.assignedAt));
   }
   async fetchDriverLedgerSummary(
@@ -663,7 +747,7 @@ class LocalStore
     const rows = this.matchingAssignments(filters);
     const byDriver = new Map<string, DriverLedgerSummaryRow>();
     for (const { assignment, order } of rows) {
-      const status = this.assignmentStatus(order);
+      const status = assignment.outcome ?? this.assignmentStatus(order);
       const driver = this.drivers.find((d) => d.id === assignment.driverId);
       if (!driver) continue;
       const entry = byDriver.get(driver.id) || {
@@ -687,6 +771,8 @@ class LocalStore
       if (status === "COMPLETED") entry.completed += 1;
       if (status === "FAILED") entry.failed += 1;
       if (status === "RETURNED") entry.returned += 1;
+      if (status === "DECLINED") entry.declined += 1;
+      if (status === "SUPERSEDED") entry.superseded += 1;
       if (status === "COMPLETED" && order.feedback?.deliveryRating) {
         entry.feedbackReceived += 1;
         if (order.feedback.deliveryRating === "FAST") entry.feedbackFast += 1;
@@ -716,8 +802,8 @@ class LocalStore
         type: order.type,
         assignedAt: assignment.assignedAt,
         acceptedAt: assignment.acceptedAt,
-        endedAt: undefined,
-        status: this.assignmentStatus(order),
+        endedAt: assignment.endedAt,
+        status: assignment.outcome ?? this.assignmentStatus(order),
         total: order.total,
       }),
     );

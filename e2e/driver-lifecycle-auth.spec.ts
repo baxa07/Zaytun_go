@@ -91,7 +91,9 @@ test("P4 driver work surface (real Supabase): auto-dispatch assignment, accept, 
   await driver.reload();
   await expect(driver.locator(".assignment-card")).toBeVisible();
   await expect(driver.getByTestId("driver-primary-action")).toHaveText("Qabul qilish");
-  await expect(driver.getByTestId("driver-decline-assignment")).toBeDisabled();
+  // P6.1: decline is now real (Smart Dispatch Phase 6), and stays enabled
+  // pre-acceptance -- it disappears entirely once accepted, asserted below.
+  await expect(driver.getByTestId("driver-decline-assignment")).toBeEnabled();
 
   // P4.4: exactly one primary action visible at every stage from here on.
   await driver.getByTestId("driver-primary-action").click(); // accept

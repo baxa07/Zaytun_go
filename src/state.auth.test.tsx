@@ -237,6 +237,7 @@ const lifecycleOrder = (status: Order["status"]): Order => ({
   createdAt: "2026-08-07T00:00:00.000Z",
   events: [],
   issues: [],
+  assignmentHistory: [],
 });
 
 describe("restaurant lifecycle transition guard", () => {

@@ -27,6 +27,7 @@ import {
   driverAcceptsNewWork,
   type ActorType,
   type AddressConfidence,
+  type AssignmentDeclineReason,
   type CustomerAddress,
   type Driver,
   type DriverAvailability,
@@ -66,7 +67,7 @@ import { navigationUrl } from "./maps/navigation";
 import type { AddressSuggestion, MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
 import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
-import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,deliveryDispatchPhase,deliveryDispatchPhaseLabels,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,orderExceptions,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint,type OrderExceptionKind} from './fulfillmentLifecycle'
+import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,declineReasonLabels,deliveryDispatchPhase,deliveryDispatchPhaseLabels,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,orderExceptions,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint,type OrderExceptionKind} from './fulfillmentLifecycle'
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
@@ -807,6 +808,7 @@ function Checkout() {
       createdAt: new Date().toISOString(),
       events: [createEvent(id, null, "NEW", "CUSTOMER", "guest")],
       issues: [],
+      assignmentHistory: [],
     };
     await finishSubmit(order);
   };
@@ -2513,6 +2515,11 @@ function OrderDetail() {
   // -- so this stays populated through DELIVERED/DELIVERY_FAILED/RETURNED too,
   // which is exactly the "who handled this order" historical record staff need.
   const assignedDriver = order?.assignedDriverId ? drivers.find((d) => d.id === order.assignedDriverId) : undefined;
+  // P6.10: a small, optional exception note -- never a full history
+  // browser inline on the live card. Only the most recent decline matters
+  // operationally; the complete trail (if ever needed) lives in
+  // order.assignmentHistory itself, not surfaced as its own UI in v1.
+  const lastDeclinedAssignment = order?.assignmentHistory.filter((a) => a.status === "DECLINED").at(-1);
   const [reason, setReason] = useState("");
   const [estimate, setEstimateValue] = useState("35");
   const [reviewReason, setReviewReason] = useState("");
@@ -2853,6 +2860,11 @@ function OrderDetail() {
                 enforcement server-side) but demoted to an explicit,
                 closed-by-default exception control -- normal orders never
                 need it. */}
+            {lastDeclinedAssignment && (order.status === "READY" || deliveryDispatchPhase(order)) && (
+              <p className="dispatch-declined-note" data-testid="dispatch-declined-note">
+                {lastDeclinedAssignment.driverName || "Haydovchi"} buyurtmani olmadi
+              </p>
+            )}
             {order.status === "READY" && order.type === "DELIVERY" && (
               <>
                 <div className="dispatch-status dispatch-searching" data-testid="dispatch-searching">
@@ -2894,6 +2906,39 @@ function OrderDetail() {
                 <p>{assignedDriver?.name || "Aniqlanmoqda…"}</p>
                 <span className="dispatch-phase-label">{deliveryDispatchPhaseLabels[deliveryDispatchPhase(order)!]}</span>
               </div>
+            )}
+            {/* P6.13: manual reassignment while a courier already owns the
+                order is a staff-only exception path -- never shown once
+                the courier has picked up (superseding mid-route is a
+                different, out-of-scope problem). Reuses the exact same
+                assign() call as the first assignment and the READY panel
+                above; the backend (assign_driver_internal) is what
+                actually supersedes the old row, not this component. */}
+            {(deliveryDispatchPhase(order) === "ASSIGNED" || deliveryDispatchPhase(order) === "ACCEPTED") && (
+              <details className="manual-assign" data-testid="manual-reassign-panel">
+                <summary>Boshqa haydovchiga biriktirish</summary>
+                <p className="hint">Joriy haydovchi bilan bog‘lanib bo‘lmasa yoki muammo yuzaga kelsa, boshqa haydovchini tanlang.</p>
+                {drivers.filter((d) => d.id !== order.assignedDriverId).map((d) => (
+                  <button
+                    className="driver-option"
+                    data-testid={`reassign-driver-${d.id}`}
+                    disabled={transitionPending(order.id) || d.availability !== "AVAILABLE"}
+                    key={d.id}
+                    onClick={() => void assign(order.id, d.id)}
+                  >
+                    <span>
+                      <b>{d.name}</b>
+                      <small>{d.vehicle}</small>
+                    </span>
+                    <i>{driverAvailabilityLabels[d.availability]}</i>
+                  </button>
+                ))}
+                {!drivers.some((d) => d.id !== order.assignedDriverId && d.availability === "AVAILABLE") && (
+                  <p className="warning" data-testid="no-alternative-driver-available">
+                    Hozir boshqa bo‘sh haydovchi yo‘q
+                  </p>
+                )}
+              </details>
             )}
             <input
               value={reason}
@@ -3101,16 +3146,18 @@ function DriverApp() {
     </Shell>
   );
 }
-// P4.2/P4.3: the prominent "new delivery" presentation for an assignment
-// the driver hasn't accepted yet. Decline ("Ololmayman") is deliberately
-// NOT wired to a real action here -- Smart Dispatch Phase 6
-// (decline/reassignment) has not shipped any decline/reassign RPC yet
-// (confirmed: no such function exists in the schema), so a working button
-// would have nowhere real to send the decision. Shown disabled with an
-// honest explanation instead of either a fake action or a silently
-// missing button that leaves the courier with no path at all.
+// P4.2/P4.3/P6.1: the prominent "new delivery" presentation for an
+// assignment the driver hasn't accepted yet. Decline ("Ololmayman") stays
+// visually secondary -- a plain secondary button, never styled to compete
+// with the primary accept action -- and only reveals the small optional
+// reason chips (P6.2) after being tapped, rather than declining
+// immediately on one accidental tap. This card is only ever rendered
+// pre-acceptance (DriverApp swaps to DriverDelivery once accepted), so
+// decline naturally disappears the moment the assignment is accepted --
+// no separate condition needed here.
 function DriverAssignmentCard({ order }: { order: Order }) {
-  const { acceptAssignment, transitionPending, publicConfig } = useApp();
+  const { acceptAssignment, declineAssignment, transitionPending, publicConfig } = useApp();
+  const [declineOpen, setDeclineOpen] = useState(false);
   return (
     <section className="assignment-card" data-testid="driver-assignment-card">
       <p className="assignment-badge">YANGI YETKAZISH</p>
@@ -3134,12 +3181,43 @@ function DriverAssignmentCard({ order }: { order: Order }) {
       >
         Qabul qilish
       </button>
-      <button type="button" className="button secondary wide" data-testid="driver-decline-assignment" disabled>
-        Ololmayman
-      </button>
-      <small className="assignment-decline-note">
-        Hozircha qo‘llab-quvvatlanmaydi. Muammo bo‘lsa, restoranga qo‘ng‘iroq qiling.
-      </small>
+      {!declineOpen ? (
+        <button
+          type="button"
+          className="button secondary wide"
+          data-testid="driver-decline-assignment"
+          disabled={transitionPending(order.id)}
+          onClick={() => setDeclineOpen(true)}
+        >
+          Ololmayman
+        </button>
+      ) : (
+        <div className="decline-reasons" data-testid="decline-reasons">
+          <small>Nega olmayapsiz? (ixtiyoriy)</small>
+          <div className="decline-reason-options">
+            {(Object.keys(declineReasonLabels) as AssignmentDeclineReason[]).map((reason) => (
+              <button
+                type="button"
+                key={reason}
+                className="button secondary"
+                data-testid={`decline-reason-${reason}`}
+                disabled={transitionPending(order.id)}
+                onClick={() => void declineAssignment(order.id, reason)}
+              >
+                {declineReasonLabels[reason]}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="button secondary wide"
+            data-testid="decline-cancel"
+            onClick={() => setDeclineOpen(false)}
+          >
+            Ortga
+          </button>
+        </div>
+      )}
     </section>
   );
 }

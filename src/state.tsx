@@ -14,6 +14,7 @@ import { store } from "./data";
 import { addCartLine, resolveOrderSubmissionMode } from "./domain";
 import type {
   ActorType,
+  AssignmentDeclineReason,
   CartItem,
   CustomerAddress,
   DeliveryIssueType,
@@ -198,6 +199,10 @@ type State = {
   getOrder: (id: string) => Promise<Order | undefined>;
   assign: (orderId: string, driverId: string) => Promise<void>;
   acceptAssignment: (orderId: string) => Promise<void>;
+  // P6.1/P6.3: self-service, pre-acceptance only -- server enforces every
+  // other condition (caller is the assigned driver, still ASSIGNED, not
+  // yet accepted); this just exposes the RPC through the same lock.
+  declineAssignment: (orderId: string, reason?: AssignmentDeclineReason) => Promise<void>;
   // P4.1: self-service work-state toggle -- acts on the current driver's
   // own row only (enforced server-side by start_shift/end_shift, which
   // key off auth.uid(), never a passed-in id).
@@ -610,6 +615,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await store.assign(order, driver);
     }),
     acceptAssignment: (orderId) => withOrderLock(orderId, () => store.acceptAssignment(orderId)),
+    declineAssignment: (orderId, reason) => withOrderLock(orderId, () => store.declineAssignment(orderId, reason)),
     startShift: () => runOperation(() => store.startShift()),
     endShift: () => runOperation(() => store.endShift()),
     setEstimate: async (orderId, minutes) => runOperation(() => store.setEstimate(orderId, minutes)),

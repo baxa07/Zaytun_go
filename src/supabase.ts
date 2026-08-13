@@ -4,6 +4,7 @@ import {
   type Session,
 } from "@supabase/supabase-js";
 import type {
+  AssignmentDeclineReason,
   CustomerAddress,
   Driver,
   DriverAssignment,
@@ -151,6 +152,24 @@ const mapOrder = (r: Row): Order => {
       resolvedAt: i.resolved_at ? String(i.resolved_at) : undefined,
     })),
     feedback: mapFeedback(r),
+    // Staff-visible audit trail (P6.10/P6.17) -- driver_assignments' own
+    // RLS (is_staff() or driver_id=auth.uid()) governs exactly what a
+    // caller sees embedded here; never reachable from customer tracking,
+    // which uses get_order_tracking instead and never selects this table.
+    assignmentHistory: ((r.driver_assignments || []) as Row[]).map((a) => {
+      const driverRow = Array.isArray(a.drivers) ? (a.drivers[0] as Row | undefined) : (a.drivers as Row | undefined);
+      const profileRow = driverRow ? (Array.isArray(driverRow.profiles) ? (driverRow.profiles[0] as Row | undefined) : (driverRow.profiles as Row | undefined)) : undefined;
+      return {
+        id: String(a.id),
+        driverId: String(a.driver_id),
+        driverName: profileRow?.display_name ? String(profileRow.display_name) : undefined,
+        status: a.status as Order["assignmentHistory"][number]["status"],
+        assignedAt: String(a.assigned_at),
+        acceptedAt: a.accepted_at ? String(a.accepted_at) : undefined,
+        declinedAt: a.declined_at ? String(a.declined_at) : undefined,
+        endedAt: a.ended_at ? String(a.ended_at) : undefined,
+      };
+    }).sort((x, y) => x.assignedAt.localeCompare(y.assignedAt)),
   };
 };
 // H3: two different response shapes carry feedback -- get_order_tracking's
@@ -173,7 +192,7 @@ const mapFeedback = (r: Row): Order["feedback"] => {
   };
 };
 const orderSelect =
-  "*,customer_addresses(*),order_items(*),order_events(*),delivery_issues(*),order_feedback(*)";
+  "*,customer_addresses(*),order_items(*),order_events(*),delivery_issues(*),order_feedback(*),driver_assignments(id,driver_id,status,assigned_at,accepted_at,declined_at,ended_at,drivers(profiles(display_name)))";
 export const toAddressPayload = (address: CustomerAddress) => ({
   district: address.district,
   street: address.street,
@@ -460,6 +479,13 @@ export class SupabaseStore {
   async acceptAssignment(id: string) {
     const { error } = await supabase!.rpc("accept_assignment", {
       p_order_id: id,
+    });
+    fail(error);
+  }
+  async declineAssignment(id: string, reason?: AssignmentDeclineReason) {
+    const { error } = await supabase!.rpc("decline_assignment", {
+      p_order_id: id,
+      p_reason: reason || null,
     });
     fail(error);
   }

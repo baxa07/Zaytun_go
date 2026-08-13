@@ -925,6 +925,32 @@ h2 {
 .driver-option i {
   font-size: 11px;
 }
+.manual-assign .hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+.dispatch-declined-note {
+  color: #7a5200;
+  background: #fff7db;
+  border: 1px solid #ecdca0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+.decline-reasons {
+  margin-top: 8px;
+}
+.decline-reason-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+.decline-reason-options button {
+  flex: 1 1 calc(50% - 6px);
+}
 .issue {
   display: grid;
   gap: 4px;

@@ -1,4 +1,4 @@
-import type {Order,OrderEvent,OrderStatus,PaymentMethod,RestaurantConfig} from './domain'
+import type {AssignmentDeclineReason,Order,OrderEvent,OrderStatus,PaymentMethod,RestaurantConfig} from './domain'
 
 export type FulfillmentStage={status:OrderStatus;label:string}
 
@@ -124,4 +124,13 @@ export const orderExceptions=(order:Pick<Order,'type'|'status'|'deliveryReviewSt
   if(isRemotePaymentMethod(order.paymentMethod)&&order.paymentStatus!=='COLLECTED')flags.push('REMOTE_PAYMENT_PENDING')
   if(order.type==='DELIVERY'&&order.status==='READY'&&!order.assignedDriverId)flags.push('COURIER_WAITING')
   return flags
+}
+
+// P6.2: small optional enum, canonical values only -- labels live here,
+// never as the stored value itself.
+export const declineReasonLabels:Record<AssignmentDeclineReason,string>={
+  TOO_FAR:'Juda uzoq',
+  VEHICLE_ISSUE:'Transport muammosi',
+  CANNOT_GO_NOW:'Hozir bora olmayman',
+  OTHER:'Boshqa',
 }
