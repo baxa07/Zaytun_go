@@ -8,11 +8,18 @@ select has_column('public','drivers','shift_status','drivers track shift presenc
 select has_column('public','drivers','dispatch_status','drivers track dispatch acceptance');
 select has_column('public','drivers','delivery_capacity','drivers track workload capacity');
 
--- Backfill: seed drivers were AVAILABLE -- must land ON_SHIFT/ACTIVE, never
--- OFF_SHIFT, and `availability` itself is left completely untouched by
--- this migration (still authoritative for manual assignment).
-select is((select shift_status::text from public.drivers where id='10000000-0000-0000-0000-000000000003'),'ON_SHIFT','AVAILABLE backfills to ON_SHIFT');
-select is((select dispatch_status::text from public.drivers where id='10000000-0000-0000-0000-000000000003'),'ACTIVE','backfill defaults dispatch_status to ACTIVE');
+-- This checks seed.sql's own explicit provisioning for driver ...003
+-- (ON_SHIFT/ACTIVE set directly in its INSERT, needed so local/test
+-- fixtures have an immediately dispatch-ready driver), NOT the
+-- migration's one-time backfill -- seed.sql runs after every migration
+-- has already applied, so a seeded driver never passes through the
+-- backfill UPDATE at all. The backfill's own behavior against a driver
+-- that genuinely pre-existed the migration (shift_status carried over
+-- from availability, dispatch_status always PAUSED regardless -- see the
+-- migration file's own comment) is a production-data concern with no
+-- local/seed equivalent to assert on here.
+select is((select shift_status::text from public.drivers where id='10000000-0000-0000-0000-000000000003'),'ON_SHIFT','seed.sql explicitly provisions driver ...003 as ON_SHIFT');
+select is((select dispatch_status::text from public.drivers where id='10000000-0000-0000-0000-000000000003'),'ACTIVE','seed.sql explicitly provisions driver ...003 as ACTIVE (not a backfill default)');
 select is((select delivery_capacity from public.drivers where id='10000000-0000-0000-0000-000000000003'),1,'delivery_capacity defaults to 1');
 select is((select availability::text from public.drivers where id='10000000-0000-0000-0000-000000000003'),'AVAILABLE','availability itself is untouched by this migration');
 

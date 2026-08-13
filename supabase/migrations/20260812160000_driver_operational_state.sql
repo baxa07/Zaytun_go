@@ -30,9 +30,26 @@ alter table public.drivers
 -- writes to `availability` based on shift_status/dispatch_status, and
 -- nothing derives shift_status/dispatch_status from `availability` --
 -- the two are independent from here forward.
+--
+-- Production-safety principle: this migration creates the *capability*
+-- for automatic dispatch -- it must never itself grant *operational*
+-- eligibility to a driver nobody has explicitly reviewed for this new
+-- system. shift_status still mirrors each driver's own pre-migration
+-- availability (a purely informational carry-over, not an eligibility
+-- grant), but dispatch_status -- the field assign_driver_internal and
+-- select_best_driver_internal both actually gate on, for AUTO and MANUAL
+-- assignment alike -- is backfilled PAUSED for every pre-existing driver,
+-- unconditionally, regardless of their prior availability. A driver only
+-- becomes dispatch-active again via a deliberate, explicit owner action
+-- after migration (`update drivers set dispatch_status='ACTIVE' where
+-- id=...`), never merely because this migration ran. New drivers created
+-- after this migration (real provisioning, or `supabase/seed.sql` for
+-- local/test environments that need an already-active fixture) are
+-- unaffected by this backfill and set dispatch_status explicitly at
+-- INSERT time, as they already do.
 update public.drivers set
   shift_status = case when availability = 'OFFLINE' then 'OFF_SHIFT'::public.driver_shift_status else 'ON_SHIFT'::public.driver_shift_status end,
-  dispatch_status = 'ACTIVE'::public.driver_dispatch_status;
+  dispatch_status = 'PAUSED'::public.driver_dispatch_status;
 
 -- Never stored: active workload is always counted live from
 -- driver_assignments, so it can never drift out of sync with reality.
