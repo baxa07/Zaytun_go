@@ -2,9 +2,17 @@
 // tiny: /start shows two URL buttons (order link, and a link into
 // @Zaytun_kafe_navoi, the staff/customer account that handles table
 // booking). There is no callback flow, no reservation engine, no state
-// machine, no persistence of any kind -- staff read and answer booking
-// messages directly in Telegram. Does not touch Zaytun Go's own
-// checkout/delivery/Auth/database at all.
+// machine of its own -- staff read and answer booking messages directly
+// in Telegram. Does not touch Zaytun Go's own checkout/delivery/Auth
+// database, EXCEPT for the one narrow addition below: consuming a
+// single-use link token so the customer can receive a driver-arrival
+// notification even after closing the tracking page. That token is
+// generated server-side (request_telegram_link RPC, called from the
+// tracking page using the same order id + tracking token that already
+// gates get_order_tracking) and is opaque here -- this function never
+// sees or trusts a client-submitted Telegram id; the id it stores always
+// comes from Telegram's own webhook payload for a request that already
+// passed the secret-token check below.
 //
 // Telegram does not send a Supabase-issued JWT, so this function must run
 // with verify_jwt off (see supabase/config.toml) -- it verifies the
@@ -27,11 +35,21 @@ const START_KEYBOARD = {
   ],
 };
 
+const LINK_SUCCESS_TEXT =
+  "✅ Bog‘landi! Kuryer yetib kelganda shu yerga xabar beramiz.";
+const LINK_FAILED_TEXT =
+  "Havola muddati o‘tgan yoki noto‘g‘ri. Buyurtma sahifasidan qaytadan urinib ko‘ring.";
+
 export interface HandlerDeps {
   env: { get(key: string): string | undefined };
   // null when TELEGRAM_BOT_TOKEN itself is unset -- distinct failure mode
   // from a bad/missing webhook secret, logged and rejected separately.
   telegram: TelegramClient | null;
+  // Atomically consumes a single-use telegram_link_requests token and
+  // links the resolved order to chatId; returns false for
+  // unknown/expired/already-consumed tokens. chatId always comes from
+  // Telegram's own webhook payload, never from message text.
+  consumeLink: (token: string, chatId: number) => Promise<boolean>;
 }
 
 function textResponse(status: number, body: string): Response {
@@ -81,9 +99,18 @@ export async function handleTelegramWebhook(req: Request, deps: HandlerDeps): Pr
   }
 
   try {
-    if (update.message?.text === "/start") {
-      await telegram.sendMessage(update.message.chat.id, WELCOME_TEXT, START_KEYBOARD);
+    const text = update.message?.text ?? "";
+    if (text === "/start") {
+      await telegram.sendMessage(update.message!.chat.id, WELCOME_TEXT, START_KEYBOARD);
       logOutcome("start_handled");
+    } else if (text.startsWith("/start ")) {
+      // Telegram sends a deep-link payload (t.me/<bot>?start=<token>) as
+      // "/start <token>" in the message text -- the token itself is
+      // opaque here, validated entirely inside consumeLink.
+      const token = text.slice("/start ".length).trim();
+      const linked = token ? await deps.consumeLink(token, update.message!.chat.id) : false;
+      await telegram.sendMessage(update.message!.chat.id, linked ? LINK_SUCCESS_TEXT : LINK_FAILED_TEXT);
+      logOutcome(linked ? "link_consumed" : "link_invalid");
     } else {
       // Any other message/update (including free-text booking requests,
       // staff replies, anything else) is left as an ordinary Telegram chat
@@ -103,11 +130,34 @@ export async function handleTelegramWebhook(req: Request, deps: HandlerDeps): Pr
 }
 
 if (import.meta.main) {
+  const { createClient } = await import("jsr:@supabase/supabase-js@2");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const admin = createClient(supabaseUrl, serviceRoleKey);
+
   Deno.serve((req) => {
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
     return handleTelegramWebhook(req, {
       env: Deno.env,
       telegram: botToken ? createTelegramClient(botToken) : null,
+      consumeLink: async (token, chatId) => {
+        // A single conditional UPDATE (not select-then-update) makes
+        // consumption atomic under concurrent/duplicate webhook deliveries
+        // -- only the request that actually flips consumed_at from null
+        // gets a row back, so a Telegram retry of the same update can
+        // never link/notify twice from one token.
+        const { data: consumedRows } = await admin
+          .from("telegram_link_requests")
+          .update({ consumed_at: new Date().toISOString() })
+          .eq("token", token)
+          .is("consumed_at", null)
+          .gt("expires_at", new Date().toISOString())
+          .select("order_id");
+        const orderId = consumedRows?.[0]?.order_id;
+        if (!orderId) return false;
+        const { error } = await admin.from("orders").update({ customer_telegram_chat_id: chatId }).eq("id", orderId);
+        return !error;
+      },
     });
   });
 }

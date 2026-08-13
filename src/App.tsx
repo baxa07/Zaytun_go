@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import {
   Link,
@@ -9,6 +9,7 @@ import {
   useNavigate,
   useLocation,
   useParams,
+  useSearchParams,
 } from "react-router-dom";
 import {
   calculateOrderTotal,
@@ -51,7 +52,8 @@ import {
 } from "./domain";
 import { useApp, CustomerAuthRequiredError } from "./state";
 import { extractUzbekNationalDigits, normalizeUzbekPhone } from "./phone";
-import { supabaseConfigured } from "./supabase";
+import { supabaseConfigured, getStoredTrackingToken, setStoredTrackingToken } from "./supabase";
+import { subscribeToOrderTracking } from "./realtime";
 import { MapPicker } from "./components/MapPicker";
 import { ProductImage } from "./components/ProductImage";
 import { TurnstileWidget } from "./components/TurnstileWidget";
@@ -1280,14 +1282,37 @@ function Confirmation() {
     </Shell>
   );
 }
+// No further transitions are possible from any of these per
+// assert_transition (supabase/migrations/20260806100000_pickup_fulfillment.sql)
+// -- realtime and the backup poll both stop once the order reaches one of
+// these, since nothing will ever change again.
+const TERMINAL_TRACKING_STATUSES: OrderStatus[] = ["DELIVERED", "COLLECTED", "REJECTED", "CANCELLED", "RETURNED"];
+// Conservative backup poll: realtime is the primary mechanism (see
+// src/realtime.ts), this only covers a signal genuinely missed by both
+// the broadcast channel and the reconnect/refocus/online recovery
+// listeners below -- long enough to never feel like aggressive polling,
+// short enough that a customer is never stuck looking at stale state for
+// more than half a minute.
+const TRACKING_BACKUP_POLL_MS = 25000;
 function Track() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const { orders, loadTrackedOrder, publicConfig } = useApp();
   const [trackingReady, setTrackingReady] = useState(false);
   const [trackingError, setTrackingError] = useState("");
   const [editingAddress, setEditingAddress] = useState(false);
   const [justRevised, setJustRevised] = useState(false);
   const order = orders.find((o) => o.id === id);
+  // A Telegram deep link (see zaytun-telegram-notify/message.ts) carries
+  // the tracking token in the URL, since it may be opened in a different
+  // browser/webview than the one that placed the order -- localStorage
+  // isn't shared across contexts. Upgrade once, silently; every other
+  // code path below continues to use the same localStorage-backed token
+  // exactly as before.
+  useEffect(() => {
+    const urlToken = searchParams.get("token");
+    if (id && urlToken && !getStoredTrackingToken(id)) setStoredTrackingToken(id, urlToken);
+  }, [id, searchParams]);
   useEffect(() => {
     let disposed = false;
     if (!id || order) {
@@ -1301,6 +1326,34 @@ function Track() {
     });
     return () => { disposed = true; };
   }, [id, loadTrackedOrder, order]);
+  const refetch = useCallback(() => {
+    if (id) void loadTrackedOrder(id).catch(() => { /* recovery/backup refetches fail silently -- the page keeps showing the last known-good state, exactly as if nothing had happened */ });
+  }, [id, loadTrackedOrder]);
+  const isTerminal = order ? TERMINAL_TRACKING_STATUSES.includes(order.status) : false;
+  // Realtime + recovery: subscribe on mount, refetch on every broadcast
+  // signal AND on every (re)connect (see subscribeToOrderTracking), plus
+  // the browser-level recovery events the task explicitly calls out --
+  // tab/window returning to the foreground and the network coming back.
+  // A conservative backup poll covers whatever's left; both it and the
+  // realtime subscription stop once the order reaches a terminal status.
+  useEffect(() => {
+    if (!id || isTerminal) return;
+    const token = getStoredTrackingToken(id);
+    if (!token) return;
+    const unsubscribe = subscribeToOrderTracking(id, token, refetch);
+    const onVisible = () => { if (document.visibilityState === "visible") refetch(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", refetch);
+    window.addEventListener("online", refetch);
+    const poll = window.setInterval(refetch, TRACKING_BACKUP_POLL_MS);
+    return () => {
+      unsubscribe();
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", refetch);
+      window.removeEventListener("online", refetch);
+      window.clearInterval(poll);
+    };
+  }, [id, isTerminal, refetch]);
   useEffect(() => {
     if (editingAddress && order && !isDeliveryAddressRevisable(order)) {
       setEditingAddress(false);
@@ -1334,6 +1387,7 @@ function Track() {
           </div>
           <span className="badge">{order.type==='PICKUP'?'Olib ketish':'Yetkazib berish'}</span>
         </div>
+        {order.type === "DELIVERY" && !isTerminal && supabaseConfigured && <TelegramLinkCard orderId={order.id} />}
         {justRevised && <p className="success-notice" data-testid="address-revision-success">✓ Manzil yangilandi. Manzilingiz qayta tekshirish uchun yuborildi.</p>}
         {clarificationRequested && !editingAddress && (
           <section className="pilot-notice clarification-card" data-testid="clarification-required" role="alert">
@@ -1361,6 +1415,7 @@ function Track() {
         {order.deliveryReviewStatus === "APPROVED" && <p className="success-notice">✓ Yetkazish manzili operator tomonidan tasdiqlandi.</p>}
         {order.deliveryReviewStatus === "REJECTED" && <p className="warning" role="alert">Yetkazish tasdiqlanmadi. {order.deliveryReviewReason || "Restoran bilan bog‘laning."}</p>}
         {order.type==='PICKUP'&&order.status==='READY'&&<p className="success-notice" data-testid="pickup-ready-message">Buyurtmangiz tayyor. Zaytun Kafedan olib ketishingiz mumkin.</p>}
+        {order.type==='DELIVERY'&&order.status==='ARRIVED'&&<p className="success-notice" data-testid="driver-arrived-message">Kuryer yetib keldi. Buyurtmangizni qabul qilishga tayyor bo‘ling.</p>}
         <div className="eta">
           <b>
             {order.estimatedMinutes || 35}–{(order.estimatedMinutes || 35) + 10}{" "}
@@ -1405,6 +1460,48 @@ function Track() {
         <OrderFeedbackCard order={order} />
       </main>
     </Shell>
+  );
+}
+// So the customer still gets the driver-arrival notification even after
+// closing this page/tab entirely -- see request_telegram_link (single-
+// use, order-scoped, tracking-token authorized, matching every other
+// public order-mutating call) and the webhook's /start <token> handler
+// that actually consumes it. Never shows/asks for a chat id from the
+// customer directly -- Telegram's own webhook payload is the only source
+// of that value, once this deep link is opened and "Start" is tapped.
+function TelegramLinkCard({ orderId }: { orderId: string }) {
+  const { requestTelegramLink } = useApp();
+  const [state, setState] = useState<"idle" | "loading" | "error" | "linked">("idle");
+  if (state === "linked") {
+    return (
+      <p className="success-notice" data-testid="telegram-link-success">
+        ✅ Telegram ochildi — u yerda “Start” tugmasini bosing, kuryer yetib kelganda shu yerga xabar beramiz.
+      </p>
+    );
+  }
+  return (
+    <section className="pilot-notice telegram-link-card" data-testid="telegram-link-card">
+      <p>Kuryer yetib kelganda Telegram orqali ham xabar oling — sahifani yopib qo‘ysangiz ham.</p>
+      <button
+        type="button"
+        className="button secondary"
+        data-testid="telegram-link-button"
+        disabled={state === "loading"}
+        onClick={async () => {
+          setState("loading");
+          try {
+            const token = await requestTelegramLink(orderId);
+            window.open(`https://t.me/ZaytunKafeNavoiy_bot?start=${token}`, "_blank", "noopener,noreferrer");
+            setState("linked");
+          } catch {
+            setState("error");
+          }
+        }}
+      >
+        {state === "loading" ? "Yuklanmoqda…" : "🔔 Telegram orqali xabar olish"}
+      </button>
+      {state === "error" && <em className="error" data-testid="telegram-link-error">Havola yaratilmadi. Birozdan keyin qayta urinib ko‘ring.</em>}
+    </section>
   );
 }
 const deliveryRatingLabels: Record<FeedbackDeliveryRating, string> = {

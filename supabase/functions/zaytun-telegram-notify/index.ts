@@ -13,14 +13,31 @@
 // failure here can never roll back or delay checkout -- see the
 // dispatch_notification_via_pg_net trigger this is invoked from.
 import { createTelegramClient, type TelegramClient } from "./telegram.ts";
-import { formatNewOrderMessage, newOrderKeyboard, type NotificationData } from "./message.ts";
+import {
+  arrivalKeyboard,
+  formatArrivalMessage,
+  formatNewOrderMessage,
+  newOrderKeyboard,
+  type ArrivalNotificationData,
+  type NotificationData,
+} from "./message.ts";
+
+// One shared outbox/dispatch pipeline, two message channels -- adding a
+// channel here means adding a case, not a second Edge Function or a
+// second dispatch trigger (dispatch_notification_via_pg_net is already
+// channel-agnostic).
+export type OutboundNotification =
+  | { channel: "TELEGRAM_RESTAURANT_NEW_ORDER"; data: NotificationData }
+  | { channel: "TELEGRAM_CUSTOMER_ARRIVED"; data: ArrivalNotificationData };
 
 export interface HandlerDeps {
   env: { get(key: string): string | undefined };
   telegram: TelegramClient | null;
-  // Returns null when there is nothing left to do (already sent, or the
-  // outbox row / order genuinely doesn't exist) -- not an error condition.
-  fetchNotification: (outboxId: string) => Promise<NotificationData | null>;
+  // Returns null when there is nothing left to do (already sent, the
+  // outbox row / order genuinely doesn't exist, or -- for
+  // TELEGRAM_CUSTOMER_ARRIVED specifically -- the order has no linked
+  // Telegram chat) -- not an error condition in any case.
+  fetchNotification: (outboxId: string) => Promise<OutboundNotification | null>;
   markSent: (outboxId: string) => Promise<void>;
   markFailed: (outboxId: string, error: string) => Promise<void>;
 }
@@ -70,14 +87,18 @@ export async function handleTelegramNotify(req: Request, deps: HandlerDeps): Pro
   }
   const outboxId = body.outboxId;
 
-  const data = await deps.fetchNotification(outboxId);
-  if (!data) {
+  const notification = await deps.fetchNotification(outboxId);
+  if (!notification) {
     logOutcome("nothing_to_send");
     return textResponse(200, "ok");
   }
+  const { text, keyboard, chatId } =
+    notification.channel === "TELEGRAM_RESTAURANT_NEW_ORDER"
+      ? { text: formatNewOrderMessage(notification.data), keyboard: newOrderKeyboard(), chatId: notification.data.chatId }
+      : { text: formatArrivalMessage(notification.data), keyboard: arrivalKeyboard(notification.data), chatId: notification.data.chatId };
 
   try {
-    await telegram.sendMessage(data.chatId, formatNewOrderMessage(data), newOrderKeyboard());
+    await telegram.sendMessage(chatId, text, keyboard);
     await deps.markSent(outboxId);
     logOutcome("sent");
   } catch {
@@ -106,10 +127,28 @@ if (import.meta.main) {
       fetchNotification: async (outboxId) => {
         const { data: outboxRow } = await admin
           .from("notification_outbox")
-          .select("order_id, status")
+          .select("order_id, channel, status")
           .eq("id", outboxId)
           .maybeSingle();
         if (!outboxRow || outboxRow.status !== "PENDING") return null;
+
+        if (outboxRow.channel === "TELEGRAM_CUSTOMER_ARRIVED") {
+          const { data: order } = await admin
+            .from("orders")
+            .select("number, tracking_token, customer_telegram_chat_id")
+            .eq("id", outboxRow.order_id)
+            .maybeSingle();
+          if (!order || !order.customer_telegram_chat_id) return null;
+          return {
+            channel: "TELEGRAM_CUSTOMER_ARRIVED",
+            data: {
+              chatId: order.customer_telegram_chat_id,
+              orderNumber: order.number,
+              orderId: outboxRow.order_id,
+              trackingToken: order.tracking_token,
+            },
+          };
+        }
 
         const { data: order } = await admin
           .from("orders")
@@ -128,12 +167,15 @@ if (import.meta.main) {
         if (!chatIdText) return null;
 
         return {
-          chatId: Number(chatIdText),
-          orderNumber: order.number,
-          orderType: order.order_type,
-          total: order.total,
-          paymentMethod: order.payment_method,
-          customerName: order.customer_name,
+          channel: "TELEGRAM_RESTAURANT_NEW_ORDER",
+          data: {
+            chatId: Number(chatIdText),
+            orderNumber: order.number,
+            orderType: order.order_type,
+            total: order.total,
+            paymentMethod: order.payment_method,
+            customerName: order.customer_name,
+          },
         };
       },
       markSent: async (outboxId) => {

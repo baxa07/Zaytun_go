@@ -233,6 +233,11 @@ type State = {
   // H3: Customer Feedback -- tracking-token authorized, same capability
   // model as every other public order-mutating call.
   submitOrderFeedback: (orderId: string, submission: OrderFeedbackSubmission) => Promise<Order>;
+  // Customer Realtime + Arrival Notification phase -- same tracking-token
+  // authorization model again. Local/mock data provider has no Telegram
+  // integration at all, so this rejects there (the Track page only shows
+  // the button when supabaseConfigured).
+  requestTelegramLink: (orderId: string) => Promise<string>;
 };
 
 const C = createContext<State | null>(null);
@@ -452,6 +457,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return updated;
   }, []);
 
+  const requestTelegramLink = useCallback(async (orderId: string) => {
+    if (!("requestTelegramLink" in store)) throw new Error("Telegram orqali xabar olish bu rejimda mavjud emas");
+    return store.requestTelegramLink(orderId);
+  }, []);
+
   const isCustomerAuthenticated = authReady && isVerifiedCustomerSession(session, role);
 
   const value = useMemo<State>(() => ({
@@ -608,6 +618,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fetchDriverLedgerEntries: (driverId, filters, limit, offset) =>
       store.fetchDriverLedgerEntries(driverId, filters, limit, offset),
     submitOrderFeedback,
+    requestTelegramLink,
     assign: (orderId, driverId) => withOrderLock(orderId, async () => {
       const order = await store.get(orderId);
       const driver = drivers.find((entry) => entry.id === driverId);
@@ -628,7 +639,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
-  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, role, runOperation, session, submitOrderFeedback, withOrderLock]);
+  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, requestTelegramLink, role, runOperation, session, submitOrderFeedback, withOrderLock]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }

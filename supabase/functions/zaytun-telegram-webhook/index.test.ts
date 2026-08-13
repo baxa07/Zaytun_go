@@ -4,6 +4,7 @@ import type { TelegramClient } from "./telegram.ts";
 
 const SECRET = "fake-webhook-secret-never-real";
 const VALID_ENV = new Map([["TELEGRAM_WEBHOOK_SECRET", SECRET]]);
+const noopConsumeLink = async () => false;
 
 function envFrom(map: Map<string, string>) {
   return { get: (k: string) => map.get(k) };
@@ -28,7 +29,7 @@ const post = (body: unknown, headers: Record<string, string> = {}) =>
 
 Deno.test("/start -> sends welcome text with exactly the two specified URL buttons", async () => {
   const { client, calls } = fakeTelegram();
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: noopConsumeLink };
   const res = await handleTelegramWebhook(
     post({ message: { text: "/start", chat: { id: 12345, type: "private" } } }),
     deps,
@@ -49,7 +50,7 @@ Deno.test("/start -> sends welcome text with exactly the two specified URL butto
 
 Deno.test("unrelated message -> no Telegram calls, still 200 (left as an ordinary chat for staff)", async () => {
   const { client, calls } = fakeTelegram();
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: noopConsumeLink };
   const res = await handleTelegramWebhook(
     post({ message: { text: "Salom, stol band qilmoqchiman", chat: { id: 42, type: "private" } } }),
     deps,
@@ -60,7 +61,7 @@ Deno.test("unrelated message -> no Telegram calls, still 200 (left as an ordinar
 
 Deno.test("missing X-Telegram-Bot-Api-Secret-Token -> 401, zero Telegram calls", async () => {
   const { client, calls } = fakeTelegram();
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: noopConsumeLink };
   const req = new Request("https://example.test/x", {
     method: "POST",
     body: JSON.stringify({ message: { text: "/start", chat: { id: 1 } } }),
@@ -72,7 +73,7 @@ Deno.test("missing X-Telegram-Bot-Api-Secret-Token -> 401, zero Telegram calls",
 
 Deno.test("wrong X-Telegram-Bot-Api-Secret-Token -> 401, zero Telegram calls", async () => {
   const { client, calls } = fakeTelegram();
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: noopConsumeLink };
   const res = await handleTelegramWebhook(
     post({ message: { text: "/start", chat: { id: 1 } } }, { "X-Telegram-Bot-Api-Secret-Token": "wrong" }),
     deps,
@@ -83,7 +84,7 @@ Deno.test("wrong X-Telegram-Bot-Api-Secret-Token -> 401, zero Telegram calls", a
 
 Deno.test("missing TELEGRAM_WEBHOOK_SECRET config -> 500, zero Telegram calls", async () => {
   const { client, calls } = fakeTelegram();
-  const deps: HandlerDeps = { env: envFrom(new Map()), telegram: client };
+  const deps: HandlerDeps = { env: envFrom(new Map()), telegram: client, consumeLink: noopConsumeLink };
   const res = await handleTelegramWebhook(
     post({ message: { text: "/start", chat: { id: 1 } } }),
     deps,
@@ -93,14 +94,14 @@ Deno.test("missing TELEGRAM_WEBHOOK_SECRET config -> 500, zero Telegram calls", 
 });
 
 Deno.test("missing bot token (telegram client null) -> 500, distinct from secret rejection", async () => {
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: null };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: null, consumeLink: noopConsumeLink };
   const res = await handleTelegramWebhook(post({ message: { text: "/start", chat: { id: 1 } } }), deps);
   assertEquals(res.status, 500);
 });
 
 Deno.test("malformed JSON body from a verified caller -> 200, no crash, no Telegram calls", async () => {
   const { client, calls } = fakeTelegram();
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: noopConsumeLink };
   const req = new Request("https://example.test/x", {
     method: "POST",
     headers: { "X-Telegram-Bot-Api-Secret-Token": SECRET },
@@ -117,7 +118,7 @@ Deno.test("Telegram API call failure -> still 200 (no retry-storm), error swallo
       throw new Error("simulated Telegram outage");
     },
   };
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: noopConsumeLink };
   const res = await handleTelegramWebhook(
     post({ message: { text: "/start", chat: { id: 1 } } }),
     deps,
@@ -127,7 +128,65 @@ Deno.test("Telegram API call failure -> still 200 (no retry-storm), error swallo
 
 Deno.test("GET method -> 405", async () => {
   const { client } = fakeTelegram();
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: noopConsumeLink };
   const res = await handleTelegramWebhook(new Request("https://example.test/x", { method: "GET" }), deps);
   assertEquals(res.status, 405);
+});
+
+Deno.test("/start <token> with a valid link -> confirms the link, passes the token and Telegram's own chat id through unchanged", async () => {
+  const { client, calls } = fakeTelegram();
+  const seen: Array<{ token: string; chatId: number }> = [];
+  const deps: HandlerDeps = {
+    env: envFrom(VALID_ENV),
+    telegram: client,
+    consumeLink: async (token, chatId) => {
+      seen.push({ token, chatId });
+      return true;
+    },
+  };
+  const res = await handleTelegramWebhook(
+    post({ message: { text: "/start abc-123-token", chat: { id: 777, type: "private" } } }),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  assertEquals(seen, [{ token: "abc-123-token", chatId: 777 }]);
+  assertEquals(calls.length, 1);
+  const [chatId, text] = calls[0].args as [number, string];
+  assertEquals(chatId, 777);
+  assertEquals(text, "✅ Bog‘landi! Kuryer yetib kelganda shu yerga xabar beramiz.");
+});
+
+Deno.test("/start <token> with an invalid/expired/already-consumed link -> failure text, never claims success", async () => {
+  const { client, calls } = fakeTelegram();
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: async () => false };
+  const res = await handleTelegramWebhook(
+    post({ message: { text: "/start stale-token", chat: { id: 1 } } }),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  assertEquals(calls.length, 1);
+  const [, text] = calls[0].args as [number, string];
+  assertEquals(text, "Havola muddati o‘tgan yoki noto‘g‘ri. Buyurtma sahifasidan qaytadan urinib ko‘ring.");
+});
+
+Deno.test("/start  (payload is only whitespace) -> treated as invalid without ever calling consumeLink", async () => {
+  const { client, calls } = fakeTelegram();
+  let consumeLinkCalled = false;
+  const deps: HandlerDeps = {
+    env: envFrom(VALID_ENV),
+    telegram: client,
+    consumeLink: async () => {
+      consumeLinkCalled = true;
+      return true;
+    },
+  };
+  const res = await handleTelegramWebhook(
+    post({ message: { text: "/start    ", chat: { id: 1 } } }),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  assertEquals(consumeLinkCalled, false);
+  assertEquals(calls.length, 1);
+  const [, text] = calls[0].args as [number, string];
+  assertEquals(text, "Havola muddati o‘tgan yoki noto‘g‘ri. Buyurtma sahifasidan qaytadan urinib ko‘ring.");
 });

@@ -26,6 +26,19 @@ import type {
   OrderFeedbackSubmission,
 } from "./domain";
 
+// Shared with the Track page (App.tsx): the realtime broadcast topic and
+// the ?token= deep-link upgrade path both need direct read/write access
+// to the same localStorage-backed tracking-token map this module's own
+// RPC calls already read inline in several places below.
+export function getStoredTrackingToken(id: string): string | undefined {
+  return (JSON.parse(localStorage.getItem("zgo.tracking") || "{}") as Record<string, string>)[id];
+}
+export function setStoredTrackingToken(id: string, token: string): void {
+  const tokens = JSON.parse(localStorage.getItem("zgo.tracking") || "{}");
+  tokens[id] = token;
+  localStorage.setItem("zgo.tracking", JSON.stringify(tokens));
+}
+
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY||import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabaseConfigured = Boolean(url && key);
@@ -357,6 +370,20 @@ export class SupabaseStore {
     });
     fail(error);
     return mapOrder(data as Row);
+  }
+  // Same authorization shape as getTracked/submitOrderFeedback -- id +
+  // the tracking token already proves this caller is the order's
+  // customer. Returns a single-use link token (not a chat id, not a bot
+  // secret); the caller builds the t.me deep link from it.
+  async requestTelegramLink(id: string): Promise<string> {
+    const token = getStoredTrackingToken(id);
+    if (!token) throw new Error("Bu buyurtma uchun kuzatish ruxsati topilmadi");
+    const { data, error } = await supabase!.rpc("request_telegram_link", {
+      p_order_id: id,
+      p_tracking_token: token,
+    });
+    fail(error);
+    return data as string;
   }
   async save(order: Order) {
     return this.submitOrderVia("create_public_order", order);

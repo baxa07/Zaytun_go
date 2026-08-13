@@ -54,7 +54,7 @@ assertLocalSupabaseHost(webServerEnv.VITE_SUPABASE_URL);
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["auth-local.spec.ts", "customer-otp.spec.ts", "checkout-idempotency.spec.ts", "live-restaurant-board.spec.ts", "order-history.spec.ts", "driver-ledger.spec.ts", "driver-lifecycle-auth.spec.ts", "restaurant-dispatch-auth.spec.ts", "decline-reassignment-auth.spec.ts"],
+  testMatch: ["auth-local.spec.ts", "customer-otp.spec.ts", "checkout-idempotency.spec.ts", "live-restaurant-board.spec.ts", "order-history.spec.ts", "driver-ledger.spec.ts", "driver-lifecycle-auth.spec.ts", "restaurant-dispatch-auth.spec.ts", "decline-reassignment-auth.spec.ts", "customer-realtime-tracking.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,

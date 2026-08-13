@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { handleTelegramNotify, type HandlerDeps } from "./index.ts";
 import type { TelegramClient } from "./telegram.ts";
-import type { NotificationData } from "./message.ts";
+import type { ArrivalNotificationData, NotificationData } from "./message.ts";
 
 const SECRET = "fake-notify-secret-never-real";
 const VALID_ENV = new Map([["TELEGRAM_NOTIFY_SECRET", SECRET]]);
@@ -34,7 +34,7 @@ function baseDeps(overrides: Partial<HandlerDeps> = {}): { deps: HandlerDeps; se
     deps: {
       env: envFrom(VALID_ENV),
       telegram: client,
-      fetchNotification: async () => sampleData,
+      fetchNotification: async () => ({ channel: "TELEGRAM_RESTAURANT_NEW_ORDER", data: sampleData }),
       markSent: async (id) => { sentIds.push(id); },
       markFailed: async (id, error) => { failedIds.push({ id, error }); },
       ...overrides,
@@ -60,7 +60,7 @@ Deno.test("valid request -> sends the formatted message and marks the outbox row
 
 Deno.test("missing Authorization -> 401, nothing sent", async () => {
   const { client, calls } = fakeTelegram();
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, fetchNotification: async () => sampleData, markSent: async () => {}, markFailed: async () => {} };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, fetchNotification: async () => ({ channel: "TELEGRAM_RESTAURANT_NEW_ORDER", data: sampleData }), markSent: async () => {}, markFailed: async () => {} };
   const req = new Request("https://example.test/x", { method: "POST", body: JSON.stringify({ outboxId: "x" }) });
   const res = await handleTelegramNotify(req, deps);
   assertEquals(res.status, 401);
@@ -76,13 +76,13 @@ Deno.test("wrong Authorization -> 401, nothing sent", async () => {
 
 Deno.test("missing TELEGRAM_NOTIFY_SECRET config -> 500", async () => {
   const { client } = fakeTelegram();
-  const deps: HandlerDeps = { env: envFrom(new Map()), telegram: client, fetchNotification: async () => sampleData, markSent: async () => {}, markFailed: async () => {} };
+  const deps: HandlerDeps = { env: envFrom(new Map()), telegram: client, fetchNotification: async () => ({ channel: "TELEGRAM_RESTAURANT_NEW_ORDER", data: sampleData }), markSent: async () => {}, markFailed: async () => {} };
   const res = await handleTelegramNotify(post({ outboxId: "x" }), deps);
   assertEquals(res.status, 500);
 });
 
 Deno.test("missing bot token (telegram client null) -> 500", async () => {
-  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: null, fetchNotification: async () => sampleData, markSent: async () => {}, markFailed: async () => {} };
+  const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: null, fetchNotification: async () => ({ channel: "TELEGRAM_RESTAURANT_NEW_ORDER", data: sampleData }), markSent: async () => {}, markFailed: async () => {} };
   const res = await handleTelegramNotify(post({ outboxId: "x" }), deps);
   assertEquals(res.status, 500);
 });
@@ -129,4 +129,40 @@ Deno.test("GET method -> 405", async () => {
   const { deps } = baseDeps();
   const res = await handleTelegramNotify(new Request("https://example.test/x", { method: "GET" }), deps);
   assertEquals(res.status, 405);
+});
+
+const sampleArrival: ArrivalNotificationData = {
+  chatId: 555111,
+  orderNumber: "ZG-1088",
+  orderId: "9a000000-0000-4000-8000-000000000001",
+  trackingToken: "9b000000-0000-4000-8000-000000000002",
+};
+
+Deno.test("TELEGRAM_CUSTOMER_ARRIVED channel -> sends the arrival message with a tracking link, marks SENT", async () => {
+  const { deps, sentIds } = baseDeps({
+    fetchNotification: async () => ({ channel: "TELEGRAM_CUSTOMER_ARRIVED", data: sampleArrival }),
+  });
+  const res = await handleTelegramNotify(post({ outboxId: "outbox-arrival-1" }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(sentIds, ["outbox-arrival-1"]);
+});
+
+Deno.test("TELEGRAM_CUSTOMER_ARRIVED message -> uses the order's own chat id, order number, and a tracking link carrying the token, never an internal-only id alone", async () => {
+  const { client, calls } = fakeTelegram();
+  const deps: HandlerDeps = {
+    env: envFrom(VALID_ENV),
+    telegram: client,
+    fetchNotification: async () => ({ channel: "TELEGRAM_CUSTOMER_ARRIVED", data: sampleArrival }),
+    markSent: async () => {},
+    markFailed: async () => {},
+  };
+  await handleTelegramNotify(post({ outboxId: "outbox-arrival-2" }), deps);
+  assertEquals(calls.length, 1);
+  const [chatId, text, replyMarkup] = calls[0].args as [number, string, { inline_keyboard: Array<Array<{ url: string }>> }];
+  assertEquals(chatId, 555111);
+  assertEquals(text.includes("kuryer yetib keldi"), true);
+  assertEquals(text.includes("ZG-1088"), true);
+  const url = replyMarkup.inline_keyboard[0][0].url;
+  assertEquals(url.includes(sampleArrival.orderId), true);
+  assertEquals(url.includes(sampleArrival.trackingToken), true);
 });

@@ -1,5 +1,12 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import { formatNewOrderMessage, newOrderKeyboard, type NotificationData } from "./message.ts";
+import {
+  arrivalKeyboard,
+  formatArrivalMessage,
+  formatNewOrderMessage,
+  newOrderKeyboard,
+  type ArrivalNotificationData,
+  type NotificationData,
+} from "./message.ts";
 
 const base: NotificationData = {
   chatId: -1001234567890,
@@ -44,4 +51,36 @@ Deno.test("the inline keyboard has exactly one button pointing at the production
   assertEquals(keyboard.inline_keyboard[0].length, 1);
   assertEquals(keyboard.inline_keyboard[0][0].text, "Restoran panelini ochish");
   assertStringIncludes(keyboard.inline_keyboard[0][0].url ?? "", "/restaurant");
+});
+
+const arrival: ArrivalNotificationData = {
+  chatId: 555111,
+  orderNumber: "ZG-1088",
+  orderId: "9a000000-0000-4000-8000-000000000001",
+  trackingToken: "9b000000-0000-4000-8000-000000000002",
+};
+
+Deno.test("arrival message matches the requested shape and includes the public order number", () => {
+  const message = formatArrivalMessage(arrival);
+  assertEquals(
+    message,
+    "🚗 Zaytun Go — kuryer yetib keldi\n\nBuyurtmangiz yetkazib berish manziliga yetib keldi.\n\nIltimos, buyurtmani qabul qilishga tayyor bo‘ling.\n\nBuyurtma #ZG-1088",
+  );
+});
+
+Deno.test("arrival message never includes a phone number, coordinates, or the internal order id -- only the generic word 'manzil' (location), never an actual address", () => {
+  const message = formatArrivalMessage(arrival);
+  assertEquals(/\+?\d{9,}/.test(message), false, "no phone-shaped digit run");
+  assertEquals(message.includes(arrival.orderId), false, "internal id must not appear in the message body itself");
+  assertEquals(message.toLowerCase().includes("koordinat"), false);
+});
+
+Deno.test("arrival keyboard has exactly one tracking-link button carrying both the order id and tracking token", () => {
+  const keyboard = arrivalKeyboard(arrival);
+  assertEquals(keyboard.inline_keyboard.length, 1);
+  assertEquals(keyboard.inline_keyboard[0].length, 1);
+  assertEquals(keyboard.inline_keyboard[0][0].text, "Buyurtmani ko‘rish");
+  const url = keyboard.inline_keyboard[0][0].url ?? "";
+  assertStringIncludes(url, `/track/${arrival.orderId}`);
+  assertStringIncludes(url, arrival.trackingToken);
 });

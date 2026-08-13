@@ -51,3 +51,37 @@ export function formatNewOrderMessage(data: NotificationData): string {
 export function newOrderKeyboard() {
   return { inline_keyboard: [[{ text: "Restoran panelini ochish", url: RESTAURANT_URL }]] };
 }
+
+export interface ArrivalNotificationData {
+  chatId: number;
+  orderNumber: string;
+  orderId: string;
+  trackingToken: string;
+}
+
+// The tracking page normally reads its token from localStorage (set at
+// checkout, on the same device/browser that placed the order) -- a link
+// opened from Telegram may be a different browser context entirely (e.g.
+// Telegram's in-app browser), so the token travels in the URL here too.
+// Knowledge of the token is the entire authorization model already (see
+// get_order_tracking) -- a token in a URL is not a weaker secret than one
+// in localStorage, just a different transport for the same capability.
+const TRACK_URL_BASE = "https://zaytungonavoiy.netlify.app/track";
+
+export function formatArrivalMessage(data: ArrivalNotificationData): string {
+  return [
+    "🚗 Zaytun Go — kuryer yetib keldi",
+    "",
+    "Buyurtmangiz yetkazib berish manziliga yetib keldi.",
+    "",
+    "Iltimos, buyurtmani qabul qilishga tayyor bo‘ling.",
+    "",
+    `Buyurtma #${data.orderNumber}`,
+  ].join("\n");
+}
+
+export function arrivalKeyboard(data: ArrivalNotificationData) {
+  return {
+    inline_keyboard: [[{ text: "Buyurtmani ko‘rish", url: `${TRACK_URL_BASE}/${data.orderId}?token=${data.trackingToken}` }]],
+  };
+}
