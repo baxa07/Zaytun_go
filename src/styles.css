@@ -526,6 +526,31 @@ h2 {
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
+.phone-field .phone-field-input {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #cfd3cf;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+.phone-field .phone-field-prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: #f2f4f2;
+  color: var(--muted);
+  font-weight: 700;
+  border-right: 1px solid #cfd3cf;
+  white-space: nowrap;
+}
+.phone-field .phone-field-input input {
+  border: 0;
+  border-radius: 0;
+  min-height: 44px;
+  flex: 1;
+  min-width: 0;
+}
 .error {
   color: #a43128;
   font-size: 12px;

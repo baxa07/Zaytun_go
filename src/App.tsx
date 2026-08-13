@@ -50,7 +50,7 @@ import {
   type RestaurantConfig,
 } from "./domain";
 import { useApp, CustomerAuthRequiredError } from "./state";
-import { normalizeUzbekPhone } from "./phone";
+import { extractUzbekNationalDigits, normalizeUzbekPhone } from "./phone";
 import { supabaseConfigured } from "./supabase";
 import { MapPicker } from "./components/MapPicker";
 import { ProductImage } from "./components/ProductImage";
@@ -955,14 +955,22 @@ function Checkout() {
               error={errors.customerName}
               onChange={(v) => set("customerName", v)}
             />
-            <Field
-              label="Telefon *"
-              value={isCustomerAuthenticated ? formatMaskedPhone(verifiedPhone) : address.primaryPhone}
-              error={errors.primaryPhone}
-              placeholder="+998 90 123 45 67"
-              onChange={(v) => set("primaryPhone", v)}
-              readOnly={isCustomerAuthenticated}
-            />
+            {isCustomerAuthenticated ? (
+              <Field
+                label="Telefon *"
+                value={formatMaskedPhone(verifiedPhone)}
+                error={errors.primaryPhone}
+                onChange={() => {}}
+                readOnly
+              />
+            ) : (
+              <UzbekPhoneField
+                label="Telefon *"
+                value={address.primaryPhone}
+                error={errors.primaryPhone}
+                onChange={(v) => set("primaryPhone", v)}
+              />
+            )}
             <Field
               label="Qo‘shimcha telefon"
               value={address.secondaryPhone || ""}
@@ -1187,6 +1195,50 @@ function Field({
         readOnly={readOnly}
         onChange={(e) => !readOnly && onChange(e.target.value)}
       />
+      {error && <em className="error">{error}</em>}
+    </label>
+  );
+}
+// Uzbekistan-only checkout phone: a fixed, non-editable "+998" prefix next
+// to a 9-digit national-number box, so the customer never types the
+// country code. `value` is always the canonical stored form ("" or
+// "+998XXXXXXXXX", possibly partial mid-typing) -- extractUzbekNationalDigits
+// derives what the editable box shows from it, so an existing/rehydrated
+// full value displays correctly split and never loses digits across
+// re-renders. onChange always re-emits with the "+998" prefix reapplied
+// (or "" once the customer clears the field entirely), so the parent
+// (Checkout's `address.primaryPhone`) never sees anything but that same
+// canonical shape -- exactly what validateAddress, the server RPC, and
+// formatMaskedPhone already expect.
+function UzbekPhoneField({
+  label,
+  value,
+  onChange,
+  error,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  error?: string;
+}) {
+  const nationalDigits = extractUzbekNationalDigits(value);
+  return (
+    <label className="field phone-field">
+      <span>{label}</span>
+      <div className="phone-field-input">
+        <span className="phone-field-prefix" aria-hidden="true">+998</span>
+        <input
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel-national"
+          value={nationalDigits}
+          placeholder="90 123 45 67"
+          onChange={(e) => {
+            const digits = extractUzbekNationalDigits(e.target.value);
+            onChange(digits ? `+998${digits}` : "");
+          }}
+        />
+      </div>
       {error && <em className="error">{error}</em>}
     </label>
   );

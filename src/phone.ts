@@ -28,3 +28,31 @@ export function normalizeUzbekPhone(raw: string): string | null {
   }
   return null;
 }
+
+// Lenient companion to normalizeUzbekPhone, for a live/incremental input
+// (the guest checkout phone field's fixed "+998" prefix + editable
+// national-number box): always returns 0-9 national digits, never null,
+// so it can run on every keystroke including partial input -- callers
+// decide what "complete" means (exactly 9 digits) themselves.
+//
+// An explicit '+998' prefix is unambiguous regardless of how many digits
+// follow, so it correctly round-trips a value this same field already
+// stored mid-typing (e.g. "+99890" -> "90"), not just a fully-typed one.
+// Without an explicit '+', a bare 12-digit string starting with "998" is
+// treated as a country-code-prefixed paste; anything else (9 or fewer
+// digits, including ones that happen to start with "998" -- "99" is
+// itself a valid Uzbek operator code, so e.g. "998123456" is a genuine,
+// unrelated national number) is treated as national digits verbatim, so
+// real character-by-character typing is never misinterpreted.
+export function extractUzbekNationalDigits(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("+998")) {
+    return trimmed.slice(4).replace(/\D/g, "").slice(0, UZBEK_LOCAL_DIGITS);
+  }
+  if (trimmed.startsWith("+")) return "";
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === UZBEK_LOCAL_DIGITS + 3 && digits.startsWith("998")) {
+    return digits.slice(3);
+  }
+  return digits.slice(0, UZBEK_LOCAL_DIGITS);
+}
