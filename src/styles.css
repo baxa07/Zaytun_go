@@ -1651,7 +1651,7 @@ h2 {
   .success {
     padding-bottom: 90px;
   }
-  .map-search{grid-template-columns:1fr}.map-search .button{width:100%}.map-canvas{height:230px}.location-facts{grid-template-columns:1fr}.driver-nav-actions{grid-template-columns:1fr}.location-actions .button{width:100%}
+  .map-search{grid-template-columns:1fr}.map-search .button{width:100%}.map-canvas{height:230px}.map-results{max-height:190px;overflow-y:auto}.location-facts{grid-template-columns:1fr}.driver-nav-actions{grid-template-columns:1fr}.location-actions .button{width:100%}
   .history-summary {
     grid-template-columns: repeat(2, 1fr);
   }

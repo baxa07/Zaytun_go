@@ -27,9 +27,9 @@ const MAP_CODES: MapProviderErrorCode[] = [
 
 export function mapCustomerFacingLocationError(error: unknown, context: LocationErrorContext): string {
   const code = error instanceof MapProviderError ? error.code : undefined;
-  if (code === "NO_RESULTS") return "Hech qanday joy topilmadi.";
+  if (code === "NO_RESULTS") return "Manzil topilmadi. Boshqacha yozib ko‘ring yoki xaritada belgilang.";
   if (code ? SEARCH_CODES.includes(code) : context === "search") {
-    return "Manzilni avtomatik aniqlab bo‘lmadi. Manzilni yozing yoki xaritada nuqtani qayta belgilang.";
+    return "Manzilni hozir qidirib bo‘lmadi. Xaritadagi belgingiz saqlandi.";
   }
   if (code ? MAP_CODES.includes(code) : context === "map") {
     return "Xarita hozircha ishlamayapti. Birozdan keyin qayta urinib ko‘ring yoki manzilni qo‘lda yozing.";

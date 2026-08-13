@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { beginReverse, confirmSelection, initialSelection, receiveSuggestion, selectCoordinate } from "../maps/core";
+import { beginReverse, confirmSelection, haversineKm, initialSelection, receiveSuggestion, selectCoordinate } from "../maps/core";
 import { mapCustomerFacingLocationError } from "../maps/customerLocationErrorCopy";
 import { createMapAdapter, defaultMapLocation } from "../maps/factory";
-import type { AddressSuggestion, MapController, MapLocationSelection } from "../maps/types";
+import type { AddressSuggestion, LocationSource, MapController, MapCoordinate, MapLocationSelection } from "../maps/types";
+
+// A search result further than this from the configured restaurant/service
+// area is never auto-applied -- only ever reachable by the customer
+// explicitly clicking it in the results list. This exists purely to catch
+// an obviously wrong/distant mismatch (a same-named street in a different
+// city or country); it is deliberately generous so it never second-guesses
+// a genuinely valid address that merely falls outside the delivery radius
+// (that is a separate, already-handled concept -- see deliveryZoneResult).
+const SEARCH_AUTO_APPLY_RADIUS_KM = 200;
+const NO_RESULTS_MESSAGE = "Manzil topilmadi. Boshqacha yozib ko‘ring yoki xaritada belgilang.";
 
 export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapLocationSelection; onChange: (value: MapLocationSelection) => void; onApplySuggestion: (suggestion: AddressSuggestion) => void }) {
   const adapter = useMemo(() => { try { return createMapAdapter(); } catch (error) { return error as Error; } }, []);
@@ -28,11 +38,24 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
     onChangeRef.current(next);
   }, []);
 
-  const choose = useCallback(async (coordinate: AddressSuggestion["coordinate"]) => {
+  // Single canonical entry point for every way a coordinate can be chosen --
+  // a search result, "Joylashuvimni aniqlash", a map tap, or dragging the
+  // pin -- so all four feed the same reconfirmation-invalidation and
+  // address-population logic instead of three/four separate
+  // implementations. `knownSuggestion` lets a search result (which already
+  // carries district/street/house/formattedAddress from the search
+  // response) skip the redundant reverseGeocode round trip; map taps,
+  // drags and geolocation have no such data yet and still resolve it
+  // asynchronously.
+  const choose = useCallback(async (coordinate: MapCoordinate, source: LocationSource, knownSuggestion?: AddressSuggestion) => {
     const movedFromConfirmed = confirmedCoordinate.current && (confirmedCoordinate.current.latitude !== coordinate.latitude || confirmedCoordinate.current.longitude !== coordinate.longitude);
     const wasConfirmed = Boolean(movedFromConfirmed) || explicitlyConfirmed.current || selectionRef.current.state === "CONFIRMED" || Boolean(selectionRef.current.confirmedAt);
-    const selected = { ...selectCoordinate(selectionRef.current, coordinate), ...(wasConfirmed ? { state: "NEEDS_RECONFIRMATION" as const, confirmedAt: undefined } : {}) };
+    const selected = { ...selectCoordinate(selectionRef.current, coordinate, source), ...(wasConfirmed ? { state: "NEEDS_RECONFIRMATION" as const, confirmedAt: undefined } : {}) };
     explicitlyConfirmed.current = false;
+    if (knownSuggestion) {
+      emit(receiveSuggestion(selected, knownSuggestion));
+      return;
+    }
     emit(beginReverse(selected));
     try {
       const suggestion = await ("reverseGeocode" in adapter ? adapter.reverseGeocode(coordinate) : Promise.resolve(null));
@@ -58,7 +81,7 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
         setLocating(false);
         const coordinate = { latitude: position.coords.latitude, longitude: position.coords.longitude };
         controller.current?.setCoordinate(coordinate);
-        void choose(coordinate);
+        void choose(coordinate, "GEOLOCATION");
       },
       () => {
         setLocating(false);
@@ -73,7 +96,7 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
     let disposed = false;
     const defaults = defaultMapLocation();
     void adapter.load()
-      .then(() => disposed || !container.current ? undefined : adapter.initialize(container.current, { center: { latitude: defaults.latitude, longitude: defaults.longitude }, zoom: defaults.zoom, selected: selectionRef.current.coordinate, onSelect: (coordinate) => void choose(coordinate) }))
+      .then(() => disposed || !container.current ? undefined : adapter.initialize(container.current, { center: { latitude: defaults.latitude, longitude: defaults.longitude }, zoom: defaults.zoom, selected: selectionRef.current.coordinate, onSelect: (coordinate) => void choose(coordinate, "MAP") }))
       .then((nextController) => { if (!nextController) return; if (disposed) nextController.dispose(); else { controller.current = nextController; setMapState("READY"); setMapError(""); } })
       .catch((error) => { if (!disposed) { setMapState("ERROR"); setMapError(mapCustomerFacingLocationError(error, "map")); } });
     return () => { disposed = true; controller.current?.dispose(); controller.current = undefined; };
@@ -112,15 +135,44 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
         : undefined;
 
   return <section className="location-picker" aria-label="Yetkazish joyini xaritada tanlash">
-    <div className="map-search"><label className="field"><span>Ko‘cha, joy yoki mo‘ljal qidirish</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Masalan: Amir Temur 24" /></label><button type="button" className="button secondary" disabled={!query.trim() || searching} onClick={async () => { setSearching(true); setResults([]); setSearchMessage(""); try { const found=await adapter.search(query); setResults(found); setSearchMessage(found.length?`${found.length} ta natija`:"Hech qanday joy topilmadi"); } catch (error) { setSearchMessage(mapCustomerFacingLocationError(error, "search")); } finally { setSearching(false); } }}>Qidirish</button></div>
+    <div className="map-search"><label className="field"><span>Ko‘cha, joy yoki mo‘ljal qidirish</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Masalan: Amir Temur 24" /></label><button type="button" className="button secondary" disabled={!query.trim() || searching} onClick={async () => {
+      setSearching(true); setResults([]); setSearchMessage("");
+      try {
+        const found = await adapter.search(query);
+        if (!found.length) { setSearchMessage(NO_RESULTS_MESSAGE); return; }
+        // Rank by proximity to the configured service area so the closest,
+        // most plausible match is what gets auto-applied -- never an
+        // arbitrary "first" result from the provider's own ordering.
+        const center = defaultMapLocation();
+        const ranked = [...found].sort((a, b) => haversineKm(center, a.coordinate) - haversineKm(center, b.coordinate));
+        setResults(ranked);
+        setSearchMessage(`${ranked.length} ta natija`);
+        const best = ranked[0];
+        // A successful search drives the map directly -- no second click on
+        // a result required for the common case. The full ranked list stays
+        // visible below so the customer can pick a different one if this
+        // guess is wrong; clicking any entry re-applies through the exact
+        // same path. Never auto-applied when the closest match is still
+        // implausibly far away (a different city/country mismatch) -- that
+        // stays a explicit, customer-driven pick from the list.
+        if (haversineKm(center, best.coordinate) <= SEARCH_AUTO_APPLY_RADIUS_KM) {
+          controller.current?.setCoordinate(best.coordinate);
+          void choose(best.coordinate, "SEARCH", best);
+        }
+      } catch (error) {
+        setSearchMessage(mapCustomerFacingLocationError(error, "search"));
+      } finally {
+        setSearching(false);
+      }
+    }}>Qidirish</button></div>
     <button type="button" className="button secondary" data-testid="use-my-location" disabled={locating} onClick={useMyLocation}>{locating ? "Aniqlanmoqda…" : "📍 Joylashuvimni aniqlash"}</button>
-    <div aria-live="polite" className="search-status">{searching ? "Qidirilmoqda…" : searchMessage}</div>
-    {results.length > 0 && <ul className="map-results">{results.map((result) => <li key={result.providerPlaceId || result.label}><button type="button" onClick={() => { setResults([]); controller.current?.setCoordinate(result.coordinate); void choose(result.coordinate); }}><b>{result.label}</b><small>{result.formattedAddress}</small></button></li>)}</ul>}
+    <div aria-live="polite" className="search-status">{searching ? "Manzil qidirilmoqda…" : searchMessage}</div>
+    {results.length > 0 && <ul className="map-results">{results.map((result) => <li key={result.providerPlaceId || result.label}><button type="button" onClick={() => { controller.current?.setCoordinate(result.coordinate); void choose(result.coordinate, "SEARCH", result); }}><b>{result.label}</b><small>{result.formattedAddress}</small></button></li>)}</ul>}
     <div className="map-frame"><div ref={container} className="map-canvas" role="application" aria-label="Pin qo‘yish uchun interaktiv xarita"></div>{mapState === "LOADING" && <div className="map-loading" role="status">Xarita yuklanmoqda…</div>}</div>
     {mapState === "ERROR" && <div className="map-error" role="alert"><b>Xarita ishga tushmadi</b><span>{mapError}</span><button type="button" onClick={() => { setMapState("LOADING"); setMapError(""); setRetry((value) => value + 1); }}>Qayta urinish</button></div>}
     <div className={`location-status location-status--${statusVariant}`} data-testid={statusTestId}>
       {statusVariant === "empty" && <span>Xaritadan nuqta tanlang yoki manzilni qidiring.</span>}
-      {statusVariant === "error" && <><b>Manzil avtomatik aniqlanmadi</b><span>Manzilni qo‘lda yozing yoki pinni qayta belgilang.</span><button type="button" disabled={!selection.coordinate} onClick={() => selection.coordinate && void choose(selection.coordinate)}>Qayta urinish</button></>}
+      {statusVariant === "error" && <><b>Manzil avtomatik aniqlanmadi</b><span>Manzilni qo‘lda yozing yoki pinni qayta belgilang.</span><button type="button" disabled={!selection.coordinate} onClick={() => selection.coordinate && void choose(selection.coordinate, selection.source || "MAP")}>Qayta urinish</button></>}
       {statusVariant === "attention" && <><b>Manzilni tekshirib chiqing</b><span>Pin kirish joyiga yaqin ekanini tasdiqlang.</span></>}
       {statusVariant === "confirmed" && <><span>✓ Pin belgilandi</span><small>Kuryer boradigan nuqta tanlandi.</small></>}
     </div>

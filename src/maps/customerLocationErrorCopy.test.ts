@@ -5,14 +5,14 @@ import { MapProviderError } from "./types";
 describe("mapCustomerFacingLocationError (never leaks provider names, env vars, or raw JS error names)", () => {
   it("maps NO_RESULTS to a plain no-results message", () => {
     expect(mapCustomerFacingLocationError(new MapProviderError("NO_RESULTS", "Hech qanday joy topilmadi"), "search")).toBe(
-      "Hech qanday joy topilmadi.",
+      "Manzil topilmadi. Boshqacha yozib ko‘ring yoki xaritada belgilang.",
     );
   });
 
-  it("maps search/suggest/geocode failures to the customer-friendly search message, never the raw message", () => {
+  it("maps search/suggest/geocode failures to the customer-friendly, reassuring search message, never the raw message", () => {
     const raw = new MapProviderError("SEARCH_FAILED", "Yandex manzil natijalarini koordinataga aylantirmadi");
     const result = mapCustomerFacingLocationError(raw, "search");
-    expect(result).toBe("Manzilni avtomatik aniqlab bo‘lmadi. Manzilni yozing yoki xaritada nuqtani qayta belgilang.");
+    expect(result).toBe("Manzilni hozir qidirib bo‘lmadi. Xaritadagi belgingiz saqlandi.");
     expect(result).not.toContain("Yandex");
   });
 
