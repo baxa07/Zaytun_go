@@ -45,6 +45,13 @@ test("P4 driver work surface (real Supabase): auto-dispatch assignment, accept, 
   await driver.getByLabel("Parol").fill(localPassword);
   await driver.getByRole("button", { name: "Kirish" }).click();
   await expect(driver.getByRole("button", { name: "Chiqish" })).toBeVisible();
+  // The post-sign-in data refresh (orders + drivers fetch) is async and can
+  // still be in flight the instant "Chiqish" appears -- an immediate
+  // single-shot isVisible() check here can catch a not-yet-settled render
+  // and misread it, so give the first fetch cycle a moment to land before
+  // trusting this check, same as the settled wait already used between
+  // iterations below.
+  await driver.waitForTimeout(500);
   for (let i = 0; i < 6; i++) {
     if (await driver.getByTestId("driver-no-active").isVisible().catch(() => false)) break;
     // A rapid click right as the primary action re-renders (label/target

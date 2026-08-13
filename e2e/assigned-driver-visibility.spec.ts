@@ -48,6 +48,7 @@ test.describe("assigned driver visibility for restaurant staff (Phase 5B, launch
     await staff.getByTestId("action-confirm").click();
     await staff.getByTestId("action-start-prep").click();
     await staff.getByTestId("action-mark-ready").click();
+    await staff.locator(".manual-assign summary").click();
     await staff.getByTestId("assign-driver-driver-1").click();
 
     // DRIVER_ASSIGNED: the exact requirement from Phase 5A -- staff can now

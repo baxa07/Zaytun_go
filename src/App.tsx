@@ -66,7 +66,7 @@ import { navigationUrl } from "./maps/navigation";
 import type { AddressSuggestion, MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
 import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
-import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint} from './fulfillmentLifecycle'
+import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,deliveryDispatchPhase,deliveryDispatchPhaseLabels,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,orderExceptions,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint,type OrderExceptionKind} from './fulfillmentLifecycle'
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
@@ -194,6 +194,31 @@ const issueLabels: Record<string, string> = {
   PAYMENT_PROBLEM: "To‘lov muammosi",
   ADDRESS_CLARIFICATION: "Manzilni aniqlashtirish kerak",
 };
+// P5.15: exceptions stand out more than normal progress -- this banner is
+// a compact, scannable index; the actual actionable controls stay exactly
+// where they already were (delivery-review panel, driver section, etc.),
+// so this never duplicates the full explanatory text, only summarizes.
+const orderExceptionLabels: Record<OrderExceptionKind, (order: Order) => string> = {
+  ADDRESS_REVIEW: () => "⚠ Manzil tekshiruvi kerak",
+  ADDRESS_CLARIFICATION: () => "⚠ Mijozdan aniqlashtirish kutilmoqda",
+  DELIVERY_FAILED: () => "⚠ Yetkazishda muammo bo‘ldi",
+  RETURNED: () => "⚠ Buyurtma qaytarildi",
+  REMOTE_PAYMENT_PENDING: (order) => `⚠ ${paymentLabel(order.paymentMethod, true)} — to‘lovni tasdiqlang`,
+  COURIER_WAITING: () => "⏳ Kuryer kutilmoqda",
+};
+function OrderExceptionBanner({ order }: { order: Order }) {
+  const flags = orderExceptions(order);
+  if (flags.length === 0) return null;
+  return (
+    <div className="exception-banner" data-testid="order-exception-banner">
+      {flags.map((flag) => (
+        <span key={flag} className={`exception-chip exception-${flag.toLowerCase()}`} data-testid={`exception-${flag}`}>
+          {orderExceptionLabels[flag](order)}
+        </span>
+      ))}
+    </div>
+  );
+}
 const Badge = ({ status }: { status: OrderStatus }) => (
   <span className={`badge s-${status.toLowerCase()}`}>
     {statusLabels[status]}
@@ -1907,8 +1932,8 @@ function OrderCard({ order, onOpen }: { order: Order; onOpen?: (id: string) => v
       </small>
       <p>{order.items.map((i) => `${i.quantity}× ${i.name}`).join(", ")}</p>
       <small className={isRemotePaymentMethod(order.paymentMethod) ? "remote-payment-flag" : "payment-signal"} data-testid={`order-card-payment-${order.id}`}>
-        {isRemotePaymentMethod(order.paymentMethod) && "⚠ "}
-        To‘lov: {paymentLabel(order.paymentMethod, true)}
+        {paymentLabel(order.paymentMethod, true)}
+        {isRemotePaymentMethod(order.paymentMethod) && ` · ${paymentStatusLabels[order.paymentStatus]}`}
       </small>
       {order.address && (
         <>
@@ -2522,6 +2547,7 @@ function OrderDetail() {
           </div>
           <OrderBadge order={order} />
         </div>
+        <OrderExceptionBanner order={order} />
         <div className="detail-grid">
           <div className="stack">
             <section className="panel">
@@ -2818,29 +2844,56 @@ function OrderDetail() {
                 Mijoz olib ketdi
               </button>
             )}
+            {/* P5.6/P5.7/P5.9: the restaurant is not normally asked "which
+                driver?" -- Smart Dispatch already attempted assignment the
+                instant this order became READY (transition_order's own
+                sweep). This renders that canonical backend state, never
+                frontend dispatch logic. Manual assignment is retained
+                exactly as-is (same assign() call, same eligibility/capacity
+                enforcement server-side) but demoted to an explicit,
+                closed-by-default exception control -- normal orders never
+                need it. */}
             {order.status === "READY" && order.type === "DELIVERY" && (
               <>
-                {drivers.map((d) => (
-                  <button
-                    className="driver-option"
-                    data-testid={`assign-driver-${d.id}`}
-                    disabled={transitionPending(order.id) || d.availability !== "AVAILABLE"}
-                    key={d.id}
-                    onClick={() => void assign(order.id, d.id)}
-                  >
-                    <span>
-                      <b>{d.name}</b>
-                      <small>{d.vehicle}</small>
-                    </span>
-                    <i>{driverAvailabilityLabels[d.availability]}</i>
-                  </button>
-                ))}
-                {!drivers.some((d) => d.availability === "AVAILABLE") && (
-                  <p className="warning" data-testid="no-driver-available">
-                    Hozir bo‘sh haydovchi yo‘q
-                  </p>
-                )}
+                <div className="dispatch-status dispatch-searching" data-testid="dispatch-searching">
+                  <b>Kuryer qidirilmoqda…</b>
+                  <p>Bo‘sh kuryer paydo bo‘lishi bilan tizim avtomatik biriktiradi.</p>
+                </div>
+                <details className="manual-assign" data-testid="manual-assign-panel">
+                  <summary>Qo‘lda biriktirish</summary>
+                  {drivers.map((d) => (
+                    <button
+                      className="driver-option"
+                      data-testid={`assign-driver-${d.id}`}
+                      disabled={transitionPending(order.id) || d.availability !== "AVAILABLE"}
+                      key={d.id}
+                      onClick={() => void assign(order.id, d.id)}
+                    >
+                      <span>
+                        <b>{d.name}</b>
+                        <small>{d.vehicle}</small>
+                      </span>
+                      <i>{driverAvailabilityLabels[d.availability]}</i>
+                    </button>
+                  ))}
+                  {!drivers.some((d) => d.availability === "AVAILABLE") && (
+                    <p className="warning" data-testid="no-driver-available">
+                      Hozir bo‘sh haydovchi yo‘q
+                    </p>
+                  )}
+                </details>
               </>
+            )}
+            {/* P5.8/P5.14: once a courier owns the order, the restaurant
+                monitors only -- courier lifecycle controls live exclusively
+                on the driver's own surface (Phase 4). No transition button
+                is rendered here for any of these statuses. */}
+            {deliveryDispatchPhase(order) && deliveryDispatchPhase(order) !== "SEARCHING" && (
+              <div className="dispatch-status dispatch-courier" data-testid="dispatch-courier-status">
+                <b>Kuryer</b>
+                <p>{assignedDriver?.name || "Aniqlanmoqda…"}</p>
+                <span className="dispatch-phase-label">{deliveryDispatchPhaseLabels[deliveryDispatchPhase(order)!]}</span>
+              </div>
             )}
             <input
               value={reason}

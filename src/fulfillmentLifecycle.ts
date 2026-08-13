@@ -84,3 +84,44 @@ export const paymentMethodsForFulfillment=(config:RestaurantConfig,type:Order['t
 export const isRemotePaymentMethod=(payment:PaymentMethod)=>payment==='CLICK'||payment==='PAYME'
 export const remotePaymentCustomerNotice='Restoran buyurtmangizni tasdiqlagach, to‘lov uchun siz bilan bog‘lanadi.'
 export const remotePaymentStaffHint='Buyurtmani tekshiring va mijoz bilan to‘lov uchun bog‘laning.'
+
+// Smart Dispatch Phase 5: the restaurant renders canonical backend state
+// only -- no frontend dispatch logic. A DELIVERY order's own status (plus
+// whether it has been accepted) is already the complete, unambiguous
+// signal for which monitoring phase to show; this is a pure read, never a
+// second source of truth for status itself.
+export type DeliveryDispatchPhase='SEARCHING'|'ASSIGNED'|'ACCEPTED'|'PICKED_UP'|'ON_THE_WAY'|'ARRIVED'
+export const deliveryDispatchPhase=(order:Pick<Order,'type'|'status'|'assignmentAcceptedAt'>):DeliveryDispatchPhase|null=>{
+  if(order.type!=='DELIVERY')return null
+  switch(order.status){
+    case 'READY':return 'SEARCHING'
+    case 'DRIVER_ASSIGNED':return order.assignmentAcceptedAt?'ACCEPTED':'ASSIGNED'
+    case 'PICKED_UP':return 'PICKED_UP'
+    case 'ON_THE_WAY':return 'ON_THE_WAY'
+    case 'ARRIVED':return 'ARRIVED'
+    default:return null
+  }
+}
+export const deliveryDispatchPhaseLabels:Record<DeliveryDispatchPhase,string>={
+  SEARCHING:'Kuryer qidirilmoqda',
+  ASSIGNED:'Biriktirildi',
+  ACCEPTED:'Qabul qildi',
+  PICKED_UP:'Buyurtmani oldi',
+  ON_THE_WAY:'Yo‘lda',
+  ARRIVED:'Yetib bordi',
+}
+
+// P5.15: what should draw restaurant staff's attention, distinct from
+// normal progress. Order matters -- callers show the first/most urgent
+// one prominently, and may list the rest more quietly.
+export type OrderExceptionKind='ADDRESS_REVIEW'|'ADDRESS_CLARIFICATION'|'DELIVERY_FAILED'|'RETURNED'|'REMOTE_PAYMENT_PENDING'|'COURIER_WAITING'
+export const orderExceptions=(order:Pick<Order,'type'|'status'|'deliveryReviewStatus'|'paymentMethod'|'paymentStatus'|'assignedDriverId'>):OrderExceptionKind[]=>{
+  const flags:OrderExceptionKind[]=[]
+  if(order.type==='DELIVERY'&&order.deliveryReviewStatus==='REVIEW_REQUIRED')flags.push('ADDRESS_REVIEW')
+  if(order.type==='DELIVERY'&&order.deliveryReviewStatus==='CLARIFICATION_REQUESTED')flags.push('ADDRESS_CLARIFICATION')
+  if(order.status==='DELIVERY_FAILED')flags.push('DELIVERY_FAILED')
+  if(order.status==='RETURNED')flags.push('RETURNED')
+  if(isRemotePaymentMethod(order.paymentMethod)&&order.paymentStatus!=='COLLECTED')flags.push('REMOTE_PAYMENT_PENDING')
+  if(order.type==='DELIVERY'&&order.status==='READY'&&!order.assignedDriverId)flags.push('COURIER_WAITING')
+  return flags
+}

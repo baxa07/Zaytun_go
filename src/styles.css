@@ -722,8 +722,8 @@ h2 {
 }
 .board {
   display: grid;
-  grid-template-columns: repeat(5, minmax(250px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(5, minmax(230px, 1fr));
+  gap: 12px;
   overflow-x: auto;
   padding-bottom: 15px;
 }
@@ -744,9 +744,10 @@ h2 {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 15px;
-  margin-bottom: 12px;
+  padding: 13px;
+  margin-bottom: 10px;
   box-shadow: 0 2px 7px #1a2c2010;
+  font-size: 13px;
 }
 .order-card.new {
   border-left: 4px solid var(--gold);
@@ -782,21 +783,22 @@ h2 {
   align-items: center;
 }
 .order-card h3 {
-  margin: 15px 0 4px;
+  margin: 10px 0 3px;
+  font-size: 15px;
 }
 .order-card small {
   color: var(--muted);
 }
 .order-card p {
   font-size: 13px;
-  margin: 12px 0;
+  margin: 8px 0;
 }
 .order-card .address {
   color: #516158;
 }
 .order-card footer {
   border-top: 1px solid #eee;
-  padding-top: 12px;
+  padding-top: 9px;
 }
 .order-card footer span {
   color: var(--green);
@@ -844,6 +846,69 @@ h2 {
   align-self: start;
   position: sticky;
   top: 84px;
+}
+.exception-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+.exception-chip {
+  display: inline-flex;
+  align-items: center;
+  background: #fff0ee;
+  color: #8f312b;
+  border: 1px solid #f3c9c2;
+  border-radius: 20px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.exception-chip.exception-courier_waiting {
+  background: #fff7db;
+  color: #7a5200;
+  border-color: #ecdca0;
+}
+.dispatch-status {
+  background: #f2f4f2;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.dispatch-status b {
+  display: block;
+  font-size: 14px;
+}
+.dispatch-status p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.dispatch-status.dispatch-courier {
+  background: #edf3ef;
+}
+.dispatch-phase-label {
+  display: inline-block;
+  margin-top: 6px;
+  background: var(--green);
+  color: #fff;
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.manual-assign {
+  margin: 6px 0;
+  font-size: 13px;
+}
+.manual-assign summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 8px 0;
+}
+.manual-assign > *:not(summary) {
+  margin-top: 8px;
 }
 .driver-option {
   border: 1px solid var(--line);

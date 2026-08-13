@@ -77,6 +77,8 @@ test.describe('canonical order lifecycle', () => {
       await expect(staff.locator('.panel').first()).toContainText('40 daqiqa')
       await staff.getByTestId('action-start-prep').click()
       await staff.getByTestId('action-mark-ready').click()
+      await expect(staff.getByTestId('dispatch-searching')).toBeVisible()
+      await staff.locator('.manual-assign summary').click()
       await expect(staff.getByTestId('assign-driver-driver-1')).toBeEnabled()
     })
 

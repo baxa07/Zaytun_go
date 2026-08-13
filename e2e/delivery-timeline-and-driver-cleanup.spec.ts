@@ -61,6 +61,7 @@ test.describe("customer delivery timeline: approved 7-stage mapping", () => {
     await customer.reload();
     await expect(customer.getByTestId("order-status")).toHaveText("Tayyorlanmoqda");
 
+    await staff.locator(".manual-assign summary").click();
     await staff.getByTestId("assign-driver-driver-1").click();
     await customer.reload();
     // DRIVER_ASSIGNED must NOT read as Haydovchiga berildi.

@@ -91,6 +91,7 @@ test.describe("H3 customer feedback", () => {
     await staff.getByTestId("action-confirm").click();
     await staff.getByTestId("action-start-prep").click();
     await staff.getByTestId("action-mark-ready").click();
+    await staff.locator(".manual-assign summary").click();
     await staff.getByTestId("assign-driver-driver-1").click();
 
     await driver.goto("/driver");

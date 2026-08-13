@@ -1,5 +1,5 @@
 import{describe,expect,it}from'vitest'
-import{customerDeliveryStageIndex,customerDeliveryStages,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint}from'./fulfillmentLifecycle'
+import{customerDeliveryStageIndex,customerDeliveryStages,deliveryDispatchPhase,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,orderExceptions,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint}from'./fulfillmentLifecycle'
 import{developmentRestaurantConfig}from'./data'
 import type{OrderEvent,OrderStatus}from'./domain'
 describe('fulfillment timeline',()=>{it('contains exactly five pickup-only stages',()=>{const stages=fulfillmentTimeline('PICKUP');expect(stages.map(x=>x.label)).toEqual(['Buyurtma qabul qilindi','Tasdiqlandi','Tayyorlanmoqda','Olib ketishga tayyor','Olib ketildi']);expect(stages.map(x=>x.status)).not.toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED']))});it('retains delivery stages',()=>expect(fulfillmentTimeline('DELIVERY').map(x=>x.status)).toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED'])));it('provides physical-payment guidance',()=>{expect(pickupPaymentGuidance('CARD_AT_PICKUP')).toContain('restoranda karta');expect(pickupPaymentGuidance('CASH')).toContain('naqd pulda')})})
@@ -138,5 +138,57 @@ describe('pickup isolation from the 7-stage delivery timeline',()=>{
     expect(pickupLabels).toEqual(['Buyurtma qabul qilindi','Tasdiqlandi','Tayyorlanmoqda','Olib ketishga tayyor','Olib ketildi'])
     for(const deliveryOnlyLabel of['Manzil tasdiqlandi','Haydovchiga berildi','Yo‘lda','Yetib keldi'])
       expect(pickupLabels).not.toContain(deliveryOnlyLabel)
+  })
+})
+
+describe('Smart Dispatch Phase 5: deliveryDispatchPhase renders canonical backend state only',()=>{
+  it('is null for PICKUP regardless of status',()=>{
+    expect(deliveryDispatchPhase({type:'PICKUP',status:'READY',assignmentAcceptedAt:undefined})).toBeNull()
+    expect(deliveryDispatchPhase({type:'PICKUP',status:'COLLECTED',assignmentAcceptedAt:undefined})).toBeNull()
+  })
+  it('is SEARCHING at READY (no driver yet)',()=>{
+    expect(deliveryDispatchPhase({type:'DELIVERY',status:'READY',assignmentAcceptedAt:undefined})).toBe('SEARCHING')
+  })
+  it('distinguishes ASSIGNED (not yet accepted) from ACCEPTED using assignmentAcceptedAt',()=>{
+    expect(deliveryDispatchPhase({type:'DELIVERY',status:'DRIVER_ASSIGNED',assignmentAcceptedAt:undefined})).toBe('ASSIGNED')
+    expect(deliveryDispatchPhase({type:'DELIVERY',status:'DRIVER_ASSIGNED',assignmentAcceptedAt:'2026-08-13T00:00:00Z'})).toBe('ACCEPTED')
+  })
+  it('maps PICKED_UP/ON_THE_WAY/ARRIVED straight through',()=>{
+    expect(deliveryDispatchPhase({type:'DELIVERY',status:'PICKED_UP',assignmentAcceptedAt:'x'})).toBe('PICKED_UP')
+    expect(deliveryDispatchPhase({type:'DELIVERY',status:'ON_THE_WAY',assignmentAcceptedAt:'x'})).toBe('ON_THE_WAY')
+    expect(deliveryDispatchPhase({type:'DELIVERY',status:'ARRIVED',assignmentAcceptedAt:'x'})).toBe('ARRIVED')
+  })
+  it('is null once DELIVERED or for any other status -- restaurant gets no courier lifecycle buttons once finished',()=>{
+    expect(deliveryDispatchPhase({type:'DELIVERY',status:'DELIVERED',assignmentAcceptedAt:'x'})).toBeNull()
+    expect(deliveryDispatchPhase({type:'DELIVERY',status:'NEW',assignmentAcceptedAt:undefined})).toBeNull()
+  })
+})
+
+describe('Smart Dispatch Phase 5: orderExceptions surfaces what needs staff attention',()=>{
+  const base={type:'DELIVERY' as const,status:'NEW' as const,deliveryReviewStatus:'NOT_REQUIRED' as const,paymentMethod:'CASH' as const,paymentStatus:'PENDING' as const,assignedDriverId:undefined}
+  it('flags nothing for a normal CASH order awaiting nothing',()=>{
+    expect(orderExceptions(base)).toEqual([])
+  })
+  it('flags address review and clarification states, mutually as their own distinct flags',()=>{
+    expect(orderExceptions({...base,deliveryReviewStatus:'REVIEW_REQUIRED'})).toContain('ADDRESS_REVIEW')
+    expect(orderExceptions({...base,deliveryReviewStatus:'CLARIFICATION_REQUESTED'})).toContain('ADDRESS_CLARIFICATION')
+  })
+  it('flags CLICK/PAYME only while payment has not been marked collected',()=>{
+    expect(orderExceptions({...base,paymentMethod:'CLICK',paymentStatus:'PENDING'})).toContain('REMOTE_PAYMENT_PENDING')
+    expect(orderExceptions({...base,paymentMethod:'CLICK',paymentStatus:'COLLECTED'})).not.toContain('REMOTE_PAYMENT_PENDING')
+    expect(orderExceptions({...base,paymentMethod:'CASH'})).not.toContain('REMOTE_PAYMENT_PENDING')
+  })
+  it('flags a READY delivery order with no assigned driver as COURIER_WAITING, never for PICKUP',()=>{
+    expect(orderExceptions({...base,status:'READY',assignedDriverId:undefined})).toContain('COURIER_WAITING')
+    expect(orderExceptions({...base,status:'READY',assignedDriverId:'driver-1'})).not.toContain('COURIER_WAITING')
+    expect(orderExceptions({...base,type:'PICKUP',status:'READY',assignedDriverId:undefined})).not.toContain('COURIER_WAITING')
+  })
+  it('flags DELIVERY_FAILED and RETURNED as their own exceptions',()=>{
+    expect(orderExceptions({...base,status:'DELIVERY_FAILED'})).toContain('DELIVERY_FAILED')
+    expect(orderExceptions({...base,status:'RETURNED'})).toContain('RETURNED')
+  })
+  it('can report multiple simultaneous exceptions',()=>{
+    const flags=orderExceptions({...base,deliveryReviewStatus:'REVIEW_REQUIRED',paymentMethod:'PAYME',paymentStatus:'PENDING'})
+    expect(flags).toEqual(expect.arrayContaining(['ADDRESS_REVIEW','REMOTE_PAYMENT_PENDING']))
   })
 })
