@@ -146,17 +146,18 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
         // arbitrary "first" result from the provider's own ordering.
         const center = defaultMapLocation();
         const ranked = [...found].sort((a, b) => haversineKm(center, a.coordinate) - haversineKm(center, b.coordinate));
-        setResults(ranked);
         setSearchMessage(`${ranked.length} ta natija`);
         const best = ranked[0];
-        // A successful search drives the map directly -- no second click on
-        // a result required for the common case. The full ranked list stays
-        // visible below so the customer can pick a different one if this
-        // guess is wrong; clicking any entry re-applies through the exact
-        // same path. Never auto-applied when the closest match is still
-        // implausibly far away (a different city/country mismatch) -- that
-        // stays a explicit, customer-driven pick from the list.
+        // Never auto-applied when the closest match is still implausibly
+        // far away (a different city/country mismatch) -- that stays an
+        // explicit, customer-driven pick from the list, which is the only
+        // case the list actually needs to stay open for.
         if (haversineKm(center, best.coordinate) <= SEARCH_AUTO_APPLY_RADIUS_KM) {
+          // Auto-apply is a completed selection, not a menu of options --
+          // the list closes immediately, exactly like an explicit result
+          // click below. Wanting a different address means editing the
+          // query and searching again, not picking from a leftover panel.
+          setResults([]);
           controller.current?.setCoordinate(best.coordinate);
           controller.current?.recenter(best.coordinate, center.zoom);
           // The selected result replaces the raw typed query -- otherwise
@@ -165,6 +166,8 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
           // selected, which reads as if the search never took effect.
           setQuery(best.label || best.formattedAddress);
           void choose(best.coordinate, "SEARCH", best);
+        } else {
+          setResults(ranked);
         }
       } catch (error) {
         setSearchMessage(mapCustomerFacingLocationError(error, "search"));
@@ -174,7 +177,7 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
     }}>Qidirish</button></div>
     <button type="button" className="button secondary" data-testid="use-my-location" disabled={locating} onClick={useMyLocation}>{locating ? "Aniqlanmoqda…" : "📍 Joylashuvimni aniqlash"}</button>
     <div aria-live="polite" className="search-status">{searching ? "Manzil qidirilmoqda…" : searchMessage}</div>
-    {results.length > 0 && <ul className="map-results">{results.map((result) => <li key={result.providerPlaceId || result.label}><button type="button" onClick={() => { controller.current?.setCoordinate(result.coordinate); controller.current?.recenter(result.coordinate, defaultMapLocation().zoom); setQuery(result.label || result.formattedAddress); void choose(result.coordinate, "SEARCH", result); }}><b>{result.label}</b><small>{result.formattedAddress}</small></button></li>)}</ul>}
+    {results.length > 0 && <ul className="map-results">{results.map((result) => <li key={result.providerPlaceId || result.label}><button type="button" onClick={() => { controller.current?.setCoordinate(result.coordinate); controller.current?.recenter(result.coordinate, defaultMapLocation().zoom); setQuery(result.label || result.formattedAddress); setResults([]); void choose(result.coordinate, "SEARCH", result); }}><b>{result.label}</b><small>{result.formattedAddress}</small></button></li>)}</ul>}
     <div className="map-frame"><div ref={container} className="map-canvas" role="application" aria-label="Pin qo‘yish uchun interaktiv xarita"></div>{mapState === "LOADING" && <div className="map-loading" role="status">Xarita yuklanmoqda…</div>}</div>
     {mapState === "ERROR" && <div className="map-error" role="alert"><b>Xarita ishga tushmadi</b><span>{mapError}</span><button type="button" onClick={() => { setMapState("LOADING"); setMapError(""); setRetry((value) => value + 1); }}>Qayta urinish</button></div>}
     <div className={`location-status location-status--${statusVariant}`} data-testid={statusTestId}>

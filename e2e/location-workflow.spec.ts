@@ -25,10 +25,10 @@ test.describe("precise delivery location", () => {
 
     await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
     await page.getByRole("button", { name: "Qidirish" }).click();
-    await expect(page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ })).toBeVisible();
+    // A single, close match auto-applies immediately -- no separate click
+    // on a results list required for the common case.
     await page.screenshot({ path: evidence("02-search-results") });
 
-    await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
     await expect(page.getByTestId("map-suggestion")).toContainText("Yangiariq MFY");
     await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
     await page.screenshot({ path: evidence("03-selected-marker-suggestion") });
@@ -63,7 +63,6 @@ test.describe("precise delivery location", () => {
     await fillRequiredAddress(page);
     await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
     await page.getByRole("button", { name: "Qidirish" }).click();
-    await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
     await page.getByRole("button", { name: "Manzilni qo‘llash" }).click();
     await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
     await page.getByTestId("checkout-submit").click();
@@ -73,7 +72,6 @@ test.describe("precise delivery location", () => {
     await fillRequiredAddress(page);
     await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Tashqaridagi");
     await page.getByRole("button", { name: "Qidirish" }).click();
-    await page.getByRole("button", { name: /Tashqaridagi test manzili/ }).click();
     await expect(page.getByTestId("delivery-review-notice")).toContainText("operator tomonidan tasdiqlanadi");
     await page.getByRole("button", { name: "Manzilni qo‘llash" }).click();
     await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
@@ -145,7 +143,6 @@ test.describe("minimum delivery-address contract (Pin Workflow Refinement)", () 
 
     await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
     await page.getByRole("button", { name: "Qidirish" }).click();
-    await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
     await page.getByRole("button", { name: "Manzilni qo‘llash" }).click();
 
     await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
@@ -387,30 +384,70 @@ test.describe("map camera follows automatic selection (search, geolocation, alte
     // the same element production's real map camera move affects.
     await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "40.1039");
     await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lng", "65.3688");
+    // Auto-apply is a completed selection, not a menu of options -- the
+    // results panel never lingers underneath an already-applied address.
+    await expect(page.locator(".map-results")).toHaveCount(0);
   });
 
-  test("selecting an alternative result from the list replaces the search field, pin, camera, and address, and invalidates confirmation", async ({ page }) => {
+  test("tapping a result from an open list applies it and closes the list -- search field, pin, camera, and address all become that result", async ({ page }) => {
     await openCheckout(page);
     await fillRequiredAddress(page);
 
-    // "Navoiy" matches two mock points -- the closer one (Navoiy Markaziy
-    // bozori) auto-applies as Location A.
-    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Navoiy");
+    // "Toshkentdagi" matches two mock points that are BOTH genuinely far
+    // (~354km) from the configured service area -- neither auto-applies,
+    // so the list stays open with two real alternatives, the only
+    // deterministic way to exercise "list open, customer taps one" (every
+    // other fixture point is close enough to auto-apply on its own).
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Toshkentdagi");
     await page.getByRole("button", { name: "Qidirish" }).click();
-    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Navoiy Markaziy bozori");
-    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Navoiy shahri");
+    await expect(page.getByRole("button", { name: /Toshkentdagi ofis, 1/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Toshkentdagi ofis, 2/ })).toBeVisible();
+    // Neither auto-applied -- the query text is still exactly what was typed.
+    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Toshkentdagi");
+
+    await page.getByRole("button", { name: /Toshkentdagi ofis, 2/ }).click();
+
+    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Toshkentdagi ofis, 2");
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Chilonzor tumani");
+    await expect(page.getByLabel("Ko‘cha yoki joylashuv *")).toHaveValue("Bunyodkor shoh ko‘chasi");
+    await expect(page.getByLabel("Uy / bino (ixtiyoriy)")).toHaveValue("2");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "41.32");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lng", "69.29");
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
+    // The list is gone -- only the selected result remains visible.
+    await expect(page.locator(".map-results")).toHaveCount(0);
+  });
+
+  test("editing the search field after a selection and searching again reopens a fresh list, and picking from it closes the list again", async ({ page }) => {
+    await openCheckout(page);
+    await fillRequiredAddress(page);
+
+    // Select Location A (auto-applies, list never opens for a single
+    // close match).
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Amir Temur ko‘chasi 24B, Navoiy");
     await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
 
-    // Now pick the OTHER result (Location B) from the still-visible list.
-    await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
+    // The customer intentionally edits the field and searches again --
+    // this is a brand new search, not a reveal of a stale list.
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Toshkentdagi");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+    await expect(page.getByRole("button", { name: /Toshkentdagi ofis, 1/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Toshkentdagi ofis, 2/ })).toBeVisible();
+    // Neither of these two far results auto-applies, so nothing about A's
+    // coordinate/confirmation has changed yet -- only the list populated.
+    await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).toBeChecked();
 
-    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Amir Temur ko‘chasi 24B, Navoiy");
-    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
-    await expect(page.getByLabel("Ko‘cha yoki joylashuv *")).toHaveValue("Amir Temur ko‘chasi");
-    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "40.1039");
-    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lng", "65.3688");
-    await expect(page.getByTestId("map-reconfirmation")).toBeVisible();
+    await page.getByRole("button", { name: /Toshkentdagi ofis, 1/ }).click();
+
+    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Toshkentdagi ofis, 1");
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Chilonzor tumani");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "41.311081");
+    // Tapping the new result changed the coordinate -- A's confirmation is
+    // now correctly invalidated.
     await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).not.toBeChecked();
+    await expect(page.locator(".map-results")).toHaveCount(0);
   });
 
   test("a successful geolocation moves the pin, moves the camera to the same coordinate, and autofills the address", async ({ page, context }) => {
