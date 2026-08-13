@@ -9,5 +9,14 @@ export const beginReverse=(current:MapLocationSelection):MapLocationSelection=>(
 export const receiveSuggestion=(current:MapLocationSelection,suggestion:GeocodingResult|null):MapLocationSelection=>({...current,suggestion:suggestion?{...suggestion,label:suggestion.formattedAddress}:undefined,state:current.state==='NEEDS_RECONFIRMATION'?'NEEDS_RECONFIRMATION':suggestion?'SUGGESTION_AVAILABLE':'SELECTED'})
 export const confirmSelection=(current:MapLocationSelection):MapLocationSelection=>{if(!current.coordinate||!isValidCoordinate(current.coordinate))throw new Error('Valid coordinates required');return{...current,state:'CONFIRMED',confirmedAt:new Date().toISOString(),error:undefined}}
 export const materialAddressChange=(current:MapLocationSelection):MapLocationSelection=>current.confirmedAt?{...current,state:'NEEDS_RECONFIRMATION',confirmedAt:undefined}:current
-export const applySuggestion=<T extends{district:string;street:string;house:string}>(address:T,suggestion:AddressSuggestion):T=>({...address,district:suggestion.district||address.district,street:suggestion.street||address.street,house:suggestion.house||address.house})
+// Map-derived fields are authoritative from the most recently resolved
+// coordinate -- never merged with whatever was there before. A written
+// address that still reflects an EARLIER coordinate (because a field
+// merge quietly kept it) is exactly the "courier gets pin A, address B"
+// failure this must prevent, so a suggestion field Yandex didn't return is
+// honestly blanked here, never left carrying a stale value from a
+// previous location. Courier-specific fields (entrance/floor/apartment/
+// landmark/notes) are never touched by this function at all -- callers
+// only ever pass district/street/house through it.
+export const applySuggestion=<T extends{district:string;street:string;house:string}>(address:T,suggestion:AddressSuggestion):T=>({...address,district:suggestion.district||'',street:suggestion.street||'',house:suggestion.house||''})
 export const addressConfidence=(selection:MapLocationSelection,requiredComplete:boolean,inZone:boolean,warning=false)=>!selection.confirmedAt||selection.state==='NEEDS_RECONFIRMATION'?'CUSTOMER_CONFIRMATION_REQUIRED':requiredComplete&&inZone&&!warning?'COMPLETE':'NEEDS_CLARIFICATION'

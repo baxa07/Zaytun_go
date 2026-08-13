@@ -196,9 +196,19 @@ export class YandexMapAdapter implements MapAdapter {
     if (!this.searchKey) throw new MapProviderError("SEARCH_CONFIG_MISSING", "Yandex manzil qidiruv kaliti sozlanmagan");
     let suggested: YandexSuggestItem[];
     try {
-      suggested = await yandex.suggest({ text: query, limit: 5 });
+      // Geosuggest returns text completions only, never coordinates (see
+      // YandexSuggestItem -- no geometry field), so a follow-up
+      // search()-by-uri/text is genuinely required to resolve each
+      // candidate to a coordinate; this isn't avoidable without a
+      // different Yandex API. What IS avoidable is resolving more
+      // candidates than a small mobile results list needs -- capped at 3
+      // (was 5) to reduce worst-case requests-per-keystroke-triggered-
+      // search from 1+5 to 1+3, a direct, low-risk reduction in quota/
+      // rate-limit exposure without changing the adapter interface.
+      suggested = await yandex.suggest({ text: query, limit: 3 });
     } catch (error) {
       diagnostic("Geosuggest request failed", errorDetails(error));
+      if (import.meta.env.DEV) console.error("[ZAYTUN map] raw Geosuggest error (dev-only, never logged in production, never shown to the customer):", error);
       throw new MapProviderError("SUGGEST_FAILED", `Yandex manzil takliflari olinmadi${error instanceof Error ? `: ${error.name}` : ""}`, true);
     }
     const resolved = await Promise.all(suggested.map(async (suggestion) => {
@@ -207,6 +217,7 @@ export class YandexMapAdapter implements MapAdapter {
         return features[0] ? parseFeature(features[0], suggestion) : null;
       } catch (error) {
         diagnostic("Search request failed", errorDetails(error));
+        if (import.meta.env.DEV) console.error("[ZAYTUN map] raw Search error (dev-only, never logged in production, never shown to the customer):", error);
         return null;
       }
     }));

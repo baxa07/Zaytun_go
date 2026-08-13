@@ -552,27 +552,37 @@ function DeliveryAddressFields({
   const [detailsOpen, setDetailsOpen] = useState(
     () => Boolean(address.entrance || address.floor || address.apartment || address.landmark || address.deliveryNotes),
   );
-  // Automatic empty-field-only autofill (distinct from the explicit
-  // "Manzilni qo'llash" apply below): the instant a reverse-geocode
-  // suggestion resolves, quietly fill only whichever of district/street/
-  // house are still empty -- never touch a field the customer already
-  // typed into. Tracked by object identity so this fires once per genuine
-  // new suggestion, not on every unrelated re-render.
+  // Automatic map-derived autofill: the instant a coordinate resolves (via
+  // search, geolocation, or a manual pin move/drag -- MapPicker routes all
+  // three through the same choose() pipeline), district/street/house
+  // become authoritative from THAT resolved location, replacing whatever
+  // was there before -- never merged with a prior, now-stale value. A
+  // customer who searched Location A, saw its address populate, then
+  // searched or dragged the pin to Location B must see B's address, not a
+  // mix of A and B -- a pin at one coordinate with written text describing
+  // a different one is exactly the failure this guards against. Courier-
+  // specific fields (entrance/floor/apartment/landmark/notes) are never
+  // touched here -- applySuggestion (src/maps/core.ts) only ever writes
+  // district/street/house. Tracked by suggestion object identity so this
+  // fires once per genuinely new resolution, not on every unrelated
+  // re-render. Distinct from the explicit "Manzilni qo'llash" button below,
+  // which lets the customer force-reapply the same suggestion again after
+  // manually editing a field, without needing to re-resolve the pin.
   const autoFilledSuggestion = useRef<AddressSuggestion | undefined>(undefined);
   const [autoFillNotice, setAutoFillNotice] = useState(false);
   useEffect(() => {
     const suggestion = mapSelection.suggestion;
     if (!suggestion || suggestion === autoFilledSuggestion.current) return;
     autoFilledSuggestion.current = suggestion;
-    let filledAny = false;
+    const resolved = applySuggestion({ district: address.district, street: address.street, house: address.house }, suggestion);
+    let changedAny = false;
     (["district", "street", "house"] as const).forEach((key) => {
-      const suggested = suggestion[key];
-      if (suggested && !address[key].trim()) {
-        set(key, suggested);
-        filledAny = true;
+      if (resolved[key] !== address[key]) {
+        set(key, resolved[key]);
+        changedAny = true;
       }
     });
-    if (filledAny) {
+    if (changedAny) {
       setAutoFillNotice(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
