@@ -22,7 +22,18 @@ export class MockMapAdapter implements MapAdapter {
       options.onSelect({ latitude: options.center.latitude + (0.5 - (event.clientY - rect.top) / Math.max(rect.height, 1)) * 0.02, longitude: options.center.longitude + ((event.clientX - rect.left) / Math.max(rect.width, 1) - 0.5) * 0.02 });
     });
     container.append(surface);
-    return { setCoordinate: () => pin.classList.add("selected"), dispose: () => { container.innerHTML = ""; } };
+    // Exposed as data attributes (not a visual camera -- this is a static
+    // mock background) purely so tests can assert whether/where a recenter
+    // happened, same as production's real map camera move.
+    return {
+      setCoordinate: () => pin.classList.add("selected"),
+      recenter: (coordinate, zoom) => {
+        surface.dataset.cameraLat = String(coordinate.latitude);
+        surface.dataset.cameraLng = String(coordinate.longitude);
+        if (zoom !== undefined) surface.dataset.cameraZoom = String(zoom);
+      },
+      dispose: () => { container.innerHTML = ""; },
+    };
   }
   async search(query: string) {
     const normalized = query.trim().toLowerCase();

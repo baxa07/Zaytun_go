@@ -6,10 +6,14 @@ import { YandexMapAdapter } from "./yandex";
 // still needs (map rendering). Search/suggest/reverse-geocode no longer
 // touch this at all -- they call Yandex's REST APIs directly via fetch(),
 // mocked below.
-function fakeYmaps3() {
+function fakeYmaps3(setLocation?: (location: { center: [number, number]; zoom?: number }) => void) {
   return {
     ready: Promise.resolve(),
-    YMap: class { addChild() {} destroy() {} },
+    YMap: class {
+      addChild() {}
+      destroy() {}
+      setLocation = setLocation;
+    },
     YMapDefaultSchemeLayer: class {},
     YMapDefaultFeaturesLayer: class {},
     YMapMarker: class { update() {} },
@@ -153,6 +157,28 @@ describe("YandexMapAdapter: REST-backed search/geosuggest/reverse-geocode", () =
 
     expect(controller).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("recenter() calls the SDK's setLocation with the target coordinate and zoom", async () => {
+    const setLocation = vi.fn();
+    (window as unknown as { ymaps3: unknown }).ymaps3 = fakeYmaps3(setLocation);
+    vi.stubGlobal("fetch", vi.fn());
+
+    const adapter = new YandexMapAdapter("maps-key", "search-key", "geosuggest-key");
+    const controller = await adapter.initialize(fakeContainer(), { center: { latitude: 40.1, longitude: 65.4 }, zoom: 17, onSelect: () => {} });
+    controller.recenter({ latitude: 40.084673, longitude: 65.403434 }, 17);
+
+    expect(setLocation).toHaveBeenCalledWith({ center: [65.403434, 40.084673], zoom: 17 });
+  });
+
+  it("recenter() never throws even if the loaded SDK doesn't expose setLocation at all", async () => {
+    (window as unknown as { ymaps3: unknown }).ymaps3 = fakeYmaps3(undefined);
+    vi.stubGlobal("fetch", vi.fn());
+
+    const adapter = new YandexMapAdapter("maps-key", "search-key", "geosuggest-key");
+    const controller = await adapter.initialize(fakeContainer(), { center: { latitude: 40.1, longitude: 65.4 }, zoom: 17, onSelect: () => {} });
+
+    expect(() => controller.recenter({ latitude: 40.084673, longitude: 65.403434 }, 17)).not.toThrow();
   });
 
   it("search still fails cleanly even if the map core script never loaded (search never depends on window.ymaps3)", async () => {

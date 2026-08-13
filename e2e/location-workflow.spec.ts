@@ -366,3 +366,103 @@ test.describe("map-derived address stays in sync with the pin (never a stale mer
     await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
   });
 });
+
+test.describe("map camera follows automatic selection (search, geolocation, alternative pick)", () => {
+  test("a search selection replaces the search field with the selected address and moves the map camera there", async ({ page }) => {
+    await openCheckout(page);
+    await fillRequiredAddress(page);
+
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+
+    // Search field no longer shows the raw typed query -- it shows the
+    // selected, normalized result, so it's obvious the search actually
+    // took effect.
+    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Amir Temur ko‘chasi 24B, Navoiy");
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
+    await expect(page.getByLabel("Ko‘cha yoki joylashuv *")).toHaveValue("Amir Temur ko‘chasi");
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
+    // The map camera (not just the pin) moved to the selected location --
+    // src/maps/mock.ts's recenter() records this as a data attribute on
+    // the same element production's real map camera move affects.
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "40.1039");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lng", "65.3688");
+  });
+
+  test("selecting an alternative result from the list replaces the search field, pin, camera, and address, and invalidates confirmation", async ({ page }) => {
+    await openCheckout(page);
+    await fillRequiredAddress(page);
+
+    // "Navoiy" matches two mock points -- the closer one (Navoiy Markaziy
+    // bozori) auto-applies as Location A.
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Navoiy");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Navoiy Markaziy bozori");
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Navoiy shahri");
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+
+    // Now pick the OTHER result (Location B) from the still-visible list.
+    await page.getByRole("button", { name: /Amir Temur ko‘chasi 24B/ }).click();
+
+    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Amir Temur ko‘chasi 24B, Navoiy");
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
+    await expect(page.getByLabel("Ko‘cha yoki joylashuv *")).toHaveValue("Amir Temur ko‘chasi");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "40.1039");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lng", "65.3688");
+    await expect(page.getByTestId("map-reconfirmation")).toBeVisible();
+    await expect(page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan")).not.toBeChecked();
+  });
+
+  test("a successful geolocation moves the pin, moves the camera to the same coordinate, and autofills the address", async ({ page, context }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 40.1039, longitude: 65.3688 });
+    await openCheckout(page);
+
+    await page.getByTestId("use-my-location").click();
+
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
+    await expect(page.getByTestId("map-suggestion")).toContainText("Yangiariq MFY");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "40.1039");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lng", "65.3688");
+  });
+
+  test("a failed search after a valid selection leaves the search field, pin, camera, and address exactly as they were", async ({ page }) => {
+    await openCheckout(page);
+    await fillRequiredAddress(page);
+
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+    await expect(page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish")).toHaveValue("Amir Temur ko‘chasi 24B, Navoiy");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "40.1039");
+
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("error");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+    await expect(page.locator(".search-status")).toContainText("Manzilni hozir qidirib bo‘lmadi");
+
+    // The camera never moved for the failed attempt -- still exactly
+    // where Location A left it.
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "40.1039");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lng", "65.3688");
+    await expect(page.getByLabel("Mahalla yoki tuman *")).toHaveValue("Yangiariq MFY");
+    await expect(page.getByLabel("Ko‘cha yoki joylashuv *")).toHaveValue("Amir Temur ko‘chasi");
+    await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");
+  });
+
+  test("manually moving the pin does not recenter the camera -- only SEARCH/GEOLOCATION/list-selection do", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openCheckout(page);
+    await fillRequiredAddress(page);
+
+    await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
+    await page.getByRole("button", { name: "Qidirish" }).click();
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "40.1039");
+
+    // A manual tap moves the pin/coordinate (and the written address, via
+    // reverse-geocode) but must never touch the camera -- the customer is
+    // already looking at this viewport.
+    await page.getByTestId("map-picker-set").click({ position: { x: 40, y: 40 } });
+    await expect(page.getByTestId("address-autofilled-notice")).toBeVisible();
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lat", "40.1039");
+    await expect(page.getByTestId("map-picker-set")).toHaveAttribute("data-camera-lng", "65.3688");
+  });
+});

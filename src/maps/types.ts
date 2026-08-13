@@ -6,7 +6,7 @@ export interface AddressSuggestion extends GeocodingResult{label:string}
 export type MapSelectionState='NOT_SELECTED'|'SELECTED'|'REVERSE_GEOCODING'|'SUGGESTION_AVAILABLE'|'CONFIRMED'|'NEEDS_RECONFIRMATION'|'ERROR'
 export type LocationSource='SEARCH'|'GEOLOCATION'|'MAP'
 export interface MapLocationSelection{coordinate?:MapCoordinate;state:MapSelectionState;suggestion?:AddressSuggestion;confirmedAt?:string;provider:MapProvider;error?:string;source?:LocationSource}
-export interface MapController{setCoordinate(coordinate:MapCoordinate):void;dispose():void}
+export interface MapController{setCoordinate(coordinate:MapCoordinate):void;recenter(coordinate:MapCoordinate,zoom?:number):void;dispose():void}
 export interface MapAdapter{readonly provider:MapProvider;load():Promise<void>;initialize(container:HTMLElement,options:{center:MapCoordinate;zoom:number;selected?:MapCoordinate;onSelect:(coordinate:MapCoordinate)=>void}):Promise<MapController>;search(query:string):Promise<AddressSuggestion[]>;reverseGeocode(coordinate:MapCoordinate):Promise<GeocodingResult|null>}
 export type MapProviderErrorCode='MISSING_CONFIG'|'CORE_LOAD_FAILED'|'READY_TIMEOUT'|'READY_FAILED'|'MAP_CONTAINER_INVALID'|'MAP_INIT_FAILED'|'SEARCH_CONFIG_MISSING'|'SUGGEST_CONFIG_MISSING'|'SEARCH_SERVICE_UNAVAILABLE'|'SEARCH_FAILED'|'SUGGEST_FAILED'|'REVERSE_GEOCODING_FAILED'|'GEOCODING_FAILED'|'NO_RESULTS'|'UNAVAILABLE'
 export class MapProviderError extends Error{constructor(public code:MapProviderErrorCode,message:string,public retryable=false){super(message);this.name='MapProviderError'}}

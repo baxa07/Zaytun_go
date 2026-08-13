@@ -13,7 +13,7 @@ import {
 // only YMap/YMapMarker/etc, nothing search-related.
 type YMaps3 = {
   ready: Promise<void>;
-  YMap: new (container: HTMLElement, options: unknown) => { addChild(value: unknown): void; destroy(): void };
+  YMap: new (container: HTMLElement, options: unknown) => { addChild(value: unknown): void; destroy(): void; setLocation?(location: { center: [number, number]; zoom?: number; duration?: number }): unknown };
   YMapDefaultSchemeLayer: new (options: Record<string, unknown>) => unknown;
   YMapDefaultFeaturesLayer: new (options: Record<string, unknown>) => unknown;
   YMapMarker: new (options: unknown, element: HTMLElement) => { update(options: unknown): void };
@@ -245,7 +245,7 @@ export class YandexMapAdapter implements MapAdapter {
     const bounds = container.getBoundingClientRect();
     diagnostic("map initialization started", { width: Math.round(bounds.width), height: Math.round(bounds.height) });
     if (bounds.width <= 0 || bounds.height <= 0) throw new MapProviderError("MAP_CONTAINER_INVALID", "Xarita maydonining o‘lchami noto‘g‘ri", true);
-    let map: { addChild(value: unknown): void; destroy(): void } | undefined;
+    let map: { addChild(value: unknown): void; destroy(): void; setLocation?(location: { center: [number, number]; zoom?: number; duration?: number }): unknown } | undefined;
     try {
       container.replaceChildren();
       map = new yandex.YMap(container, { location: { center: [options.center.longitude, options.center.latitude], zoom: options.zoom }, behaviors: ["drag", "scrollZoom", "pinchZoom", "dblClick"] });
@@ -259,7 +259,22 @@ export class YandexMapAdapter implements MapAdapter {
       map.addChild(marker);
       map.addChild(new yandex.YMapListener({ layer: "any", onClick: (_layer: unknown, coordinates: [number, number]) => options.onSelect({ longitude: coordinates[0], latitude: coordinates[1] }) }));
       diagnostic("map initialization succeeded");
-      return { setCoordinate: (coordinate) => marker.update({ coordinates: [coordinate.longitude, coordinate.latitude] }), dispose: () => map?.destroy() };
+      return {
+        setCoordinate: (coordinate) => marker.update({ coordinates: [coordinate.longitude, coordinate.latitude] }),
+        // Camera move is a best-effort enhancement layered on top of
+        // already-correct pin placement/address resolution -- if the SDK
+        // doesn't expose setLocation() (or it throws), the pin and address
+        // are still exactly right, the customer just needs to pan/zoom
+        // manually to see it, so this never breaks the rest of the flow.
+        recenter: (coordinate, zoom) => {
+          try {
+            map?.setLocation?.({ center: [coordinate.longitude, coordinate.latitude], zoom });
+          } catch (error) {
+            diagnostic("map recenter failed", errorDetails(error));
+          }
+        },
+        dispose: () => map?.destroy(),
+      };
     } catch (error) {
       map?.destroy();
       diagnostic("map initialization failed", errorDetails(error));
