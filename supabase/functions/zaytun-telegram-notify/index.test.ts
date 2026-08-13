@@ -14,6 +14,8 @@ const sampleData: NotificationData = {
   total: 260000,
   paymentMethod: "CLICK",
   customerName: "Bahrom",
+  customerPhone: "+998901234567",
+  addressSummary: "Guliston tumani, Test ko‘chasi, 24B",
 };
 
 function fakeTelegram() {

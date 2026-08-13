@@ -152,7 +152,7 @@ if (import.meta.main) {
 
         const { data: order } = await admin
           .from("orders")
-          .select("number, order_type, total, payment_method, customer_name, branch_id")
+          .select("number, order_type, total, payment_method, customer_name, primary_phone, branch_id")
           .eq("id", outboxRow.order_id)
           .maybeSingle();
         if (!order) return null;
@@ -166,6 +166,18 @@ if (import.meta.main) {
         const chatIdText = branch?.notification_chat_id || fallbackChatId;
         if (!chatIdText) return null;
 
+        // District + street + house only -- entrance/floor/apartment/
+        // landmark/notes/coordinates stay in the authenticated panel.
+        let addressSummary: string | undefined;
+        if (order.order_type === "DELIVERY") {
+          const { data: address } = await admin
+            .from("customer_addresses")
+            .select("district, street, house")
+            .eq("order_id", outboxRow.order_id)
+            .maybeSingle();
+          if (address) addressSummary = [address.district, address.street, address.house].filter(Boolean).join(", ");
+        }
+
         return {
           channel: "TELEGRAM_RESTAURANT_NEW_ORDER",
           data: {
@@ -175,6 +187,8 @@ if (import.meta.main) {
             total: order.total,
             paymentMethod: order.payment_method,
             customerName: order.customer_name,
+            customerPhone: order.primary_phone,
+            addressSummary,
           },
         };
       },

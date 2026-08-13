@@ -15,19 +15,22 @@ const base: NotificationData = {
   total: 260000,
   paymentMethod: "CLICK",
   customerName: "Bahrom",
+  customerPhone: "+998901234567",
+  addressSummary: "Guliston tumani, Test ko‘chasi, 24B",
 };
 
-Deno.test("formats the exact requested shape", () => {
+Deno.test("formats the exact requested shape, including phone and address for a delivery order (Restaurant UI Phase 1)", () => {
   const message = formatNewOrderMessage(base);
   assertEquals(
     message,
-    "🔔 Yangi buyurtma — ZG-1051\n\nYetkazib berish\n260 000 so‘m\nTo‘lov: Click\n\nMijoz: Bahrom",
+    "🔔 Yangi buyurtma — ZG-1051\n\nYetkazib berish\n260 000 so‘m\nTo‘lov: Click\n\nMijoz: Bahrom\nTel: +998901234567\nManzil: Guliston tumani, Test ko‘chasi, 24B",
   );
 });
 
-Deno.test("pickup orders label correctly", () => {
-  const message = formatNewOrderMessage({ ...base, orderType: "PICKUP" });
+Deno.test("pickup orders label correctly and never carry an address line (no addressSummary)", () => {
+  const message = formatNewOrderMessage({ ...base, orderType: "PICKUP", addressSummary: undefined });
   assertStringIncludes(message, "Olib ketish");
+  assertEquals(message.toLowerCase().includes("manzil:"), false);
 });
 
 Deno.test("every supported payment method maps to a customer-friendly label", () => {
@@ -36,13 +39,13 @@ Deno.test("every supported payment method maps to a customer-friendly label", ()
   assertStringIncludes(formatNewOrderMessage({ ...base, paymentMethod: "CARD_AT_PICKUP" }), "To‘lov: Karta (restoranda)");
 });
 
-Deno.test("never includes address, phone, coordinates, or any internal identifier", () => {
+Deno.test("never includes exact coordinates, an internal UUID, or OTP text -- phone and a short address summary are the deliberate exception (Restaurant UI Phase 1)", () => {
   const message = formatNewOrderMessage(base);
-  assertEquals(/\+?\d{9,}/.test(message), false, "no phone-shaped digit run");
   assertEquals(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(message), false, "no UUID");
   assertEquals(message.toLowerCase().includes("koordinat"), false);
-  assertEquals(message.toLowerCase().includes("manzil"), false);
   assertEquals(message.toLowerCase().includes("otp"), false);
+  assertStringIncludes(message, base.customerPhone);
+  assertStringIncludes(message, base.addressSummary!);
 });
 
 Deno.test("the inline keyboard has exactly one button pointing at the production restaurant panel", () => {

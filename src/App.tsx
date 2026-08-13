@@ -1927,37 +1927,59 @@ function Restaurant() {
       document.removeEventListener("keydown", arm);
     };
   }, []);
-  const previousUnacknowledgedIds = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const currentIds = new Set(unacknowledgedNew.map((o) => o.id));
-    // Only a genuinely NEW unacknowledged id (not present last render)
-    // triggers a fresh alert sound -- an ordinary Realtime refresh/
-    // reconnect that returns the same still-unacknowledged orders never
-    // replays them as new.
-    const hasNewArrival = [...currentIds].some(
-      (id) => !previousUnacknowledgedIds.current.has(id),
-    );
-    previousUnacknowledgedIds.current = currentIds;
-    if (!hasNewArrival) return;
+  // Deliberately loud and urgent -- a missed delivery order is far
+  // costlier than an occasionally-jarring alert, so this is not tuned as
+  // a subtle UI chime. Square-wave oscillators at high gain, a 4-note
+  // alternating pattern instead of a soft two-note tone.
+  const playAlertChime = useCallback(() => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     try {
       const playNote = (frequency: number, startOffset: number, duration: number) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
+        osc.type = "square";
         osc.frequency.value = frequency;
-        gain.gain.value = 0.2;
+        gain.gain.value = 0.6;
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(ctx.currentTime + startOffset);
         osc.stop(ctx.currentTime + startOffset + duration);
       };
-      playNote(880, 0, 0.18);
-      playNote(1108, 0.22, 0.24);
+      playNote(1046, 0, 0.16);
+      playNote(1318, 0.18, 0.16);
+      playNote(1046, 0.36, 0.16);
+      playNote(1318, 0.54, 0.22);
     } catch {
       /* visible alert remains the source of truth -- never block on audio */
     }
-  }, [unacknowledgedNew]);
+  }, []);
+  const previousUnacknowledgedIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentIds = new Set(unacknowledgedNew.map((o) => o.id));
+    // Only a genuinely NEW unacknowledged id (not present last render)
+    // triggers an immediate alert -- an ordinary Realtime refresh/
+    // reconnect that returns the same still-unacknowledged orders never
+    // replays them as new. The repeat-until-acknowledged behavior below is
+    // separate and keys off count alone, not this arrival edge.
+    const hasNewArrival = [...currentIds].some(
+      (id) => !previousUnacknowledgedIds.current.has(id),
+    );
+    previousUnacknowledgedIds.current = currentIds;
+    if (hasNewArrival) playAlertChime();
+  }, [unacknowledgedNew, playAlertChime]);
+  // Business-critical alert: keeps sounding on an interval for as long as
+  // ANY order remains unacknowledged, not just once on arrival -- staff
+  // stepping away from the screen must still be paged back. Stops the
+  // instant the count reaches zero (acknowledged, individually or via
+  // "Barchasini ko'rdim"), and never restarts on a page reload for
+  // already-acknowledged orders (acknowledged state is persisted).
+  const hasUnacknowledgedOrders = unacknowledgedNew.length > 0;
+  useEffect(() => {
+    if (!hasUnacknowledgedOrders) return;
+    const interval = window.setInterval(playAlertChime, 8000);
+    return () => window.clearInterval(interval);
+  }, [hasUnacknowledgedOrders, playAlertChime]);
   const boardRef = useRef<HTMLDivElement>(null);
   const [scrollable, setScrollable] = useState(false);
   useEffect(() => {
@@ -2886,6 +2908,7 @@ function OrderDetail() {
           </div>
           <aside className="panel action-panel">
             <h2>Keyingi amal</h2>
+            <p className="prep-time-hint" data-testid="average-prep-time">⏱ O‘rtacha tayyorlash vaqti: 20–25 daqiqa</p>
             {operationalError && <p className="error" role="alert" data-testid="operational-error">{operationalError}</p>}
             {order.type === "DELIVERY" && order.deliveryReviewStatus === "REVIEW_REQUIRED" && (
               <section className="delivery-review-panel" data-testid="delivery-review-required">

@@ -1,8 +1,12 @@
 // Message content rules (deliberate, not incidental): concise, and never
-// includes full delivery address, customer phone number, exact
-// coordinates, payment secrets, OTP, internal UUIDs, or notes. The
-// authenticated restaurant panel (behind the inline button below) remains
-// the source for anything sensitive.
+// includes exact coordinates, payment secrets, OTP, internal UUIDs,
+// tracking tokens, delivery notes, or unit-level pin/entrance detail --
+// the authenticated restaurant panel (behind the inline button below)
+// remains the source for anything that granular. Customer phone and a
+// short district+street+house address summary ARE included here
+// deliberately (Restaurant UI Phase 1): this channel's audience is
+// restaurant staff coordinating delivery, not the general public, and
+// they need enough to act on the alert without opening the panel first.
 
 export interface NotificationData {
   chatId: number;
@@ -11,6 +15,11 @@ export interface NotificationData {
   total: number;
   paymentMethod: string;
   customerName: string;
+  customerPhone: string;
+  // District + street + house only, never entrance/floor/apartment/
+  // landmark/notes/coordinates -- undefined for PICKUP orders, which have
+  // no delivery address at all.
+  addressSummary?: string;
 }
 
 // The production customer-app origin is already a plain, non-secret
@@ -45,6 +54,8 @@ export function formatNewOrderMessage(data: NotificationData): string {
     `To‘lov: ${paymentLabel}`,
     "",
     `Mijoz: ${data.customerName}`,
+    `Tel: ${data.customerPhone}`,
+    ...(data.addressSummary ? [`Manzil: ${data.addressSummary}`] : []),
   ].join("\n");
 }
 
