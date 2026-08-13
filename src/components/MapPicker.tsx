@@ -4,14 +4,6 @@ import { mapCustomerFacingLocationError } from "../maps/customerLocationErrorCop
 import { createMapAdapter, defaultMapLocation } from "../maps/factory";
 import type { AddressSuggestion, LocationSource, MapController, MapCoordinate, MapLocationSelection } from "../maps/types";
 
-// A search result further than this from the configured restaurant/service
-// area is never auto-applied -- only ever reachable by the customer
-// explicitly clicking it in the results list. This exists purely to catch
-// an obviously wrong/distant mismatch (a same-named street in a different
-// city or country); it is deliberately generous so it never second-guesses
-// a genuinely valid address that merely falls outside the delivery radius
-// (that is a separate, already-handled concept -- see deliveryZoneResult).
-const SEARCH_AUTO_APPLY_RADIUS_KM = 200;
 const NO_RESULTS_MESSAGE = "Manzil topilmadi. Boshqacha yozib ko‘ring yoki xaritada belgilang.";
 
 export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapLocationSelection; onChange: (value: MapLocationSelection) => void; onApplySuggestion: (suggestion: AddressSuggestion) => void }) {
@@ -141,34 +133,18 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
       try {
         const found = await adapter.search(query);
         if (!found.length) { setSearchMessage(NO_RESULTS_MESSAGE); return; }
-        // Rank by proximity to the configured service area so the closest,
-        // most plausible match is what gets auto-applied -- never an
-        // arbitrary "first" result from the provider's own ordering.
+        // Never auto-applied, however close or however few results come
+        // back: the same street name can genuinely exist in more than one
+        // city, so silently picking a "best guess" risks confirming a pin
+        // in the wrong city entirely -- worse than merely inconvenient,
+        // since nothing else in the flow would catch that mistake. Ranked
+        // by proximity to the configured service area purely so the most
+        // plausible match is listed first, never an arbitrary order from
+        // the provider itself; the customer still always taps one.
         const center = defaultMapLocation();
         const ranked = [...found].sort((a, b) => haversineKm(center, a.coordinate) - haversineKm(center, b.coordinate));
         setSearchMessage(`${ranked.length} ta natija`);
-        const best = ranked[0];
-        // Never auto-applied when the closest match is still implausibly
-        // far away (a different city/country mismatch) -- that stays an
-        // explicit, customer-driven pick from the list, which is the only
-        // case the list actually needs to stay open for.
-        if (haversineKm(center, best.coordinate) <= SEARCH_AUTO_APPLY_RADIUS_KM) {
-          // Auto-apply is a completed selection, not a menu of options --
-          // the list closes immediately, exactly like an explicit result
-          // click below. Wanting a different address means editing the
-          // query and searching again, not picking from a leftover panel.
-          setResults([]);
-          controller.current?.setCoordinate(best.coordinate);
-          controller.current?.recenter(best.coordinate, center.zoom);
-          // The selected result replaces the raw typed query -- otherwise
-          // the field keeps showing what the customer typed even though a
-          // different (normalized, resolved) address is what's actually
-          // selected, which reads as if the search never took effect.
-          setQuery(best.label || best.formattedAddress);
-          void choose(best.coordinate, "SEARCH", best);
-        } else {
-          setResults(ranked);
-        }
+        setResults(ranked);
       } catch (error) {
         setSearchMessage(mapCustomerFacingLocationError(error, "search"));
       } finally {
