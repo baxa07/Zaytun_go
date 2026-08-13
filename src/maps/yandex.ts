@@ -1,3 +1,4 @@
+import { defaultMapLocation } from "./core";
 import {
   MapProviderError,
   type AddressSuggestion,
@@ -5,27 +6,13 @@ import {
   type MapAdapter,
   type MapController,
   type MapCoordinate,
+  type MapProviderErrorCode,
 } from "./types";
 
-type YandexFeature = {
-  geometry?: { coordinates?: unknown };
-  properties?: Record<string, unknown>;
-};
-type YandexSuggestItem = {
-  title?: string | { text?: string };
-  subtitle?: string | { text?: string };
-  uri?: string;
-  value?: string;
-  address?: {
-    formattedAddress?: string;
-    component?: Array<{ kind?: string[]; name?: string }>;
-  };
-};
+// The map (rendering/pin/interaction) stays on the JS Maps API v3 SDK --
+// only YMap/YMapMarker/etc, nothing search-related.
 type YMaps3 = {
   ready: Promise<void>;
-  getDefaultConfig(): { setApikeys(keys: { search?: string; suggest?: string }): void };
-  search(options: { text?: string | [number, number]; uri?: string; limit?: number }): Promise<YandexFeature[]>;
-  suggest(options: { text: string; limit?: number }): Promise<YandexSuggestItem[]>;
   YMap: new (container: HTMLElement, options: unknown) => { addChild(value: unknown): void; destroy(): void };
   YMapDefaultSchemeLayer: new (options: Record<string, unknown>) => unknown;
   YMapDefaultFeaturesLayer: new (options: Record<string, unknown>) => unknown;
@@ -37,8 +24,6 @@ declare global {
   interface Window {
     ymaps3?: YMaps3;
     __zaytunYandexCoreLoader?: Promise<YMaps3>;
-    __zaytunYandexSearchConfigLoader?: Promise<YMaps3>;
-    __zaytunYandexSearchConfigKeys?: string;
   }
 }
 
@@ -118,70 +103,130 @@ const loadYandexCore = (mapsKey: string) => {
   return promise;
 };
 
-// Search/Geosuggest key configuration is a SEPARATE, one-time step from
-// loading the map core -- rendering map tiles/markers needs neither key,
-// only YMap/YMapMarker/etc from the core script. Previously this ran
-// again on every search()/reverseGeocode() call (setApikeys() was inside
-// the same function the map's own init path also called), and ANY
-// failure from it was coded READY_FAILED -- a map-core error code -- so a
-// search-path problem could show "the map isn't working" even while the
-// map sat there rendering correctly. Configuring once, cached exactly
-// like the core script loader, fixes both: setApikeys() only ever runs
-// once per page session, and a failure here gets a search-specific code
-// that can never be confused with a map-core failure.
-const configureSearch = (api: YMaps3, searchKey: string, geosuggestKey: string) => {
-  const fingerprint = `${searchKey}|${geosuggestKey}`;
-  if (window.__zaytunYandexSearchConfigLoader) {
-    // Every real YandexMapAdapter instance in this app is built from the
-    // same static import.meta.env values, so this should never actually
-    // fire -- but if it ever did (e.g. a future multi-key scenario), fail
-    // loudly rather than silently keep serving the FIRST configuration to
-    // a caller expecting the second, different one.
-    if (window.__zaytunYandexSearchConfigKeys !== fingerprint) {
-      return Promise.reject(new MapProviderError("SEARCH_SERVICE_UNAVAILABLE", "Yandex qidiruv xizmatlari boshqa kalitlar bilan allaqachon sozlangan", false));
-    }
-    return window.__zaytunYandexSearchConfigLoader;
-  }
-  const promise = (async () => {
-    try {
-      api.getDefaultConfig().setApikeys({ search: searchKey, suggest: geosuggestKey });
-      diagnostic("Search/Geosuggest configuration succeeded", { searchPresent: Boolean(searchKey), searchLength: searchKey.length, geosuggestPresent: Boolean(geosuggestKey), geosuggestLength: geosuggestKey.length });
-    } catch (error) {
-      diagnostic("Search/Geosuggest configuration failed", errorDetails(error));
-      if (import.meta.env.DEV) console.error("[ZAYTUN map] raw Search/Geosuggest configuration error (dev-only, never logged in production, never shown to the customer):", error);
-      window.__zaytunYandexSearchConfigLoader = undefined;
-      window.__zaytunYandexSearchConfigKeys = undefined;
-      throw new MapProviderError("SEARCH_SERVICE_UNAVAILABLE", `Yandex qidiruv xizmatlari sozlanmadi${error instanceof Error ? `: ${error.name}` : ""}`, true);
-    }
-    return api;
-  })();
-  window.__zaytunYandexSearchConfigLoader = promise;
-  window.__zaytunYandexSearchConfigKeys = fingerprint;
-  return promise;
-};
+// --- Search / Geosuggest / reverse-geocode: Yandex HTTP REST APIs -------
+//
+// The JS Maps API v3's own ymaps3.search()/ymaps3.suggest() proved
+// unreliable on real production devices (repeated real-device failures
+// even after fixing the key-configuration-caching and error-classification
+// bugs those calls were tripping over -- see git history). Confirmed
+// separately, safely, without exposing any key value:
+//   - the exact same production Search and Geosuggest keys succeed
+//     (HTTP 200, correct results) against Yandex's classic REST endpoints
+//     with the production Referer
+//   - both endpoints send Access-Control-Allow-Origin: * and answer GET
+//     preflights correctly, so a direct browser fetch() is supported --
+//     no proxy/backend needed
+// So search/geosuggest/reverse-geocode now call these REST endpoints
+// directly. The map itself (YMap/YMapMarker/drag/click) is completely
+// unaffected -- it never used these methods.
+const GEOCODE_URL = "https://geocode-maps.yandex.ru/v1/";
+const SUGGEST_URL = "https://suggest-maps.yandex.ru/v1/suggest";
+// Soft bias only -- ranks results near the configured restaurant/service
+// area higher without excluding a genuinely valid address elsewhere (that
+// is a separate, already-handled concept: deliveryZoneResult). ~0.5
+// degrees of span is generous enough to cover the whole surrounding
+// region without ever acting as a hard restriction.
+const BIAS_SPAN = "0.5,0.5";
+const REST_TIMEOUT_MS = 8000;
 
 const textValue = (value: unknown) => typeof value === "string" ? value : typeof value === "object" && value ? String((value as { text?: unknown }).text || "") : "";
-const componentsFrom = (value: unknown): Array<{ kind?: string[]; name?: string }> => Array.isArray(value) ? value as Array<{ kind?: string[]; name?: string }> : [];
-const componentValue = (components: Array<{ kind?: string[]; name?: string }>, kinds: string[]) => components.find((component) => component.kind?.some((kind) => kinds.includes(kind)))?.name;
+const componentsFrom = (value: unknown): Array<{ kind?: string; name?: string }> => Array.isArray(value) ? value as Array<{ kind?: string; name?: string }> : [];
+const componentValue = (components: Array<{ kind?: string; name?: string }>, kinds: string[]) => components.find((component) => component.kind && kinds.includes(component.kind))?.name;
 
-const parseFeature = (feature: YandexFeature, fallback?: YandexSuggestItem): AddressSuggestion | null => {
-  const coordinates = feature.geometry?.coordinates;
-  if (!Array.isArray(coordinates) || coordinates.length < 2 || !coordinates.slice(0, 2).every(Number.isFinite)) return null;
-  const properties = feature.properties || {};
-  const metadata = (properties.metaDataProperty as Record<string, unknown> | undefined)?.GeocoderMetaData as Record<string, unknown> | undefined;
-  const address = (metadata?.Address || properties.address || fallback?.address || {}) as Record<string, unknown>;
-  const components = componentsFrom(address.Components || address.component || fallback?.address?.component);
-  const formattedAddress = String(address.formattedAddress || address.formatted || metadata?.text || properties.description || fallback?.address?.formattedAddress || textValue(fallback?.subtitle) || textValue(fallback?.title) || "");
-  const label = String(properties.name || textValue(fallback?.title) || formattedAddress);
+const fetchYandexRest = async (url: string, params: Record<string, string>, code: MapProviderErrorCode, message: string): Promise<unknown> => {
+  const query = new URLSearchParams(params).toString();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${url}?${query}`, { signal: controller.signal });
+  } catch (error) {
+    diagnostic(`${code} request threw`, errorDetails(error));
+    if (import.meta.env.DEV) console.error(`[ZAYTUN map] raw ${code} network error (dev-only, never logged in production, never shown to the customer):`, error);
+    throw new MapProviderError(code, message, true);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  if (!response.ok) {
+    diagnostic(`${code} request failed`, { status: response.status });
+    throw new MapProviderError(code, message, true);
+  }
+  try {
+    return await response.json();
+  } catch (error) {
+    diagnostic(`${code} response was not valid JSON`, errorDetails(error));
+    throw new MapProviderError(code, message, true);
+  }
+};
+
+// Yandex's classic Geocoder response wraps each hit in a GeoObject with
+// Point.pos as a SPACE-separated "lon lat" string (not an array), and
+// structured components at metaDataProperty.GeocoderMetaData.Address --
+// this shape (and its lowercase Component `kind` values, e.g. "house",
+// "street", "locality") is stable and well documented.
+const parseGeoObject = (geoObject: unknown): AddressSuggestion | null => {
+  if (!geoObject || typeof geoObject !== "object") return null;
+  const go = geoObject as Record<string, unknown>;
+  const point = go.Point as Record<string, unknown> | undefined;
+  const pos = typeof point?.pos === "string" ? point.pos : "";
+  const [lonRaw, latRaw] = pos.split(" ");
+  const longitude = Number(lonRaw);
+  const latitude = Number(latRaw);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return null;
+  const metaDataProperty = go.metaDataProperty as Record<string, unknown> | undefined;
+  const geocoderMetaData = metaDataProperty?.GeocoderMetaData as Record<string, unknown> | undefined;
+  const address = (geocoderMetaData?.Address || {}) as Record<string, unknown>;
+  const components = componentsFrom(address.Components);
+  const formattedAddress = String(address.formatted || go.description || go.name || "");
+  const label = String(go.name || formattedAddress);
   return {
     label,
     formattedAddress: formattedAddress || label,
-    coordinate: { longitude: Number(coordinates[0]), latitude: Number(coordinates[1]) },
-    providerPlaceId: fallback?.uri || String(properties.uri || "") || undefined,
+    coordinate: { latitude, longitude },
     district: componentValue(components, ["district", "area", "province"]),
     street: componentValue(components, ["street"]),
     house: componentValue(components, ["house"]),
   };
+};
+
+const geocodeRest = async (searchKey: string, geocodeParam: string, bias: MapCoordinate, code: MapProviderErrorCode, message: string): Promise<AddressSuggestion[]> => {
+  const data = await fetchYandexRest(GEOCODE_URL, {
+    apikey: searchKey,
+    geocode: geocodeParam,
+    format: "json",
+    ll: `${bias.longitude},${bias.latitude}`,
+    spn: BIAS_SPAN,
+  }, code, message);
+  const members = (data as { response?: { GeoObjectCollection?: { featureMember?: unknown[] } } })?.response?.GeoObjectCollection?.featureMember;
+  if (!Array.isArray(members)) return [];
+  return members
+    .map((member) => parseGeoObject((member as { GeoObject?: unknown })?.GeoObject))
+    .filter((value): value is AddressSuggestion => Boolean(value));
+};
+
+type RestSuggestCandidate = { title: string; formattedAddress: string };
+const suggestRest = async (geosuggestKey: string, query: string, bias: MapCoordinate): Promise<RestSuggestCandidate[]> => {
+  const data = await fetchYandexRest(SUGGEST_URL, {
+    apikey: geosuggestKey,
+    text: query,
+    print_address: "1",
+    types: "geo",
+    results: "3",
+    ll: `${bias.longitude},${bias.latitude}`,
+    spn: BIAS_SPAN,
+  }, "SUGGEST_FAILED", "Yandex manzil takliflari olinmadi");
+  const results = (data as { results?: unknown[] })?.results;
+  if (!Array.isArray(results)) return [];
+  return results
+    .slice(0, 3)
+    .map((result) => {
+      const r = result as Record<string, unknown>;
+      const address = r.address as Record<string, unknown> | undefined;
+      const title = textValue(r.title);
+      const formattedAddress = String(address?.formatted_address || textValue(r.subtitle) || title || "");
+      return { title, formattedAddress };
+    })
+    .filter((candidate) => candidate.title);
 };
 
 export class YandexMapAdapter implements MapAdapter {
@@ -192,17 +237,7 @@ export class YandexMapAdapter implements MapAdapter {
     if (!mapsKey) throw new MapProviderError("MISSING_CONFIG", "VITE_MAP_PROVIDER=yandex, lekin VITE_YANDEX_MAPS_API_KEY belgilanmagan");
   }
 
-  // Map-core loading (script + ymaps3.ready) never needs Search/Geosuggest
-  // keys -- only YMap/YMapMarker/etc from the core script. Kept separate
-  // from configureSearch() so a Search/Geosuggest problem can never
-  // prevent the map itself from loading, and load()/initialize() (which
-  // gate whether the map renders at all) never depend on it succeeding.
   private core() { return loadYandexCore(this.mapsKey); }
-  private async configured() {
-    const api = await this.core();
-    return configureSearch(api, this.searchKey, this.geosuggestKey);
-  }
-
   async load() { await this.core(); }
 
   async initialize(container: HTMLElement, options: { center: MapCoordinate; zoom: number; selected?: MapCoordinate; onSelect: (coordinate: MapCoordinate) => void }): Promise<MapController> {
@@ -235,31 +270,19 @@ export class YandexMapAdapter implements MapAdapter {
   async search(query: string) {
     if (!this.geosuggestKey) throw new MapProviderError("SUGGEST_CONFIG_MISSING", "Yandex manzil takliflari kaliti sozlanmagan");
     if (!this.searchKey) throw new MapProviderError("SEARCH_CONFIG_MISSING", "Yandex manzil qidiruv kaliti sozlanmagan");
-    const yandex = await this.configured();
-    let suggested: YandexSuggestItem[];
-    try {
-      // Geosuggest returns text completions only, never coordinates (see
-      // YandexSuggestItem -- no geometry field), so a follow-up
-      // search()-by-uri/text is genuinely required to resolve each
-      // candidate to a coordinate; this isn't avoidable without a
-      // different Yandex API. What IS avoidable is resolving more
-      // candidates than a small mobile results list needs -- capped at 3
-      // (was 5) to reduce worst-case requests-per-keystroke-triggered-
-      // search from 1+5 to 1+3, a direct, low-risk reduction in quota/
-      // rate-limit exposure without changing the adapter interface.
-      suggested = await yandex.suggest({ text: query, limit: 3 });
-    } catch (error) {
-      diagnostic("Geosuggest request failed", errorDetails(error));
-      if (import.meta.env.DEV) console.error("[ZAYTUN map] raw Geosuggest error (dev-only, never logged in production, never shown to the customer):", error);
-      throw new MapProviderError("SUGGEST_FAILED", `Yandex manzil takliflari olinmadi${error instanceof Error ? `: ${error.name}` : ""}`, true);
-    }
-    const resolved = await Promise.all(suggested.map(async (suggestion) => {
+    const bias = defaultMapLocation();
+    // Geosuggest returns text completions + address components, never
+    // coordinates, so a follow-up geocode call is genuinely required to
+    // resolve each candidate to a coordinate -- not avoidable without a
+    // different Yandex product. Resolving more candidates than a small
+    // mobile results list needs isn't: capped at 3.
+    const suggested = await suggestRest(this.geosuggestKey, query, bias);
+    const resolved = await Promise.all(suggested.map(async (candidate) => {
       try {
-        const features = await yandex.search(suggestion.uri ? { uri: suggestion.uri, limit: 1 } : { text: suggestion.address?.formattedAddress || textValue(suggestion.title), limit: 1 });
-        return features[0] ? parseFeature(features[0], suggestion) : null;
+        const results = await geocodeRest(this.searchKey, candidate.formattedAddress || candidate.title, bias, "SEARCH_FAILED", "Yandex manzil natijalarini koordinataga aylantirmadi");
+        return results[0] || null;
       } catch (error) {
-        diagnostic("Search request failed", errorDetails(error));
-        if (import.meta.env.DEV) console.error("[ZAYTUN map] raw Search error (dev-only, never logged in production, never shown to the customer):", error);
+        diagnostic("Geocode resolution for a suggestion failed", errorDetails(error));
         return null;
       }
     }));
@@ -271,14 +294,12 @@ export class YandexMapAdapter implements MapAdapter {
 
   async reverseGeocode(coordinate: MapCoordinate): Promise<GeocodingResult | null> {
     if (!this.searchKey) throw new MapProviderError("SEARCH_CONFIG_MISSING", "Yandex teskari geokodlash kaliti sozlanmagan");
-    const yandex = await this.configured();
     try {
-      const features = await yandex.search({ text: [coordinate.longitude, coordinate.latitude], limit: 1 });
-      const result = features[0] ? parseFeature(features[0]) : null;
-      return result ? { ...result, coordinate } : null;
+      const results = await geocodeRest(this.searchKey, `${coordinate.longitude},${coordinate.latitude}`, coordinate, "REVERSE_GEOCODING_FAILED", "Yandex pin manzilini aniqlamadi");
+      return results[0] ? { ...results[0], coordinate } : null;
     } catch (error) {
       diagnostic("Reverse-geocoding request failed", errorDetails(error));
-      throw new MapProviderError("REVERSE_GEOCODING_FAILED", `Yandex pin manzilini aniqlamadi${error instanceof Error ? `: ${error.name}` : ""}`, true);
+      throw error instanceof MapProviderError ? error : new MapProviderError("REVERSE_GEOCODING_FAILED", "Yandex pin manzilini aniqlamadi", true);
     }
   }
 }

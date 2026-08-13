@@ -20,3 +20,10 @@ export const materialAddressChange=(current:MapLocationSelection):MapLocationSel
 // only ever pass district/street/house through it.
 export const applySuggestion=<T extends{district:string;street:string;house:string}>(address:T,suggestion:AddressSuggestion):T=>({...address,district:suggestion.district||'',street:suggestion.street||'',house:suggestion.house||''})
 export const addressConfidence=(selection:MapLocationSelection,requiredComplete:boolean,inZone:boolean,warning=false)=>!selection.confirmedAt||selection.state==='NEEDS_RECONFIRMATION'?'CUSTOMER_CONFIRMATION_REQUIRED':requiredComplete&&inZone&&!warning?'COMPLETE':'NEEDS_CLARIFICATION'
+// Lives here (not factory.ts) so yandex.ts can import it directly to bias
+// REST search/geosuggest results toward the configured service area
+// without a factory.ts <-> yandex.ts circular import (factory.ts already
+// imports YandexMapAdapter from yandex.ts to build it). Re-exported from
+// factory.ts unchanged so existing callers (MapPicker.tsx) don't need to
+// change their import path.
+export const defaultMapLocation=()=>({latitude:Number(import.meta.env.VITE_DEFAULT_MAP_LAT||40.087274),longitude:Number(import.meta.env.VITE_DEFAULT_MAP_LNG||65.402551),zoom:Number(import.meta.env.VITE_DEFAULT_MAP_ZOOM||17)})

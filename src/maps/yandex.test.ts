@@ -1,79 +1,121 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mapCustomerFacingLocationError } from "./customerLocationErrorCopy";
 import { MapProviderError } from "./types";
 import { YandexMapAdapter } from "./yandex";
 
-// Minimal stand-in for the ymaps3 v3 SDK -- just enough surface for
-// YandexMapAdapter to exercise its own loading/configuration/init logic
-// without a real Yandex script or network access.
-function fakeYmaps3(options: { setApikeys?: (keys: { search?: string; suggest?: string }) => void } = {}) {
-  const setApikeys = options.setApikeys ?? vi.fn();
+// Minimal stand-in for the JS Maps API v3 SDK -- only what initialize()
+// still needs (map rendering). Search/suggest/reverse-geocode no longer
+// touch this at all -- they call Yandex's REST APIs directly via fetch(),
+// mocked below.
+function fakeYmaps3() {
   return {
     ready: Promise.resolve(),
-    getDefaultConfig: () => ({ setApikeys }),
-    search: vi.fn().mockResolvedValue([{ geometry: { coordinates: [65.4, 40.1] }, properties: { name: "Test", description: "Test" } }]),
-    suggest: vi.fn().mockResolvedValue([{ title: { text: "Test" }, address: { formattedAddress: "Test" } }]),
     YMap: class { addChild() {} destroy() {} },
     YMapDefaultSchemeLayer: class {},
     YMapDefaultFeaturesLayer: class {},
     YMapMarker: class { update() {} },
     YMapListener: class {},
-    setApikeysMock: setApikeys,
   };
 }
 
-describe("YandexMapAdapter: search-service configuration is cached once, classified correctly, and never blocks the map", () => {
+function fakeContainer() {
+  const container = document.createElement("div");
+  Object.defineProperty(container, "getBoundingClientRect", {
+    value: () => ({ width: 300, height: 230, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON() {} }),
+  });
+  return container;
+}
+
+const geocodeResponse = (overrides: Record<string, unknown> = {}) => ({
+  response: {
+    GeoObjectCollection: {
+      featureMember: [
+        {
+          GeoObject: {
+            name: "улица Шарк, 19",
+            description: "Навои, Узбекистан",
+            Point: { pos: "65.403434 40.084673" },
+            metaDataProperty: {
+              GeocoderMetaData: {
+                Address: {
+                  formatted: "Узбекистан, Навои, улица Шарк, 19",
+                  Components: [
+                    { kind: "country", name: "Узбекистан" },
+                    { kind: "province", name: "Навоийская область" },
+                    { kind: "locality", name: "Навои" },
+                    { kind: "street", name: "улица Шарк" },
+                    { kind: "house", name: "19" },
+                  ],
+                },
+              },
+            },
+            ...overrides,
+          },
+        },
+      ],
+    },
+  },
+});
+
+const suggestResponse = () => ({
+  results: [
+    { title: { text: "Sharq ko‘chasi, 19" }, subtitle: { text: "Navoiy" }, address: { formatted_address: "Navoiy, Sharq ko‘chasi, 19" } },
+  ],
+});
+
+describe("YandexMapAdapter: REST-backed search/geosuggest/reverse-geocode", () => {
   beforeEach(() => {
-    // Module-level caches live on `window` (see src/maps/yandex.ts) so a
-    // second adapter instance within the same page session reuses them --
-    // exactly the property under test. Reset between tests so they don't
-    // leak across cases.
     delete (window as unknown as Record<string, unknown>).ymaps3;
     delete (window as unknown as Record<string, unknown>).__zaytunYandexCoreLoader;
-    delete (window as unknown as Record<string, unknown>).__zaytunYandexSearchConfigLoader;
-    delete (window as unknown as Record<string, unknown>).__zaytunYandexSearchConfigKeys;
   });
   afterEach(() => {
+    vi.unstubAllGlobals();
     delete (window as unknown as Record<string, unknown>).ymaps3;
     delete (window as unknown as Record<string, unknown>).__zaytunYandexCoreLoader;
-    delete (window as unknown as Record<string, unknown>).__zaytunYandexSearchConfigLoader;
-    delete (window as unknown as Record<string, unknown>).__zaytunYandexSearchConfigKeys;
   });
 
-  it("repeated search/suggest/reverse-geocode calls configure Search/Geosuggest keys exactly once, not once per call", async () => {
-    const fake = fakeYmaps3();
-    (window as unknown as { ymaps3: unknown }).ymaps3 = fake;
+  it("search: geosuggest then geocode-resolves the best candidate, biased toward the configured service area", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.startsWith("https://suggest-maps.yandex.ru/")) {
+        return new Response(JSON.stringify(suggestResponse()), { status: 200 });
+      }
+      if (url.startsWith("https://geocode-maps.yandex.ru/")) {
+        return new Response(JSON.stringify(geocodeResponse()), { status: 200 });
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
     const adapter = new YandexMapAdapter("maps-key", "search-key", "geosuggest-key");
+    const results = await adapter.search("Sharq 19");
 
-    await adapter.search("first query");
-    await adapter.search("second query");
-    await adapter.reverseGeocode({ latitude: 40.1, longitude: 65.4 });
+    expect(results).toHaveLength(1);
+    expect(results[0].coordinate).toEqual({ latitude: 40.084673, longitude: 65.403434 });
+    // componentValue() (unchanged from the prior SDK-based parseFeature)
+    // matches the first of district/area/province present -- this fixture
+    // includes "province" but no "district"/"area" kind, matching
+    // Yandex's real Geocoder component ordering.
+    expect(results[0].district).toBe("Навоийская область");
+    expect(results[0].street).toBe("улица Шарк");
+    expect(results[0].house).toBe("19");
 
-    expect(fake.setApikeysMock).toHaveBeenCalledTimes(1);
-    expect(fake.setApikeysMock).toHaveBeenCalledWith({ search: "search-key", suggest: "geosuggest-key" });
+    const suggestCall = fetchMock.mock.calls.find(([url]) => (url as string).startsWith("https://suggest-maps.yandex.ru/"));
+    const geocodeCall = fetchMock.mock.calls.find(([url]) => (url as string).startsWith("https://geocode-maps.yandex.ru/"));
+    expect(suggestCall).toBeTruthy();
+    expect(geocodeCall).toBeTruthy();
+    // Biased toward the configured restaurant/service-area center (mock
+    // provider defaults, see vite.config.ts test env) on both requests.
+    expect((suggestCall![0] as string)).toContain("ll=");
+    expect((suggestCall![0] as string)).toContain("spn=");
+    expect((geocodeCall![0] as string)).toContain("ll=65.402551%2C40.087274");
+    // Never leaks the key into a log-visible place beyond the URL itself,
+    // and never sends the map key to either search endpoint.
+    expect((suggestCall![0] as string)).not.toContain("maps-key");
+    expect((geocodeCall![0] as string)).not.toContain("maps-key");
   });
 
-  it("a Search/Geosuggest configuration failure is classified as a search-path error, never a map error -- and the map core initializes successfully regardless", async () => {
-    const fake = fakeYmaps3({
-      setApikeys: () => {
-        throw new Error("simulated Yandex configuration rejection");
-      },
-    });
-    (window as unknown as { ymaps3: unknown }).ymaps3 = fake;
+  it("a geosuggest failure (non-200) throws SUGGEST_FAILED, classified as a search error", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 403 })));
     const adapter = new YandexMapAdapter("maps-key", "search-key", "geosuggest-key");
-
-    // Map initialization does not touch Search/Geosuggest configuration at
-    // all -- this must succeed even though setApikeys() is broken, proving
-    // the two are genuinely decoupled (this is the actual production
-    // scenario: the map renders fine while search fails).
-    const container = document.createElement("div");
-    Object.defineProperty(container, "getBoundingClientRect", {
-      value: () => ({ width: 300, height: 230, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON() {} }),
-    });
-    const controller = await adapter.initialize(container, { center: { latitude: 40.1, longitude: 65.4 }, zoom: 17, onSelect: () => {} });
-    expect(controller).toBeTruthy();
-
-    // Only now does the search path hit the broken setApikeys().
     let caught: unknown;
     try {
       await adapter.search("Sharq 19");
@@ -81,35 +123,46 @@ describe("YandexMapAdapter: search-service configuration is cached once, classif
       caught = error;
     }
     expect(caught).toBeInstanceOf(MapProviderError);
-    expect((caught as MapProviderError).code).toBe("SEARCH_SERVICE_UNAVAILABLE");
-
-    // Classified correctly: the search-recoverable message, never the
-    // map-broken claim.
-    const message = mapCustomerFacingLocationError(caught, "search");
-    expect(message).toBe("Manzilni hozir qidirib bo‘lmadi. Xaritadagi belgingiz saqlandi.");
-    expect(message).not.toContain("Xarita hozircha ishlamayapti");
+    expect((caught as MapProviderError).code).toBe("SUGGEST_FAILED");
   });
 
-  it("fails safely rather than silently mixing configurations when a later call supplies different key values", async () => {
-    const fake = fakeYmaps3();
-    (window as unknown as { ymaps3: unknown }).ymaps3 = fake;
-    const first = new YandexMapAdapter("maps-key", "search-key-a", "geosuggest-key-a");
-    await first.search("first query");
-    expect(fake.setApikeysMock).toHaveBeenCalledTimes(1);
-    expect(fake.setApikeysMock).toHaveBeenCalledWith({ search: "search-key-a", suggest: "geosuggest-key-a" });
+  it("a network failure (fetch throws) is caught and produces a MapProviderError, never an uncaught rejection", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
+    const adapter = new YandexMapAdapter("maps-key", "search-key", "geosuggest-key");
+    await expect(adapter.search("Sharq 19")).rejects.toBeInstanceOf(MapProviderError);
+  });
 
-    const second = new YandexMapAdapter("maps-key", "search-key-b", "geosuggest-key-b");
-    let caught: unknown;
-    try {
-      await second.search("second query");
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(MapProviderError);
-    expect((caught as MapProviderError).code).toBe("SEARCH_SERVICE_UNAVAILABLE");
-    // The mismatch is rejected outright -- setApikeys is never called a
-    // second time with the new (or any) keys, so the cached configuration
-    // is never silently overwritten either.
-    expect(fake.setApikeysMock).toHaveBeenCalledTimes(1);
+  it("reverse-geocode resolves a coordinate to district/street/house via the geocoder REST endpoint", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      expect(url).toContain("geocode=65.403434%2C40.084673");
+      return new Response(JSON.stringify(geocodeResponse()), { status: 200 });
+    }));
+    const adapter = new YandexMapAdapter("maps-key", "search-key", "geosuggest-key");
+    const result = await adapter.reverseGeocode({ latitude: 40.084673, longitude: 65.403434 });
+    expect(result?.street).toBe("улица Шарк");
+    expect(result?.coordinate).toEqual({ latitude: 40.084673, longitude: 65.403434 });
+  });
+
+  it("map initialization succeeds independently of search -- it never calls fetch at all", async () => {
+    (window as unknown as { ymaps3: unknown }).ymaps3 = fakeYmaps3();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new YandexMapAdapter("maps-key", "search-key", "geosuggest-key");
+    const controller = await adapter.initialize(fakeContainer(), { center: { latitude: 40.1, longitude: 65.4 }, zoom: 17, onSelect: () => {} });
+
+    expect(controller).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("search still fails cleanly even if the map core script never loaded (search never depends on window.ymaps3)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.startsWith("https://suggest-maps.yandex.ru/")) return new Response(JSON.stringify(suggestResponse()), { status: 200 });
+      return new Response(JSON.stringify(geocodeResponse()), { status: 200 });
+    }));
+    // window.ymaps3 deliberately left undefined -- search must not need it.
+    const adapter = new YandexMapAdapter("maps-key", "search-key", "geosuggest-key");
+    const results = await adapter.search("Sharq 19");
+    expect(results).toHaveLength(1);
   });
 });
