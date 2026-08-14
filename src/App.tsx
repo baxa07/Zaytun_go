@@ -3494,11 +3494,18 @@ function DriverApp() {
       return () => clearTimeout(t);
     }
   }, [activeAssignments]);
-  // The sibling already featured in the batch-aware panel/route view below
-  // would otherwise also show, redundantly, in the plain "KEYINGI" list.
-  const queuedForList = queued.filter(
-    (o) => !(current && o.pickupBatchId && o.pickupBatchId === current.pickupBatchId && current.status !== "CONFIRMED" && current.status !== "PREPARING"),
-  );
+  // Production hotfix: a batch-mate of `current` is now ALWAYS rendered
+  // inline by DriverMainPanel -- as the pre-pickup pairing card, the
+  // ready/wait card, or the post-pickup route's next-stop card -- in
+  // every state, not just once the current order is ready. Previously
+  // this only excluded the sibling once current left CONFIRMED/PREPARING,
+  // so a newly-added second order sat in this plain "KEYINGI" list (with
+  // its own tiny accept/decline) for its entire pre-pickup life,
+  // reading as a minor afterthought next to the one full-size card --
+  // exactly the "one full card + tiny KEYINGI row" behavior reported
+  // from production. The list below this point is now reserved for
+  // genuinely unrelated queued orders only.
+  const queuedForList = queued.filter((o) => !(current && o.pickupBatchId && o.pickupBatchId === current.pickupBatchId));
   return (
     <Shell surface="driver">
       <main className="driver-page">
@@ -3633,7 +3640,28 @@ function DriverMainPanel({
   queued: Order[];
   batchContext: PickupBatchContext[];
 }) {
+  const { publicConfig } = useApp();
   const sibling = order.pickupBatchId ? queued.find((o) => o.pickupBatchId === order.pickupBatchId) : undefined;
+  // Production hotfix: "current stop / next stop" (DriverRoute) is a
+  // ROUTE framing -- it must only exist once the courier has actually
+  // left the restaurant with product in hand. Before that, both orders
+  // are still just members of the same PICKUP mission, not stops on a
+  // route -- server-computed stop_sequence (set once at the first
+  // member's real PICKED_UP) is the one authoritative signal for "has
+  // the route actually started," not order.status or acceptance state.
+  const stopsAssigned = order.stopSequence !== undefined || sibling?.stopSequence !== undefined;
+  const prePickupPair = Boolean(sibling) && !stopsAssigned;
+  // Production hotfix: the "one ready / one still cooking" wait card
+  // used to key off `order` (whichever order happened to sort first by
+  // assignment time) reaching DRIVER_ASSIGNED -- but the restaurant can
+  // finish the SECOND-assigned order first. When that happened live
+  // (ZG-1067/ZG-1068), the wait/both-ready card never appeared for the
+  // real ~17s window because `order` (the earlier-assigned one) was
+  // still PREPARING while its sibling was already ready. Now keyed off
+  // EITHER member being ready, with whichever one IS ready always
+  // passed as DriverReadyWithBatch's `order` -- regardless of which one
+  // was assigned first.
+  const eitherReady = prePickupPair && (order.status === "DRIVER_ASSIGNED" || sibling!.status === "DRIVER_ASSIGNED");
   // A batch-mate disappearing while genuinely ready-for-pickup or en route
   // means the actual-wait window released it to redispatch -- surfaced
   // here (not inside DriverReadyWithBatch, which would already have
@@ -3666,16 +3694,31 @@ function DriverMainPanel({
           ⚠ {justReleasedNumber} boshqa haydovchiga o‘tkazildi. {order.number} bilan yo‘lga chiqing.
         </p>
       )}
-      {state === "NEW_ASSIGNMENT" ? (
+      {eitherReady ? (
+        (() => {
+          const readyOrder = order.status === "DRIVER_ASSIGNED" ? order : sibling!;
+          const waitingOrder = readyOrder === order ? sibling! : order;
+          return (
+            <DriverReadyWithBatch
+              order={readyOrder}
+              sibling={waitingOrder}
+              batch={batchContext.find((b) => b.batchId === readyOrder.pickupBatchId)}
+            />
+          );
+        })()
+      ) : prePickupPair ? (
+        <DriverPickupBatchCard
+          current={order}
+          sibling={sibling!}
+          batch={batchContext.find((b) => b.batchId === order.pickupBatchId)}
+          restaurantName={publicConfig?.restaurantName || "Zaytun Kafe"}
+        />
+      ) : state === "NEW_ASSIGNMENT" ? (
         <DriverAssignmentCard order={order} />
       ) : state === "PREPARING" ? (
         <DriverPreReadyCard order={order} />
       ) : state === "READY_FOR_PICKUP" ? (
-        sibling ? (
-          <DriverReadyWithBatch order={order} sibling={sibling} batch={batchContext.find((b) => b.batchId === order.pickupBatchId)} />
-        ) : (
-          <DriverDelivery order={order} />
-        )
+        <DriverDelivery order={order} />
       ) : sibling ? (
         <DriverRoute order={order} next={sibling} />
       ) : (
@@ -3721,6 +3764,77 @@ function orderReadyEtaLabel(order: Order): string {
   const readyAt = new Date(order.acceptedAt).getTime() + minutes * 60000;
   const remaining = Math.round((readyAt - Date.now()) / 60000);
   return remaining > 0 ? `~${remaining} daqiqa` : "tez orada";
+}
+// Production hotfix: the primary pre-pickup presentation for a real
+// two-order batch -- both orders rendered as first-class PICKUP BATCH
+// MEMBERS, not "one full card + a tiny KEYINGI row." Replaces
+// DriverAssignmentCard/DriverPreReadyCard whenever `current` genuinely
+// has a live batch-mate that hasn't been picked up yet (see
+// DriverMainPanel's prePickupPair). Each member gets its own
+// accept/decline if the driver hasn't acted on it yet -- a newly-added
+// second order surfaces here immediately, with the same prominence as
+// the first, instead of only in the small bottom queue list.
+function DriverPickupBatchCard({
+  current,
+  sibling,
+  batch,
+  restaurantName,
+}: {
+  current: Order;
+  sibling: Order;
+  batch: PickupBatchContext | undefined;
+  restaurantName: string;
+}) {
+  const { acceptAssignment, declineAssignment, transitionPending } = useApp();
+  const members = [current, sibling];
+  const maxMembers = batch?.maxMembers ?? members.length;
+  return (
+    <section className="delivery-card batch-mission-card" data-testid="driver-pickup-batch">
+      <div className="route-mission-header" data-testid="driver-batch-mission-header">
+        <span>📦 {members.length} TA BUYURTMA</span>
+        <span>·</span>
+        <span>BITTA OLIB KETISH</span>
+      </div>
+      <p className="assignment-prep-hint">{restaurantName} — olib ketish shu yerdan.</p>
+      {members.map((o) => {
+        const ready = o.status === "DRIVER_ASSIGNED";
+        const label = orderReadyEtaLabel(o);
+        return (
+          <div className="batch-member-row" key={o.id} data-testid={`driver-batch-member-${o.id}`}>
+            <div className="batch-member-top">
+              <b>{o.number}</b>
+              <span className={ready ? "ready" : "cooking"}>{ready ? label : `🟠 ${label}`}</span>
+            </div>
+            {!o.assignmentAcceptedAt ? (
+              <div className="driver-queue-actions">
+                <button
+                  type="button"
+                  className="button primary"
+                  data-testid={`driver-batch-accept-${o.id}`}
+                  disabled={transitionPending(o.id)}
+                  onClick={() => void acceptAssignment(o.id)}
+                >
+                  Qabul qilish
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  data-testid={`driver-batch-decline-${o.id}`}
+                  disabled={transitionPending(o.id)}
+                  onClick={() => void declineAssignment(o.id)}
+                >
+                  Ololmayman
+                </button>
+              </div>
+            ) : (
+              o.id === current.id && <CheckInControl order={o} />
+            )}
+          </div>
+        );
+      })}
+      <p className="batch-panel-footer" data-testid="driver-batch-count">{members.length}/{maxMembers} buyurtma</p>
+    </section>
+  );
 }
 // Spec: "group compatible orders visually as one pickup mission... the
 // backend batch is real, the UI should make that relationship obvious."

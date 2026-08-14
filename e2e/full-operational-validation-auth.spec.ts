@@ -276,8 +276,8 @@ test("Scenario C addendum: a delayed second order redispatches live to a second 
 
     const orderIdB = await placeDeliveryOrder(customerB, "OpVal Delay B", "+998907779303");
     await acceptOrder(staff, orderIdB);
-    await expect(driverA.getByTestId(`driver-queue-accept-${orderIdB}`)).toBeVisible({ timeout: 15000 });
-    await driverA.getByTestId(`driver-queue-accept-${orderIdB}`).click();
+    await expect(driverA.getByTestId(`driver-batch-accept-${orderIdB}`)).toBeVisible({ timeout: 15000 });
+    await driverA.getByTestId(`driver-batch-accept-${orderIdB}`).click();
 
     await readyOrder(staff, orderIdA);
     await expect(driverA.getByTestId("driver-wait-for-second")).toBeVisible({ timeout: 15000 });
@@ -353,7 +353,7 @@ test("Scenario E addendum: declining one of two orders redispatches live to a se
 
     const orderIdB = await placeDeliveryOrder(customerB, "OpVal Decline B", "+998907779305");
     await acceptOrder(staff, orderIdB);
-    await expect(driverA.getByTestId(`driver-queue-decline-${orderIdB}`)).toBeVisible({ timeout: 15000 });
+    await expect(driverA.getByTestId(`driver-batch-decline-${orderIdB}`)).toBeVisible({ timeout: 15000 });
 
     // Driver B becomes eligible right as the decline is about to happen --
     // the real "if Driver B is eligible" condition, without corrupting the
@@ -361,7 +361,7 @@ test("Scenario E addendum: declining one of two orders redispatches live to a se
     await driverB.getByTestId("driver-shift-toggle").click();
     await expect(driverB.getByTestId("driver-availability-status")).toHaveText("🟢 Ishga tayyor");
 
-    await driverA.getByTestId(`driver-queue-decline-${orderIdB}`).click();
+    await driverA.getByTestId(`driver-batch-decline-${orderIdB}`).click();
     await expect(driverA.getByTestId("driver-capacity")).toContainText("1/2");
 
     // A is untouched.

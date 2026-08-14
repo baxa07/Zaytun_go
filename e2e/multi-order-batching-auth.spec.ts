@@ -149,13 +149,14 @@ test("a second compatible order joins the same driver's batch live, and both are
   const orderIdB = await placeDeliveryOrder(customerB, "Batch Mijoz B", "+998907779002");
   await acceptOrder(staff, orderIdB); // still under capacity, same branch, compatible -> joins the SAME driver
 
-  // The second order appears live in the driver's queue, with its own
-  // accept/decline -- accepting the first order never implicitly covers
-  // it, since it is a genuinely separate assignment.
-  await expect(driver.getByTestId(`driver-queue-accept-${orderIdB}`)).toBeVisible({ timeout: 15000 });
-  await expect(driver.getByTestId("assignment-batch-hint")).toBeVisible(); // A's own card now shows "1 more order in this batch"
-  await driver.getByTestId(`driver-queue-accept-${orderIdB}`).click();
-  await expect(driver.getByTestId(`driver-queue-${orderIdB}`)).toBeVisible(); // still queued, but no longer needs a response
+  // The second order appears live as part of the SAME pickup-batch
+  // mission, with its own accept/decline -- accepting the first order
+  // never implicitly covers it, since it is a genuinely separate
+  // assignment.
+  await expect(driver.getByTestId("driver-pickup-batch")).toBeVisible({ timeout: 15000 }); // A's own card now shows the joint pickup-batch mission
+  await expect(driver.getByTestId(`driver-batch-accept-${orderIdB}`)).toBeVisible();
+  await driver.getByTestId(`driver-batch-accept-${orderIdB}`).click();
+  await expect(driver.getByTestId("driver-batch-count")).toContainText("2/2 buyurtma"); // still batched together, no longer needs a response
 
   // Restaurant staff also sees the batch context live, no reload.
   await staff.goto(`/restaurant/orders/${orderIdA}`);
@@ -211,11 +212,11 @@ test("declining one order in a two-order batch releases only that order, leaving
 
   const orderIdB = await placeDeliveryOrder(customerB, "Decline Batch B", "+998907779004");
   await acceptOrder(staff, orderIdB);
-  await expect(driver.getByTestId(`driver-queue-decline-${orderIdB}`)).toBeVisible({ timeout: 15000 });
+  await expect(driver.getByTestId(`driver-batch-decline-${orderIdB}`)).toBeVisible({ timeout: 15000 });
 
   // Decline B only -- A must be completely unaffected (per decline_assignment's
   // own order-scoped writes, extended here to the early-decline path).
-  await driver.getByTestId(`driver-queue-decline-${orderIdB}`).click();
+  await driver.getByTestId(`driver-batch-decline-${orderIdB}`).click();
 
   // B's assignment is genuinely released -- the driver is excluded from
   // its own immediate retry, so with no other eligible driver it goes
@@ -263,8 +264,8 @@ test("customer privacy: two customers batched on the same driver never see each 
 
   const orderIdB = await placeDeliveryOrder(customerB, "Privacy Mijoz B", "+998907779006");
   await acceptOrder(staff, orderIdB);
-  await expect(driver.getByTestId(`driver-queue-accept-${orderIdB}`)).toBeVisible({ timeout: 15000 });
-  await driver.getByTestId(`driver-queue-accept-${orderIdB}`).click(); // both now genuinely batched together
+  await expect(driver.getByTestId(`driver-batch-accept-${orderIdB}`)).toBeVisible({ timeout: 15000 });
+  await driver.getByTestId(`driver-batch-accept-${orderIdB}`).click(); // both now genuinely batched together
 
   // Customer A's own tracking page, reached the normal way (their own
   // confirmation redirect), must never contain Customer B's identifying

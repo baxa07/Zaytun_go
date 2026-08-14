@@ -1,5 +1,5 @@
 begin;
-select plan(46);
+select plan(50);
 
 -- Multi-Order Dispatch: assignment on ACCEPT, 2-order batching,
 -- compatibility, actual-wait detachment, decline (classic + early),
@@ -336,6 +336,41 @@ update public.orders set status='CANCELLED' where id in('f2000000-0000-4000-8000
 update public.driver_assignments set ended_at=now(),status='CANCELLED' where driver_id in('10000000-0000-0000-0000-000000000003','10000000-0000-0000-0000-000000000004') and ended_at is null;
 update public.drivers set availability='AVAILABLE' where id in('10000000-0000-0000-0000-000000000003','10000000-0000-0000-0000-000000000004');
 update public.drivers set dispatch_status='ACTIVE' where id='10000000-0000-0000-0000-000000000004';
+
+-- ============================================================
+-- 15. Production fix (Phase C, driver batch UX): a batch member still
+--     genuinely cooking when its sibling is already picked up and
+--     routed must NOT be sequenced early -- it is not a real stop until
+--     it actually becomes ready. It must then be appended to the
+--     already-departed route, not left permanently un-sequenced.
+-- ============================================================
+select pg_temp.accept_order('f4000000-0000-4000-8000-000000000001');
+select pg_temp.accept_order('f5000000-0000-4000-8000-000000000001'); -- batches with f4 (gap 0, same branch)
+update public.customer_addresses set delivery_distance_km=1.0 where order_id='f4000000-0000-4000-8000-000000000001';
+update public.customer_addresses set delivery_distance_km=4.0 where order_id='f5000000-0000-4000-8000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+select public.transition_order('f4000000-0000-4000-8000-000000000001'::uuid,'PREPARING',null,null);
+select public.transition_order('f4000000-0000-4000-8000-000000000001'::uuid,'READY',null,null);
+reset role;
+-- f5 deliberately left at CONFIRMED here -- still genuinely cooking.
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
+select public.accept_assignment('f4000000-0000-4000-8000-000000000001'::uuid);
+select public.transition_order('f4000000-0000-4000-8000-000000000001'::uuid,'PICKED_UP',null,null);
+reset role;
+select is((select stop_sequence from public.orders where id='f4000000-0000-4000-8000-000000000001'),1,'the picked-up member is sequenced');
+select is((select stop_sequence from public.orders where id='f5000000-0000-4000-8000-000000000001'),null,'the still-cooking sibling is NOT sequenced yet -- it is not a real route stop until it is actually ready');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+select public.transition_order('f5000000-0000-4000-8000-000000000001'::uuid,'PREPARING',null,null);
+select public.transition_order('f5000000-0000-4000-8000-000000000001'::uuid,'READY',null,null);
+reset role;
+select is((select stop_sequence from public.orders where id='f5000000-0000-4000-8000-000000000001'),2,'once it finally becomes ready, it is appended to the already-departed route');
+select is((select stop_sequence from public.orders where id='f4000000-0000-4000-8000-000000000001'),1,'the already-computed stop for the first member is left undisturbed');
+update public.orders set status='CANCELLED' where id in('f4000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001');
+update public.driver_assignments set ended_at=now(),status='CANCELLED' where driver_id='10000000-0000-0000-0000-000000000003' and ended_at is null;
+update public.drivers set availability='AVAILABLE' where id='10000000-0000-0000-0000-000000000003';
 
 select * from finish();
 rollback;

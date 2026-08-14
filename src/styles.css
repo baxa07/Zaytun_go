@@ -1315,6 +1315,44 @@ h2 {
   font-size: 14px;
   padding: 4px 0;
 }
+/* Production hotfix: the primary pre-pickup "PICKUP BATCH MEMBERS"
+   card (DriverPickupBatchCard) -- deliberately reuses .route-mission-
+   header's gold pill styling so a driver learns to recognize "this is
+   one multi-order mission" the same way pre- and post-pickup. */
+.batch-mission-card {
+  text-align: left;
+}
+.batch-mission-card .route-mission-header {
+  margin: 0 0 12px;
+}
+.batch-member-row {
+  background: #f2f4f2;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 10px;
+}
+.batch-member-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+.batch-member-top .ready {
+  color: var(--green);
+  font-weight: 700;
+}
+.batch-member-top .cooking {
+  color: #a35a00;
+  font-weight: 700;
+}
+.batch-panel-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  margin: 12px 0 0;
+}
 .wait-card {
   text-align: center;
 }

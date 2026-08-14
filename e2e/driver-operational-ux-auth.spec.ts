@@ -196,12 +196,17 @@ test("scenario B: two compatible orders end to end -- capacity, second-order UI,
   const orderIdB = await placeDeliveryOrder(customerB, "UX Batch Mijoz B", "+998907779103");
   await acceptOrder(staff, orderIdB); // still under capacity, same branch, compatible -> joins the SAME driver
 
-  // Second order joins the SAME pickup -- distinct queue entry, batch
-  // grouping panel on A's own card, never a second unrelated full-screen
-  // assignment that loses A's context.
-  await expect(driver.getByTestId(`driver-queue-accept-${orderIdB}`)).toBeVisible({ timeout: 15000 });
-  await expect(driver.getByTestId("driver-batch-group")).toBeVisible();
-  await driver.getByTestId(`driver-queue-accept-${orderIdB}`).click();
+  // Production hotfix: before pickup, both orders render as ONE PICKUP
+  // BATCH mission -- never "one full card for A + a tiny KEYINGI row for
+  // B." B's own accept/decline live inside the SAME card as A, with the
+  // same prominence, and the plain queue list is empty (no redundant
+  // duplicate entry for a batch-mate).
+  await expect(driver.getByTestId("driver-pickup-batch")).toBeVisible({ timeout: 15000 });
+  await expect(driver.getByTestId("driver-batch-mission-header")).toContainText("2 TA BUYURTMA");
+  await expect(driver.getByTestId("driver-batch-count")).toContainText("2/2 buyurtma");
+  await expect(driver.getByTestId("driver-queue")).toHaveCount(0);
+  await expect(driver.getByTestId(`driver-batch-accept-${orderIdB}`)).toBeVisible();
+  await driver.getByTestId(`driver-batch-accept-${orderIdB}`).click();
   await expect(driver.getByTestId("driver-capacity")).toContainText("2/2");
 
   await readyOrder(staff, orderIdA);
@@ -290,8 +295,8 @@ test("scenario C: a delayed second order is released while the driver is waiting
 
   const orderIdB = await placeDeliveryOrder(customerB, "UX Delay Mijoz B", "+998907779105");
   await acceptOrder(staff, orderIdB);
-  await expect(driver.getByTestId(`driver-queue-accept-${orderIdB}`)).toBeVisible({ timeout: 15000 });
-  await driver.getByTestId(`driver-queue-accept-${orderIdB}`).click();
+  await expect(driver.getByTestId(`driver-batch-accept-${orderIdB}`)).toBeVisible({ timeout: 15000 });
+  await driver.getByTestId(`driver-batch-accept-${orderIdB}`).click();
 
   await readyOrder(staff, orderIdA);
   await expect(driver.getByTestId("driver-wait-for-second")).toBeVisible({ timeout: 15000 });
@@ -320,6 +325,63 @@ test("scenario C: a delayed second order is released while the driver is waiting
   // B itself is safely back to searching for a driver, not lost.
   await staff.goto(`/restaurant/orders/${orderIdB}`);
   await expect(staff.getByTestId("early-assignment-hint")).toHaveCount(0);
+
+  await driverContext.close();
+  await customerAContext.close();
+  await customerBContext.close();
+  await staffContext.close();
+});
+
+test("scenario D: the second-assigned order becomes ready before the first -- wait/both-ready state must not depend on which order was assigned first", async ({ browser }) => {
+  // Production hotfix regression: the wait/both-ready card used to be
+  // driven only by the earlier-assigned order's own readiness. Live in
+  // production (ZG-1067/ZG-1068), the SECOND-assigned order's kitchen
+  // finished first -- and the driver never saw the meaningful "one ready,
+  // one still cooking" wait card for that whole window, because the
+  // component was keyed to the wrong order. This reproduces exactly that
+  // ordering and asserts the wait/both-ready cards fire correctly
+  // regardless of which order was assigned to the driver first.
+  const driverContext = await browser.newContext();
+  const otherDriverContext = await browser.newContext();
+  const customerAContext = await browser.newContext();
+  const customerBContext = await browser.newContext();
+  const staffContext = await browser.newContext();
+  const driver = await driverContext.newPage();
+  const otherDriver = await otherDriverContext.newPage();
+  const customerA = await customerAContext.newPage();
+  const customerB = await customerBContext.newPage();
+  const staff = await staffContext.newPage();
+
+  await takeOffShift(otherDriver, "998900000099");
+  await otherDriverContext.close();
+  await freeDriver(driver, "driver@zaytun.local");
+  await signInStaff(staff);
+
+  const orderIdA = await placeDeliveryOrder(customerA, "UX Reversed Mijoz A", "+998907779106");
+  await acceptOrder(staff, orderIdA);
+  await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
+  await driver.getByTestId("driver-primary-action").click(); // accept A (assigned FIRST)
+
+  const orderIdB = await placeDeliveryOrder(customerB, "UX Reversed Mijoz B", "+998907779107");
+  await acceptOrder(staff, orderIdB);
+  await expect(driver.getByTestId(`driver-batch-accept-${orderIdB}`)).toBeVisible({ timeout: 15000 });
+  await driver.getByTestId(`driver-batch-accept-${orderIdB}`).click(); // accept B (assigned SECOND)
+
+  // B (assigned second) becomes ready first -- A (assigned first) is
+  // still cooking. The wait card must still appear -- this is the exact
+  // ordering the old "current-order-only" logic missed.
+  await readyOrder(staff, orderIdB);
+  await expect(driver.getByTestId("driver-wait-for-second")).toBeVisible({ timeout: 15000 });
+  await expect(driver.getByTestId("driver-both-ready")).toHaveCount(0);
+  await expect(driver.getByTestId("driver-primary-action")).toContainText("Faqat");
+
+  await readyOrder(staff, orderIdA);
+  await expect(driver.getByTestId("driver-both-ready")).toBeVisible({ timeout: 15000 });
+  await expect(driver.getByTestId("driver-primary-action")).toHaveText("2 TA BUYURTMANI OLDIM");
+  await driver.getByTestId("driver-primary-action").click(); // picks up BOTH
+
+  await expect(driver.getByTestId("driver-route-current-stop")).toBeVisible({ timeout: 15000 });
+  await expect(driver.getByTestId("driver-route-next-stop")).toBeVisible();
 
   await driverContext.close();
   await customerAContext.close();
