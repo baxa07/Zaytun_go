@@ -9,6 +9,7 @@ import type {
   Driver,
   DriverAssignment,
   DriverStandbyNotice,
+  PickupBatchContext,
   MenuCategory,
   MenuItem,
   RestaurantConfig,
@@ -591,9 +592,25 @@ export class SupabaseStore {
     const { error } = await supabase!.rpc("mark_driver_at_restaurant", { p_order_id: id });
     fail(error);
   }
+  // Driver UI Final Operational UX: the "wait briefly for the second
+  // order" / "leave now" decision is authoritative batch state, not
+  // something the driver UI computes on its own -- this is the narrow,
+  // PII-free read that exposes it (see the migration's own comment for
+  // why the raw delivery_settings config value itself is never exposed).
+  async listMyPickupBatchContext(): Promise<PickupBatchContext[]> {
+    const { data, error } = await supabase!.rpc("list_my_pickup_batch_context");
+    fail(error);
+    return ((data || []) as Row[]).map((r) => ({
+      batchId: String(r.batch_id),
+      status: r.status as PickupBatchContext["status"],
+      maxMembers: Number(r.max_members),
+      firstMemberReadyAt: r.first_member_ready_at ? String(r.first_member_ready_at) : undefined,
+      waitDeadlineAt: r.wait_deadline_at ? String(r.wait_deadline_at) : undefined,
+    }));
+  }
   subscribe(refresh: () => void, _surface?: "restaurant" | "driver", disconnected?: () => void) {
     const channel = supabase!.channel("zaytun-operations");
-    const tables = ["orders", "order_events", "driver_assignments", "delivery_issues", "drivers"];
+    const tables = ["orders", "order_events", "driver_assignments", "delivery_issues", "drivers", "pickup_batches"];
     for (const table of tables)
       channel.on(
         "postgres_changes",

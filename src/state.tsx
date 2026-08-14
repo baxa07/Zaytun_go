@@ -22,6 +22,7 @@ import type {
   DriverLedgerPage,
   DriverLedgerSummaryRow,
   DriverStandbyNotice,
+  PickupBatchContext,
   MenuCategory,
   MenuItem,
   Order,
@@ -249,6 +250,7 @@ type State = {
   listMyStandbyNotices: () => Promise<DriverStandbyNotice[]>;
   listMyBranchIds: () => Promise<string[]>;
   markDriverAtRestaurant: (orderId: string) => Promise<void>;
+  listMyPickupBatchContext: () => Promise<PickupBatchContext[]>;
 };
 
 const C = createContext<State | null>(null);
@@ -677,6 +679,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     listMyStandbyNotices: async () => ("listMyStandbyNotices" in store ? store.listMyStandbyNotices() : []),
     listMyBranchIds: async () => ("listMyBranchIds" in store ? store.listMyBranchIds() : []),
     markDriverAtRestaurant: (orderId) => withOrderLock(orderId, () => store.markDriverAtRestaurant(orderId)),
+    // Local/offline provider has no branch-pool/batch concept -- same
+    // "not in store, empty" fallback listMyStandbyNotices/listMyBranchIds
+    // already use.
+    listMyPickupBatchContext: async () => ("listMyPickupBatchContext" in store ? store.listMyPickupBatchContext() : []),
   }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, requestTelegramLink, role, runOperation, session, submitOrderFeedback, withOrderLock]);
 
   return <C.Provider value={value}>{children}</C.Provider>;

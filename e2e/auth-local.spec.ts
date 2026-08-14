@@ -70,7 +70,11 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await expect(page.locator(".assignment-card")).toContainText(orderNumber);
     await expect(page.getByTestId("driver-primary-action")).toHaveText("Qabul qilish");
     await page.getByTestId("driver-primary-action").click();
-    await expect(page.locator(".delivery-card")).toBeVisible();
+    // Driver UI Final Operational UX: an extra realtime-driven fetch
+    // (list_my_pickup_batch_context, refetched alongside orders/drivers)
+    // makes the post-accept round-trip a bit slower than this file's
+    // original default 5s timeout allowed for.
+    await expect(page.locator(".delivery-card")).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId("driver-primary-action")).toHaveText("Buyurtmani oldim");
     await page.getByTestId("driver-primary-action").click();
     await expect(page.locator(".delivery-top .badge")).toHaveText("Olib ketildi");

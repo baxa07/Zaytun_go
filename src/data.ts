@@ -589,10 +589,13 @@ class LocalStore
   }
   // Driver UI Phase: purely informational, mirrors the server's own guard
   // (own accepted-but-not-yet-picked-up assignment) and idempotency
-  // (first timestamp wins) -- never touches order.status.
+  // (first timestamp wins) -- never touches order.status. Driver UI Final
+  // Operational UX widened this from DRIVER_ASSIGNED-only to also allow
+  // CONFIRMED/PREPARING/READY, matching the real Supabase RPC's own
+  // widened guard -- check-in is now encouraged before the food is ready.
   async markDriverAtRestaurant(id: string) {
     const order = await this.get(id);
-    if (!order || order.status !== "DRIVER_ASSIGNED") throw new Error("Faol topshiriq topilmadi");
+    if (!order || !["CONFIRMED", "PREPARING", "READY", "DRIVER_ASSIGNED"].includes(order.status)) throw new Error("Faol topshiriq topilmadi");
     const activeIndex = this.assignments.findIndex((a) => a.orderId === id && a.acceptedAt && !a.endedAt);
     if (activeIndex < 0) throw new Error("Faol topshiriq topilmadi");
     if (!this.assignments[activeIndex].arrivedAtRestaurantAt)

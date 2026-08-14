@@ -26,6 +26,7 @@ import {
   HISTORY_PAGE_SIZE,
   canSubmitOrderFeedback,
   driverAcceptsNewWork,
+  deriveDriverOperationalState,
   type ActorType,
   type AddressConfidence,
   type AssignmentDeclineReason,
@@ -50,6 +51,8 @@ import {
   type PendingCheckout,
   type RestaurantConfig,
   type DriverStandbyNotice,
+  type PickupBatchContext,
+  type DriverOperationalState,
 } from "./domain";
 import { useApp, CustomerAuthRequiredError } from "./state";
 import { extractUzbekNationalDigits, normalizeUzbekPhone } from "./phone";
@@ -2903,10 +2906,15 @@ function OrderDetail() {
                     {/* Driver UI Phase: free -- the data already flows
                         through mapOrder/driver_assignments' existing
                         realtime subscription, this just surfaces it.
-                        Only while still DRIVER_ASSIGNED, same as the
-                        driver's own view -- once PICKED_UP it would read
-                        as stale ("still at the restaurant"). */}
-                    {order.status === "DRIVER_ASSIGNED" && order.assignmentHistory.find((a) => !a.endedAt)?.arrivedAtRestaurantAt && (
+                        Driver UI Final Operational UX: widened from
+                        DRIVER_ASSIGNED-only to also CONFIRMED/PREPARING/
+                        READY, matching mark_driver_at_restaurant's own
+                        widened guard -- the driver can check in well
+                        before the food is ready now, and staff should see
+                        that live too, not just once it's already READY.
+                        Still excluded once PICKED_UP or later, where it
+                        would read as stale ("still at the restaurant"). */}
+                    {["CONFIRMED", "PREPARING", "READY", "DRIVER_ASSIGNED"].includes(order.status) && order.assignmentHistory.find((a) => !a.endedAt)?.arrivedAtRestaurantAt && (
                       <p className="success-notice" data-testid="driver-at-restaurant-notice">📍 Haydovchi restoranda</p>
                     )}
                   </>
@@ -3188,31 +3196,53 @@ function OrderDetail() {
 }
 // P4: statuses a driver's own delivery leaves the "active work" set at.
 const terminalDeliveryStatuses: OrderStatus[] = ["DELIVERED", "CANCELLED", "RETURNED", "DELIVERY_FAILED"];
-// The moment an order's canonical DRIVER_ASSIGNED event landed -- used only
-// to order a driver's own multiple simultaneous assignments (current vs.
+// The moment the driver_assignments row itself was created -- used only to
+// order a driver's own multiple simultaneous assignments (current vs.
 // queued), never to invent a second source of truth for status itself.
+// Deliberately NOT the order's DRIVER_ASSIGNED status-transition event:
+// Multi-Order Dispatch assigns a driver as early as CONFIRMED, well before
+// that event ever fires (it only fires later, at READY) -- keying off it
+// made a still-preparing second order's createdAt fallback sort BEFORE a
+// genuinely ready first order's real (later) DRIVER_ASSIGNED timestamp,
+// silently swapping which order was "current" the moment the first one
+// became ready (found via a real two-order Playwright run: the ready
+// order sat in the queue while the still-preparing one wrongly stayed
+// front and center).
 const driverAssignedAt = (order: Order): string =>
-  order.events.find((e) => e.newStatus === "DRIVER_ASSIGNED")?.timestamp ?? order.createdAt;
+  order.assignmentHistory.find((a) => !a.endedAt)?.assignedAt ?? order.createdAt;
 function DriverAvailabilityToggle({
   driver,
   busy,
   hasActiveWork,
+  activeCount,
   onStart,
   onEnd,
 }: {
   driver: Driver | undefined;
   busy: boolean;
   hasActiveWork: boolean;
+  activeCount: number;
   onStart: () => void;
   onEnd: () => void;
 }) {
   if (!driver) return null;
   const onDuty = driverAcceptsNewWork(driver);
+  const capacity = driver.deliveryCapacity;
   return (
     <div className={`driver-availability ${onDuty ? "on" : "off"}`} data-testid="driver-availability">
       <div>
         <b data-testid="driver-availability-status">{onDuty ? "🟢 Ishga tayyor" : "⚪ Hozir ishlamayapman"}</b>
-        <small>{onDuty ? "Yangi buyurtmalar avtomatik biriktiriladi" : "Yangi buyurtma kelmaydi"}</small>
+        {/* Driver UI Final Operational UX: never claim "nothing happening"
+            while the driver already holds active work -- show real
+            capacity instead, driven by the server's own delivery_capacity,
+            never invented client-side. */}
+        {onDuty && hasActiveWork ? (
+          <small data-testid="driver-capacity">
+            {activeCount}/{capacity} buyurtma{activeCount < capacity ? ` — yana ${capacity - activeCount} ta olish mumkin` : " — band"}
+          </small>
+        ) : (
+          <small>{onDuty ? "Yangi buyurtma kutilmoqda" : "Yangi buyurtma kelmaydi"}</small>
+        )}
       </div>
       <button
         type="button"
@@ -3228,7 +3258,7 @@ function DriverAvailabilityToggle({
   );
 }
 function DriverApp() {
-  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds, acceptAssignment, declineAssignment, transitionPending } = useApp();
+  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds, listMyPickupBatchContext, acceptAssignment, declineAssignment, transitionPending } = useApp();
   const greetingName = driverGreetingName(profileDisplayName);
   // driver_read's own RLS policy restricts a non-staff caller to id=auth.uid()
   // only, so this array holds exactly the current driver's own row.
@@ -3275,18 +3305,53 @@ function DriverApp() {
       unsubscribe();
     };
   }, [myDriver?.id, listMyStandbyNotices, listMyBranchIds]);
-  // P4.11: attention sound for a genuinely new assignment -- identical
-  // lazy-AudioContext-armed-on-first-gesture and
-  // seen-ids-baseline-on-first-render pattern as the restaurant new-order
-  // alert (Restaurant(), above), so a reload with an already-known
-  // assignment never replays the sound, and an ordinary realtime refresh
-  // that returns the same assignment set never re-fires it either.
+  // Driver UI Final Operational UX: batch-level context (status,
+  // actual-wait deadline) drives the "wait briefly for the second order"
+  // vs. "leave now" instruction -- server-authoritative, never a
+  // client-invented countdown. Piggybacks on the SAME realtime cadence
+  // orders/drivers already use (pickup_batches is now in subscribe()'s own
+  // watched-table list) rather than opening a second channel: refetches
+  // whenever the shared `orders` array reference changes, which already
+  // happens on every relevant realtime-triggered refresh.
+  const [batchContext, setBatchContext] = useState<PickupBatchContext[]>([]);
+  useEffect(() => {
+    if (!myDriver) return;
+    let disposed = false;
+    void listMyPickupBatchContext().then((rows) => { if (!disposed) setBatchContext(rows); });
+    return () => {
+      disposed = true;
+    };
+    // Deliberately NOT depending on listMyPickupBatchContext itself: it's
+    // a fresh function reference every time useApp()'s own value memo
+    // recomputes (same as listMyStandbyNotices/listMyBranchIds above),
+    // which previously combined with the `orders` dependency to cause a
+    // tight refetch cascade right after sign-in -- fast enough that a
+    // Playwright click could land on a button DOM node moments before
+    // React replaced it, losing the click's browser-level event entirely
+    // (confirmed via trace network logs: two list_my_pickup_batch_context
+    // calls ~19ms apart, and accept_assignment never once called). The
+    // function is stateless (always the same server call regardless of
+    // which render created it), so omitting it from deps loses nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, myDriver?.id]);
+  // P4.11: attention sounds -- identical lazy-AudioContext-armed-on-first-
+  // gesture and seen-ids-baseline-on-first-render pattern as the
+  // restaurant new-order alert (Restaurant(), above), so a reload with
+  // already-known state never replays a sound, and an ordinary realtime
+  // refresh that returns the same set never re-fires one either. Four
+  // deliberately distinguishable patterns (spec: "a small set of clearly
+  // distinguishable patterns is enough") -- new real assignment, a second
+  // order joining an existing pickup, one order becoming ready, and the
+  // whole pickup batch becoming ready -- each played at most once per
+  // event, never repeated after the driver has moved on.
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const [soundArmed, setSoundArmed] = useState(false);
   useEffect(() => {
     const arm = () => {
       if (audioCtxRef.current) return;
       try {
         audioCtxRef.current = new AudioContext();
+        setSoundArmed(true);
       } catch {
         /* the visual assignment card remains the source of truth */
       }
@@ -3298,30 +3363,62 @@ function DriverApp() {
       document.removeEventListener("keydown", arm);
     };
   }, []);
-  const previousAssignmentIds = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const currentIds = new Set(activeAssignments.map((o) => o.id));
-    const hasNewArrival = [...currentIds].some((id) => !previousAssignmentIds.current.has(id));
-    previousAssignmentIds.current = currentIds;
-    if (!hasNewArrival) return;
+  const playChime = (notes: [frequency: number, startOffset: number, duration: number][], gainLevel: number) => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     try {
-      const playNote = (frequency: number, startOffset: number, duration: number) => {
+      for (const [frequency, startOffset, duration] of notes) {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.frequency.value = frequency;
-        gain.gain.value = 0.2;
+        gain.gain.value = gainLevel;
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(ctx.currentTime + startOffset);
         osc.stop(ctx.currentTime + startOffset + duration);
-      };
-      playNote(660, 0, 0.16);
-      playNote(880, 0.2, 0.22);
+      }
     } catch {
-      /* the visual assignment card remains the source of truth */
+      /* the visual card remains the source of truth */
     }
+  };
+  // New real assignment (current.id) vs. a second order joining an
+  // existing pickup (lands in queued instead) -- distinguished by WHERE
+  // the newly-arrived id ends up, not by a separate signal.
+  const previousAssignmentIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentIds = new Set(activeAssignments.map((o) => o.id));
+    const newIds = [...currentIds].filter((id) => !previousAssignmentIds.current.has(id));
+    previousAssignmentIds.current = currentIds;
+    if (newIds.length === 0) return;
+    if (current && newIds.includes(current.id)) {
+      playChime([[660, 0, 0.16], [880, 0.2, 0.22]], 0.2); // 🚗 Yangi buyurtma sizga biriktirildi
+    } else {
+      playChime([[587, 0, 0.14], [784, 0.16, 0.14], [880, 0.32, 0.2]], 0.18); // 📦 Yana bitta buyurtma qo‘shildi
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAssignments]);
+  // Food ready (single) vs. the whole batch ready (both members reach
+  // DRIVER_ASSIGNED together) -- tracked by each order's own previous
+  // status, not a separate poll.
+  const previousStatusRef = useRef<Record<string, OrderStatus>>({});
+  useEffect(() => {
+    const previous = previousStatusRef.current;
+    const nextMap: Record<string, OrderStatus> = {};
+    let readyFired = false;
+    for (const o of activeAssignments) {
+      nextMap[o.id] = o.status;
+      if (previous[o.id] && previous[o.id] !== "DRIVER_ASSIGNED" && o.status === "DRIVER_ASSIGNED") readyFired = true;
+    }
+    previousStatusRef.current = nextMap;
+    if (!readyFired) return;
+    const batchMates = current?.pickupBatchId ? activeAssignments.filter((o) => o.pickupBatchId === current.pickupBatchId) : [];
+    const allReady = batchMates.length >= 2 && batchMates.every((o) => o.status === "DRIVER_ASSIGNED");
+    if (allReady) {
+      playChime([[784, 0, 0.14], [988, 0.14, 0.14], [1175, 0.28, 0.26]], 0.22); // ✅ 2 ta buyurtma tayyor
+    } else {
+      playChime([[784, 0, 0.18], [988, 0.18, 0.24]], 0.2); // ✅ Buyurtma tayyor
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAssignments]);
   // Driver UI Phase: a distinctly different, softer chime for a genuinely
   // new standby notice -- same lazy-armed AudioContext, same
@@ -3363,7 +3460,32 @@ function DriverApp() {
   // pending-demand standby notices -- Multi-Order Dispatch fires those as
   // early as CONFIRMED specifically so an online-but-paused driver knows
   // work is waiting before deciding to resume.
-  const knownOffDuty = myDriver ? myDriver.shiftStatus !== "ON_SHIFT" : false;
+  const operationalState = deriveDriverOperationalState(myDriver, current, standbyNotices.length > 0);
+  // Driver UI Final Operational UX: "✅ Barcha yetkazib berishlar
+  // yakunlandi" -- a brief confirmation once a genuine multi-stop route
+  // (not a trivial single order) finishes completely, before the screen
+  // settles back to the normal idle-ready state. hadRouteRef only ever
+  // latches true once a real 2-stop route was observed (stopSequence
+  // assigned, more than one active order) -- a single-order completion
+  // never triggers this, keeping that path exactly as simple as before.
+  const hadRouteRef = useRef(false);
+  const [showAllDone, setShowAllDone] = useState(false);
+  useEffect(() => {
+    if (activeAssignments.length > 1 && activeAssignments.some((o) => o.stopSequence !== undefined)) {
+      hadRouteRef.current = true;
+    }
+    if (activeAssignments.length === 0 && hadRouteRef.current) {
+      hadRouteRef.current = false;
+      setShowAllDone(true);
+      const t = setTimeout(() => setShowAllDone(false), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [activeAssignments]);
+  // The sibling already featured in the batch-aware panel/route view below
+  // would otherwise also show, redundantly, in the plain "KEYINGI" list.
+  const queuedForList = queued.filter(
+    (o) => !(current && o.pickupBatchId && o.pickupBatchId === current.pickupBatchId && current.status !== "CONFIRMED" && current.status !== "PREPARING"),
+  );
   return (
     <Shell surface="driver">
       <main className="driver-page">
@@ -3374,11 +3496,42 @@ function DriverApp() {
             <p className="eyebrow">XAYRLI KUN{greetingName ? `, ${greetingName}` : ""}</p>
             <h1>Bugungi yetkazish</h1>
           </div>
+          {/* Spec: respect browser autoplay limits -- a small, optional,
+              non-blocking control to explicitly arm audio (e.g. right
+              after login), rather than forcing a modal. Any ordinary tap
+              elsewhere already arms it too; this just makes the option
+              visible. Deliberately kept mounted (hidden via CSS, not
+              conditionally removed from the tree) once armed: unmounting
+              it here -- right as the SAME first tap that arms audio might
+              also be a genuine tap on the accept button below -- shifted
+              the layout between that tap's press and release, so the
+              browser's mousedown/mouseup landed on two different buttons
+              and silently dropped the click (found via a real click on
+              "Qabul qilish" losing its very first press this way). */}
+          <button
+            type="button"
+            className={`button text driver-sound-activate${soundArmed ? " armed" : ""}`}
+            data-testid="driver-sound-activate"
+            aria-hidden={soundArmed}
+            tabIndex={soundArmed ? -1 : 0}
+            onClick={() => {
+              if (audioCtxRef.current) return;
+              try {
+                audioCtxRef.current = new AudioContext();
+                setSoundArmed(true);
+              } catch {
+                /* visible state remains sufficient */
+              }
+            }}
+          >
+            🔊 Buyurtma ovozini yoqish
+          </button>
         </div>
         <DriverAvailabilityToggle
           driver={myDriver}
           busy={shiftBusy}
           hasActiveWork={activeAssignments.length > 0}
+          activeCount={activeAssignments.length}
           onStart={() => {
             setShiftBusy(true);
             void startShift().finally(() => setShiftBusy(false));
@@ -3388,41 +3541,28 @@ function DriverApp() {
             void endShift().finally(() => setShiftBusy(false));
           }}
         />
-        {knownOffDuty && !current ? (
+        {showAllDone && (
+          <p className="all-done-banner" data-testid="driver-all-stops-complete">✅ Barcha yetkazib berishlar yakunlandi</p>
+        )}
+        {operationalState === "OFF_SHIFT" ? (
           <div className="empty" data-testid="driver-off-duty">
             <p>Hozir ishlamayapsiz.</p>
           </div>
-        ) : current ? (
-          // Multi-Order Dispatch: a driver may now be assigned as early as
-          // ACCEPT, well before order.status ever reaches DRIVER_ASSIGNED
-          // -- accept_assignment's own guards never checked orders.status
-          // at all, so "still needs a response" is gated on acceptance,
-          // not status alone. But once status has genuinely progressed
-          // past DRIVER_ASSIGNED (PICKED_UP or later), acceptance is
-          // already implied by construction (the server's own PICKED_UP
-          // guard requires assignment_accepted_at to be set) -- excluding
-          // those statuses here protects the LocalStore/offline provider,
-          // whose seed/mock data was never designed to populate
-          // assignmentAcceptedAt for orders that start mid-flight, from
-          // being wrongly routed back to the accept/decline card.
-          !current.assignmentAcceptedAt && !["PICKED_UP", "ON_THE_WAY", "ARRIVED"].includes(current.status) ? (
-            <DriverAssignmentCard order={current} />
-          ) : (
-            <DriverDelivery order={current} />
-          )
-        ) : standbyNotices.length > 0 ? (
+        ) : operationalState === "STANDBY" ? (
           <DriverStandbyCard notices={standbyNotices} />
-        ) : (
+        ) : operationalState === "AVAILABLE" ? (
           <div className="empty" data-testid="driver-no-active">
             <span>🟢</span>
             <h2>Buyurtma olishga tayyor</h2>
             <p>Yangi buyurtma kelganda shu yerda ko‘rinadi.</p>
           </div>
+        ) : (
+          current && <DriverMainPanel state={operationalState} order={current} queued={queued} batchContext={batchContext} />
         )}
-        {queued.length > 0 && (
+        {queuedForList.length > 0 && (
           <section className="driver-queue" data-testid="driver-queue">
             <h3>KEYINGI</h3>
-            {queued.map((o) => (
+            {queuedForList.map((o) => (
               <div className="driver-queue-item" key={o.id} data-testid={`driver-queue-${o.id}`}>
                 <b>{o.number}</b>
                 <span>{o.address?.district || "—"}</span>
@@ -3461,6 +3601,252 @@ function DriverApp() {
     </Shell>
   );
 }
+// Driver UI Final Operational UX: the one dispatcher deciding which
+// operational screen the driver's own current assignment shows -- answers
+// "what should I do right now?" without making the driver interpret raw
+// lifecycle statuses. Every path an existing test already exercises
+// (pre-acceptance, preparing, single-order in-transit) renders through the
+// SAME, unchanged DriverAssignmentCard/DriverPreReadyCard/DriverDelivery
+// components; only genuinely new multi-order moments (waiting for a
+// batch-mate, both ready, a real multi-stop route) get new components.
+function DriverMainPanel({
+  state,
+  order,
+  queued,
+  batchContext,
+}: {
+  state: DriverOperationalState;
+  order: Order;
+  queued: Order[];
+  batchContext: PickupBatchContext[];
+}) {
+  const sibling = order.pickupBatchId ? queued.find((o) => o.pickupBatchId === order.pickupBatchId) : undefined;
+  // A batch-mate disappearing while genuinely ready-for-pickup or en route
+  // means the actual-wait window released it to redispatch -- surfaced
+  // here (not inside DriverReadyWithBatch, which would already have
+  // unmounted by the time that happens) so the brief explanation survives
+  // the transition back to the plain single-order view. Deliberately
+  // excluded during NEW_ASSIGNMENT/PREPARING, where a sibling disappearing
+  // is ordinary self-service decline, not a server-driven release.
+  const lastSiblingRef = useRef<Order | undefined>(undefined);
+  const [justReleasedNumber, setJustReleasedNumber] = useState<string | null>(null);
+  useEffect(() => {
+    if (sibling) {
+      lastSiblingRef.current = sibling;
+      setJustReleasedNumber(null);
+      return;
+    }
+    if (lastSiblingRef.current && state !== "NEW_ASSIGNMENT" && state !== "PREPARING") {
+      const releasedNumber = lastSiblingRef.current.number;
+      setJustReleasedNumber(releasedNumber);
+      const t = setTimeout(() => setJustReleasedNumber(null), 8000);
+      lastSiblingRef.current = undefined;
+      return () => clearTimeout(t);
+    }
+    lastSiblingRef.current = undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sibling?.id, state]);
+  return (
+    <>
+      {justReleasedNumber && (
+        <p className="released-banner" data-testid="driver-second-order-released">
+          ⚠ {justReleasedNumber} boshqa haydovchiga o‘tkazildi. {order.number} bilan yo‘lga chiqing.
+        </p>
+      )}
+      {state === "NEW_ASSIGNMENT" ? (
+        <DriverAssignmentCard order={order} />
+      ) : state === "PREPARING" ? (
+        <DriverPreReadyCard order={order} />
+      ) : state === "READY_FOR_PICKUP" ? (
+        sibling ? (
+          <DriverReadyWithBatch order={order} sibling={sibling} batch={batchContext.find((b) => b.batchId === order.pickupBatchId)} />
+        ) : (
+          <DriverDelivery order={order} />
+        )
+      ) : sibling ? (
+        <DriverRoute order={order} next={sibling} />
+      ) : (
+        <DriverDelivery order={order} />
+      )}
+    </>
+  );
+}
+// Shared by DriverPreReadyCard and DriverReadyWithBatch -- purely
+// informational (never touches order.status). Widened server-side to
+// allow check-in as early as CONFIRMED/PREPARING (previously
+// DRIVER_ASSIGNED-only), so the driver can head to the restaurant and
+// check in while the food is still cooking, matching the spec's own
+// "encourage arrival before ready" requirement.
+function CheckInControl({ order }: { order: Order }) {
+  const { markDriverAtRestaurant, transitionPending } = useApp();
+  const arrived = order.assignmentHistory.find((a) => !a.endedAt)?.arrivedAtRestaurantAt;
+  if (arrived) {
+    return <p className="at-restaurant-badge" data-testid="driver-at-restaurant-badge">📍 Restoranda</p>;
+  }
+  return (
+    <button
+      type="button"
+      className="button secondary wide"
+      data-testid="driver-mark-at-restaurant"
+      disabled={transitionPending(order.id)}
+      onClick={() => void markDriverAtRestaurant(order.id)}
+    >
+      📍 Restoranga yetib keldim
+    </button>
+  );
+}
+// A real-data projection (acceptedAt + estimatedMinutes, falling back to
+// the same 25-minute default the server itself falls back to) -- never a
+// fabricated countdown. The one timing value the UI actually ACTS on (the
+// actual-wait deadline in DriverReadyWithBatch) comes from
+// list_my_pickup_batch_context() instead, computed authoritatively
+// server-side.
+function orderReadyEtaLabel(order: Order): string {
+  if (order.status === "DRIVER_ASSIGNED" || order.status === "READY") return "✅ Tayyor";
+  if (!order.acceptedAt) return "Tayyorlanmoqda";
+  const minutes = order.estimatedMinutes ?? 25;
+  const readyAt = new Date(order.acceptedAt).getTime() + minutes * 60000;
+  const remaining = Math.round((readyAt - Date.now()) / 60000);
+  return remaining > 0 ? `~${remaining} daqiqa` : "tez orada";
+}
+// Spec: "group compatible orders visually as one pickup mission... the
+// backend batch is real, the UI should make that relationship obvious."
+function PickupBatchPanel({ order, siblings, restaurantName }: { order: Order; siblings: Order[]; restaurantName: string }) {
+  if (siblings.length === 0) return null;
+  const members = [order, ...siblings];
+  return (
+    <div className="batch-panel" data-testid="driver-batch-group">
+      <p className="batch-panel-title">{restaurantName} — {members.length} ta buyurtma olib ketish</p>
+      {members.map((o) => (
+        <div className="batch-panel-row" key={o.id}>
+          <b>{o.number}</b>
+          <span>{orderReadyEtaLabel(o)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+// The critical "one ready, second ~N minutes behind" and "both ready"
+// scenarios: the platform (not the courier) decides and communicates the
+// brief wait, driven entirely by list_my_pickup_batch_context()'s
+// server-computed deadline -- never a client-invented countdown target,
+// though the display may tick down live from that real value.
+function DriverReadyWithBatch({ order, sibling, batch }: { order: Order; sibling: Order; batch: PickupBatchContext | undefined }) {
+  const { transition, transitionPending } = useApp();
+  const [pickupError, setPickupError] = useState("");
+  // Re-render periodically so a live wait countdown can tick down without
+  // a manual refresh -- minute-granularity display, so a coarse interval
+  // is enough.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 20000);
+    return () => clearInterval(id);
+  }, []);
+  const siblingReady = sibling.status === "DRIVER_ASSIGNED";
+  const deadline = batch?.waitDeadlineAt ? new Date(batch.waitDeadlineAt).getTime() : undefined;
+  const minutesLeft = deadline !== undefined ? Math.ceil((deadline - Date.now()) / 60000) : undefined;
+  const deadlinePassed = minutesLeft !== undefined && minutesLeft <= 0;
+  const pickupBoth = async () => {
+    setPickupError("");
+    try {
+      await transition(order.id, "PICKED_UP", "DRIVER");
+      await transition(sibling.id, "PICKED_UP", "DRIVER");
+    } catch (e) {
+      // Partial failure is handled safely: whichever transition already
+      // succeeded stands (never faked, never rolled back client-side);
+      // the driver sees exactly what happened and can retry.
+      setPickupError(e instanceof Error ? e.message : "Buyurtmani olishda xatolik yuz berdi");
+    }
+  };
+  if (siblingReady) {
+    return (
+      <section className="delivery-card batch-ready-card" data-testid="driver-both-ready">
+        <p className="ready-badge">✅ 2 TA BUYURTMA TAYYOR</p>
+        <div className="batch-ready-list">
+          <b>{order.number}</b>
+          <b>{sibling.number}</b>
+        </div>
+        <p className="hint">Ikkalasini birga oling.</p>
+        {pickupError && <p className="error" role="alert">{pickupError}</p>}
+        <button
+          type="button"
+          className="button primary wide big"
+          data-testid="driver-primary-action"
+          disabled={transitionPending(order.id) || transitionPending(sibling.id)}
+          onClick={() => void pickupBoth()}
+        >
+          2 TA BUYURTMANI OLDIM
+        </button>
+      </section>
+    );
+  }
+  return (
+    <section className="delivery-card wait-card" data-testid={deadlinePassed ? "driver-leave-now" : "driver-wait-for-second"}>
+      <div className="delivery-top">
+        <span>OLIB KETISH</span>
+        <Badge status={order.status} />
+      </div>
+      <h2>{order.number}</h2>
+      <p className="ready-badge-inline">✅ TAYYOR</p>
+      <CheckInControl order={order} />
+      <div className="wait-sibling-line">
+        <b>{sibling.number}</b>
+        <span className={deadlinePassed ? "warning" : ""}>
+          {deadlinePassed ? "⚠ Kechikmoqda" : minutesLeft !== undefined ? `⏱ Taxminan ${minutesLeft} daqiqa` : "Tayyorlanmoqda"}
+        </span>
+      </div>
+      {deadlinePassed ? (
+        <>
+          <p className="wait-instruction">{sibling.number} kechikmoqda. {order.number} bilan yo‘lga chiqishingiz mumkin.</p>
+          <button
+            type="button"
+            className="button primary wide big"
+            data-testid="driver-primary-action"
+            disabled={transitionPending(order.id)}
+            onClick={() => void transition(order.id, "PICKED_UP", "DRIVER")}
+          >
+            Buyurtmani oldim
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="wait-instruction">
+            {minutesLeft !== undefined ? `⏱ ${minutesLeft} daqiqa kuting` : "Ikkinchi buyurtmani kuting"} — ikkinchi buyurtma tez orada tayyor bo‘ladi. Ikkalasini birga olib ketasiz.
+          </p>
+          <button
+            type="button"
+            className="button secondary wide"
+            data-testid="driver-primary-action"
+            disabled={transitionPending(order.id)}
+            onClick={() => void transition(order.id, "PICKED_UP", "DRIVER")}
+          >
+            Faqat {order.number} bilan ketish
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+// Spec: "current stop should dominate... next stop secondary." Wraps the
+// existing, unchanged DriverDelivery (single-order path stays exactly as
+// simple as before -- this wrapper only appears once there's a genuine
+// second stop) with the deterministic server-computed stop_sequence.
+function DriverRoute({ order, next }: { order: Order; next: Order }) {
+  return (
+    <div className="driver-route">
+      <div className="route-current-label" data-testid="driver-route-current-stop">
+        <span>HOZIRGI MANZIL</span>
+        <b>{order.stopSequence ?? 1}-manzil</b>
+      </div>
+      <DriverDelivery order={order} />
+      <div className="route-next-hint" data-testid="driver-route-next-stop">
+        <span>KEYIN</span>
+        <b>{next.number}</b>
+        <span>{next.address?.district || "—"}</span>
+      </div>
+    </div>
+  );
+}
 // Driver UI Phase: informational only -- "standby is information, not
 // ownership." No accept/decline affordance at all, deliberately styled
 // (see .standby-card in styles.css) to be visually unmistakable from
@@ -3493,22 +3879,22 @@ function DriverAssignmentCard({ order }: { order: Order }) {
     : 0;
   return (
     <section className="assignment-card" data-testid="driver-assignment-card">
-      <p className="assignment-badge">🚗 YANGI YETKAZISH</p>
+      <p className="assignment-badge">🚗 YANGI YETKAZIB BERISH</p>
       <h2>{order.number}</h2>
-      <p className="assignment-prep-hint">Taxminan 20–25 daqiqada tayyor bo‘ladi.</p>
-      {batchSiblingCount > 0 && (
-        <p className="assignment-batch-hint" data-testid="assignment-batch-hint">📦 Yana {batchSiblingCount} ta buyurtma shu olib ketish guruhida</p>
-      )}
       <div className="assignment-route">
         <div>
-          <small>OLIB KETISH</small>
-          <b>{publicConfig?.restaurantName || "Zaytun Kafe"}</b>
+          <small>TAYYOR BO‘LISHI</small>
+          <b>{order.estimatedMinutes ? `~${order.estimatedMinutes} daqiqa` : "~20–25 daqiqa"}</b>
         </div>
         <div>
-          <small>MANZIL</small>
+          <small>YETKAZISH HUDUDI</small>
           <b>{order.address?.district || "—"}</b>
         </div>
       </div>
+      <p className="assignment-prep-hint">{publicConfig?.restaurantName || "Zaytun Kafe"} — olib ketish shu yerdan.</p>
+      {batchSiblingCount > 0 && (
+        <p className="assignment-batch-hint" data-testid="assignment-batch-hint">📦 Yana {batchSiblingCount} ta buyurtma shu olib ketish guruhida</p>
+      )}
       <button
         type="button"
         className="button primary wide big"
@@ -3573,10 +3959,8 @@ function driverPaymentSummary(order: Order): { label: string; amount?: string } 
 // undefined for CONFIRMED/PREPARING). Purely informational: order number,
 // a practical prep-time signal, and a batch-partner hint if applicable.
 function DriverPreReadyCard({ order }: { order: Order }) {
-  const { orders } = useApp();
-  const batchSiblingCount = order.pickupBatchId
-    ? orders.filter((o) => o.pickupBatchId === order.pickupBatchId && o.id !== order.id).length
-    : 0;
+  const { orders, publicConfig } = useApp();
+  const siblings = order.pickupBatchId ? orders.filter((o) => o.pickupBatchId === order.pickupBatchId && o.id !== order.id) : [];
   return (
     <section className="delivery-card pre-ready-card" data-testid="driver-pre-ready-card">
       <div className="delivery-top">
@@ -3587,15 +3971,19 @@ function DriverPreReadyCard({ order }: { order: Order }) {
       <p className="assignment-prep-hint">
         {order.estimatedMinutes ? `Taxminan ${order.estimatedMinutes} daqiqada tayyor bo‘ladi.` : "Taxminan 20–25 daqiqada tayyor bo‘ladi."}
       </p>
-      {batchSiblingCount > 0 && (
-        <p className="assignment-batch-hint" data-testid="assignment-batch-hint">📦 Yana {batchSiblingCount} ta buyurtma shu olib ketish guruhida</p>
+      {siblings.length > 0 && (
+        <p className="assignment-batch-hint" data-testid="assignment-batch-hint">📦 Yana {siblings.length} ta buyurtma shu olib ketish guruhida</p>
       )}
+      {/* Spec: encourage arrival before the food is ready -- check-in is
+          now available as early as this screen, not just once READY. */}
+      <CheckInControl order={order} />
+      <PickupBatchPanel order={order} siblings={siblings} restaurantName={publicConfig?.restaurantName || "Zaytun Kafe"} />
       <p className="hint">Tayyor bo‘lganda shu yerda ko‘rinadi -- hozircha kutib turing.</p>
     </section>
   );
 }
 function DriverDelivery({ order }: { order: Order }) {
-  const { transition, reportIssue, transitionPending, markDriverAtRestaurant } = useApp();
+  const { transition, reportIssue, transitionPending } = useApp();
   const [issueOpen, setIssueOpen] = useState(false);
   const [issue, setIssue] = useState("");
   if (order.status === "CONFIRMED" || order.status === "PREPARING") {
@@ -3641,21 +4029,7 @@ function DriverDelivery({ order }: { order: Order }) {
         {/* Driver UI Phase: purely informational, additive -- never
             replaces or disables the primary action above, so the driver
             can proceed to PICKED_UP with or without tapping this. */}
-        {order.status === "DRIVER_ASSIGNED" && (
-          order.assignmentHistory.find((a) => !a.endedAt)?.arrivedAtRestaurantAt ? (
-            <p className="at-restaurant-badge" data-testid="driver-at-restaurant-badge">📍 Restoranda</p>
-          ) : (
-            <button
-              type="button"
-              className="button secondary wide"
-              data-testid="driver-mark-at-restaurant"
-              disabled={transitionPending(order.id)}
-              onClick={() => void markDriverAtRestaurant(order.id)}
-            >
-              📍 Restoranga yetib keldim
-            </button>
-          )
-        )}
+        {order.status === "DRIVER_ASSIGNED" && <CheckInControl order={order} />}
         <div className="pickup customer-dot">
           <i>C</i>
           <div>

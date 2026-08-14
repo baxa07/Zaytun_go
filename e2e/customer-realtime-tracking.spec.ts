@@ -34,12 +34,29 @@ async function freeDriver(page: import("@playwright/test").Page, identifier: str
   // "Free" means no active assignment/delivery card -- not literally the
   // driver-no-active testid, since a driver may legitimately be showing
   // driver-standby-notice instead (informational, not ownership).
+  // Multi-Order Dispatch: coming on-shift above can itself trigger a live
+  // sweep assignment for a pending order left elsewhere in the branch by
+  // an earlier spec -- AFTER the forceFreeDriver call above already ran,
+  // so it couldn't have caught this one. If it lands as CONFIRMED/
+  // PREPARING (accepted-but-not-ready), it has no driver-primary-action
+  // at all (that screen only offers check-in), so blindly clicking it
+  // would hang until the whole test's timeout fires. Hard-clear again
+  // instead of guessing at a click.
+  if (await page.locator(".assignment-card, .delivery-card").count() > 0) {
+    await forceFreeDriver(identifier);
+    await page.reload();
+    await page.waitForTimeout(500);
+  }
   for (let i = 0; i < 6; i++) {
     if (await page.locator(".assignment-card, .delivery-card").count() === 0) break;
-    await page.getByTestId("driver-primary-action").click().catch(() => page.getByTestId("driver-primary-action").click());
+    await page.getByTestId("driver-primary-action").click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(250);
   }
-  await expect(page.locator(".assignment-card, .delivery-card")).toHaveCount(0);
+  if (await page.locator(".assignment-card, .delivery-card").count() > 0) {
+    await forceFreeDriver(identifier);
+    await page.reload();
+  }
+  await expect(page.locator(".assignment-card, .delivery-card")).toHaveCount(0, { timeout: 10000 });
 }
 
 test("customer tracking page updates live across the full delivery lifecycle, including driver arrival, with no manual reload", async ({ browser }) => {

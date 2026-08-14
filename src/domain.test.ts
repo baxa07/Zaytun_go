@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest'
-import {addCartLine,calculateOrderTotal,canTransition,checkoutFingerprint,createEvent,createIssue,deliveryAddressWasResubmitted,deriveDriverAvailabilityState,driverGreetingName,isDeliveryAddressRevisable,publicMenuState,resolveOrderSubmissionMode,resolvePendingCheckoutId,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
+import {addCartLine,calculateOrderTotal,canTransition,checkoutFingerprint,createEvent,createIssue,deliveryAddressWasResubmitted,deriveDriverAvailabilityState,deriveDriverOperationalState,driverGreetingName,isDeliveryAddressRevisable,publicMenuState,resolveOrderSubmissionMode,resolvePendingCheckoutId,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
 
 const address:CustomerAddress={customerName:'Ali',primaryPhone:'+998901234567',district:'Navoiy sh.',street:'Navoiy ko‘chasi',house:'12',landmark:'Bozor yonida',deliveryNotes:'',latitude:40.1,longitude:65.3,confidence:'COMPLETE',pinConfirmedAt:'2026-08-04T08:00:00Z',locationProvider:'mock',deliveryZoneResult:'ELIGIBLE'}
 const order:Order={id:'o1',number:'ZG-1',customer:{id:'c1',name:'Ali',primaryPhone:'+998901234567'},type:'DELIVERY',address,items:[],subtotal:0,deliveryFee:0,total:0,paymentMethod:'CASH',paymentStatus:'PENDING',specialInstructions:'',status:'NEW',createdAt:'2026-08-03T10:00:00Z',events:[],issues:[],assignmentHistory:[]}
@@ -146,5 +146,41 @@ describe('driver availability state (Driver UI Phase: 6 distinct, unambiguous st
     expect(deriveDriverAvailabilityState(onShift,{status:'PICKED_UP'},false,false)).toBe('CARRYING')
     expect(deriveDriverAvailabilityState(onShift,{status:'ON_THE_WAY'},false,false)).toBe('CARRYING')
     expect(deriveDriverAvailabilityState(onShift,{status:'ARRIVED'},false,false)).toBe('CARRYING')
+  })
+})
+describe('driver operational state (Driver UI Final Operational UX: "what should I do right now?")',()=>{
+  const onShift={shiftStatus:'ON_SHIFT' as const}
+  const offShift={shiftStatus:'OFF_SHIFT' as const}
+  it('is OFF_SHIFT only when POSITIVELY known off-shift and there is no active work',()=>{
+    expect(deriveDriverOperationalState(offShift,undefined,false)).toBe('OFF_SHIFT')
+  })
+  it('never claims OFF_SHIFT just because the driver row has not loaded yet -- falls through to normal rendering instead',()=>{
+    expect(deriveDriverOperationalState(undefined,undefined,false)).toBe('AVAILABLE')
+    expect(deriveDriverOperationalState(undefined,{status:'DRIVER_ASSIGNED',assignmentAcceptedAt:'t'},false)).toBe('READY_FOR_PICKUP')
+  })
+  it('an active assignment always outranks off-duty display, even for a positively off-shift driver',()=>{
+    expect(deriveDriverOperationalState(offShift,{status:'PREPARING',assignmentAcceptedAt:'t'},false)).toBe('PREPARING')
+  })
+  it('is AVAILABLE when on shift, idle, and no standby notice',()=>{
+    expect(deriveDriverOperationalState(onShift,undefined,false)).toBe('AVAILABLE')
+  })
+  it('is STANDBY when on shift, idle, and a standby notice exists -- never conflated with an actual assignment',()=>{
+    expect(deriveDriverOperationalState(onShift,undefined,true)).toBe('STANDBY')
+  })
+  it('is NEW_ASSIGNMENT whenever not yet accepted and not already departed, regardless of order.status',()=>{
+    expect(deriveDriverOperationalState(onShift,{status:'CONFIRMED',assignmentAcceptedAt:undefined},false)).toBe('NEW_ASSIGNMENT')
+    expect(deriveDriverOperationalState(onShift,{status:'DRIVER_ASSIGNED',assignmentAcceptedAt:undefined},false)).toBe('NEW_ASSIGNMENT')
+  })
+  it('is PREPARING once accepted while the kitchen is still cooking',()=>{
+    expect(deriveDriverOperationalState(onShift,{status:'CONFIRMED',assignmentAcceptedAt:'t'},false)).toBe('PREPARING')
+    expect(deriveDriverOperationalState(onShift,{status:'PREPARING',assignmentAcceptedAt:'t'},false)).toBe('PREPARING')
+  })
+  it('is READY_FOR_PICKUP once accepted and READY (DRIVER_ASSIGNED)',()=>{
+    expect(deriveDriverOperationalState(onShift,{status:'DRIVER_ASSIGNED',assignmentAcceptedAt:'t'},false)).toBe('READY_FOR_PICKUP')
+  })
+  it('is ON_ROUTE for PICKED_UP/ON_THE_WAY/ARRIVED -- one screen for "currently delivering," acceptance implied by construction even without assignmentAcceptedAt set',()=>{
+    expect(deriveDriverOperationalState(onShift,{status:'PICKED_UP',assignmentAcceptedAt:undefined},false)).toBe('ON_ROUTE')
+    expect(deriveDriverOperationalState(onShift,{status:'ON_THE_WAY',assignmentAcceptedAt:'t'},false)).toBe('ON_ROUTE')
+    expect(deriveDriverOperationalState(onShift,{status:'ARRIVED',assignmentAcceptedAt:'t'},false)).toBe('ON_ROUTE')
   })
 })

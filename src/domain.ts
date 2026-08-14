@@ -59,6 +59,39 @@ export const deriveDriverAvailabilityState=(
   if(current.status==='DRIVER_ASSIGNED')return currentArrivedAtRestaurant?'AT_RESTAURANT':'ASSIGNED'
   return 'CARRYING'
 }
+// Driver UI Final Operational UX: the single classifier that decides which
+// top-level screen the driver sees -- answers "what should I do right
+// now?" without making the driver interpret raw lifecycle statuses.
+// Deliberately shiftStatus alone (not driverAcceptsNewWork, which also
+// folds in dispatchStatus) -- a driver who is ON_SHIFT but PAUSED is still
+// on duty and must keep seeing standby/assignment state, matching the
+// knownOffDuty fix from the Multi-Order Dispatch phase. NEW_ASSIGNMENT
+// covers "not yet accepted, and hasn't already departed" (accept_assignment
+// itself never checks status, only PICKED_UP-or-later implies acceptance
+// by construction). ON_ROUTE covers PICKED_UP/ON_THE_WAY/ARRIVED -- one
+// screen for "currently delivering," not one state per status, since the
+// courier's actual next action (navigate / arrived / delivered) is decided
+// by the order's own status within that screen, not by this classifier.
+export type DriverOperationalState='OFF_SHIFT'|'AVAILABLE'|'STANDBY'|'NEW_ASSIGNMENT'|'PREPARING'|'READY_FOR_PICKUP'|'ON_ROUTE'
+const departedStatuses:OrderStatus[]=['PICKED_UP','ON_THE_WAY','ARRIVED']
+export const deriveDriverOperationalState=(
+  driver:Pick<Driver,'shiftStatus'>|undefined,
+  current:Pick<Order,'status'|'assignmentAcceptedAt'>|undefined,
+  hasStandbyNotice:boolean,
+):DriverOperationalState=>{
+  // Only a POSITIVELY-known off-shift driver with no active work sees
+  // off-duty: `driver` undefined means "not loaded yet" (e.g. the very
+  // first render, or a test/local provider that never populates it), not
+  // "confirmed off shift" -- and an active assignment always outranks
+  // off-duty display regardless (a driver who somehow still holds one
+  // must keep seeing it, never have it hidden behind "you're off shift").
+  if(driver&&driver.shiftStatus!=='ON_SHIFT'&&!current)return 'OFF_SHIFT'
+  if(!current)return hasStandbyNotice?'STANDBY':'AVAILABLE'
+  if(!current.assignmentAcceptedAt&&!departedStatuses.includes(current.status))return 'NEW_ASSIGNMENT'
+  if(current.status==='CONFIRMED'||current.status==='PREPARING')return 'PREPARING'
+  if(current.status==='DRIVER_ASSIGNED')return 'READY_FOR_PICKUP'
+  return 'ON_ROUTE'
+}
 export interface DriverAssignment {id:string;orderId:string;driverId:string;assignedAt:string;acceptedAt?:string}
 export type DeliveryReviewStatus='NOT_REQUIRED'|'REVIEW_REQUIRED'|'CLARIFICATION_REQUESTED'|'APPROVED'|'REJECTED'
 // Smart Dispatch Phase 6: small optional enum, canonical values only --
@@ -74,6 +107,12 @@ export interface AssignmentHistoryEntry {id:string;driverId:string;driverName?:s
 // phone, matching the Telegram-notification minimalism precedent. Mirrors
 // exactly what list_my_standby_notices() returns.
 export interface DriverStandbyNotice {orderId:string;orderNumber:string;branchId?:string;branchName?:string;createdAt:string}
+// Driver UI Final Operational UX: mirrors list_my_pickup_batch_context()
+// exactly -- the batch's own lifecycle status plus the actual-wait
+// deadline, computed server-side (delivery_settings stays staff-only; the
+// driver only ever sees the resulting timestamp, never the raw config).
+export type PickupBatchStatus='OPEN'|'READY_TO_DEPART'|'IN_TRANSIT'|'COMPLETED'|'CANCELLED'
+export interface PickupBatchContext {batchId:string;status:PickupBatchStatus;maxMembers:number;firstMemberReadyAt?:string;waitDeadlineAt?:string}
 export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback;assignmentHistory:AssignmentHistoryEntry[];
   // Multi-Order Dispatch: a driver may now be assigned as early as
   // ACCEPT (NEW->CONFIRMED), well before the order is READY -- these
