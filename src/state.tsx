@@ -21,6 +21,7 @@ import type {
   Driver,
   DriverLedgerPage,
   DriverLedgerSummaryRow,
+  DriverStandbyNotice,
   MenuCategory,
   MenuItem,
   Order,
@@ -238,6 +239,16 @@ type State = {
   // integration at all, so this rejects there (the Track page only shows
   // the button when supabaseConfigured).
   requestTelegramLink: (orderId: string) => Promise<string>;
+  // Driver UI Phase. Standby is a read-only, Supabase-only heads-up (no
+  // branch-pool/dispatch concept exists in the local/mock provider) --
+  // resolves to [] there, same "capability check" pattern
+  // requestTelegramLink already uses, rather than throwing. The
+  // "arrived at restaurant" marker is purely informational and IS
+  // modeled locally (trivial to), so it goes through the same
+  // per-order lock as every other driver action.
+  listMyStandbyNotices: () => Promise<DriverStandbyNotice[]>;
+  listMyBranchIds: () => Promise<string[]>;
+  markDriverAtRestaurant: (orderId: string) => Promise<void>;
 };
 
 const C = createContext<State | null>(null);
@@ -639,6 +650,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     reportIssue: async (orderId, type, description, reporter) => runOperation(() => store.reportIssue(orderId, type, description, reporter)),
     resolveIssue: async (orderId, issueId) => runOperation(() => store.resolveIssue(orderId, issueId)),
+    listMyStandbyNotices: async () => ("listMyStandbyNotices" in store ? store.listMyStandbyNotices() : []),
+    listMyBranchIds: async () => ("listMyBranchIds" in store ? store.listMyBranchIds() : []),
+    markDriverAtRestaurant: (orderId) => withOrderLock(orderId, () => store.markDriverAtRestaurant(orderId)),
   }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, requestTelegramLink, role, runOperation, session, submitOrderFeedback, withOrderLock]);
 
   return <C.Provider value={value}>{children}</C.Provider>;

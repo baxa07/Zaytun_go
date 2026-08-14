@@ -52,15 +52,21 @@ test("P4 driver work surface (real Supabase): auto-dispatch assignment, accept, 
   // trusting this check, same as the settled wait already used between
   // iterations below.
   await driver.waitForTimeout(500);
+  // "Free" means no active assignment/delivery card -- not literally the
+  // driver-no-active testid, since the driver may legitimately be showing
+  // driver-standby-notice instead (another order still PREPARING
+  // elsewhere in the branch, e.g. left there on purpose by
+  // customer-realtime-tracking.spec.ts's offline/online test). Standby is
+  // information, not ownership, so it's still "free" for a fresh scenario.
   for (let i = 0; i < 6; i++) {
-    if (await driver.getByTestId("driver-no-active").isVisible().catch(() => false)) break;
+    if (await driver.locator(".assignment-card, .delivery-card").count() === 0) break;
     // A rapid click right as the primary action re-renders (label/target
     // change after the previous transition) can hit a momentarily
     // detached node -- retry once rather than failing the whole setup step.
     await driver.getByTestId("driver-primary-action").click().catch(() => driver.getByTestId("driver-primary-action").click());
     await driver.waitForTimeout(250);
   }
-  await expect(driver.getByTestId("driver-no-active")).toBeVisible();
+  await expect(driver.locator(".assignment-card, .delivery-card")).toHaveCount(0);
   await expect(driver.getByTestId("driver-availability-status")).toHaveText("🟢 Ishga tayyor");
 
   await customer.goto("/menu/chicken");
@@ -114,7 +120,10 @@ test("P4 driver work surface (real Supabase): auto-dispatch assignment, accept, 
   await expect(driver.getByTestId("driver-primary-action")).toHaveCount(1);
 
   await driver.getByTestId("driver-primary-action").click(); // DELIVERED
-  await expect(driver.getByTestId("driver-no-active")).toBeVisible();
+  // Proof the delivery is complete and the driver has no active work --
+  // not literally driver-no-active, since a standby notice for some other
+  // order elsewhere in the branch may legitimately be showing instead.
+  await expect(driver.locator(".assignment-card, .delivery-card")).toHaveCount(0);
 
   // P4.1: shift toggle actually persists to the server -- reload proves
   // it's real state, not just local React state.

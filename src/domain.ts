@@ -42,6 +42,23 @@ export type DriverShiftStatus='OFF_SHIFT'|'ON_SHIFT'
 export type DriverDispatchStatus='ACTIVE'|'PAUSED'
 export interface Driver {id:string;name:string;phone:string;vehicle:string;availability:DriverAvailability;shiftStatus:DriverShiftStatus;dispatchStatus:DriverDispatchStatus;deliveryCapacity:number}
 export const driverAcceptsNewWork=(driver:Pick<Driver,'shiftStatus'|'dispatchStatus'>):boolean=>driver.shiftStatus==='ON_SHIFT'&&driver.dispatchStatus==='ACTIVE'
+// Driver UI Phase: the driver's own screen must always show exactly one
+// of these six states, unambiguously -- standby is deliberately never
+// conflated with an actual assignment ("standby is information, not
+// ownership"). A pure function so the state machine is unit-testable
+// independent of the React tree that renders it.
+export type DriverAvailabilityState='OFF_SHIFT'|'AVAILABLE'|'STANDBY'|'ASSIGNED'|'AT_RESTAURANT'|'CARRYING'
+export const deriveDriverAvailabilityState=(
+  driver:Pick<Driver,'shiftStatus'|'dispatchStatus'>|undefined,
+  current:Pick<Order,'status'>|undefined,
+  currentArrivedAtRestaurant:boolean,
+  hasStandbyNotice:boolean,
+):DriverAvailabilityState=>{
+  if(!driver||!driverAcceptsNewWork(driver))return 'OFF_SHIFT'
+  if(!current)return hasStandbyNotice?'STANDBY':'AVAILABLE'
+  if(current.status==='DRIVER_ASSIGNED')return currentArrivedAtRestaurant?'AT_RESTAURANT':'ASSIGNED'
+  return 'CARRYING'
+}
 export interface DriverAssignment {id:string;orderId:string;driverId:string;assignedAt:string;acceptedAt?:string}
 export type DeliveryReviewStatus='NOT_REQUIRED'|'REVIEW_REQUIRED'|'CLARIFICATION_REQUESTED'|'APPROVED'|'REJECTED'
 // Smart Dispatch Phase 6: small optional enum, canonical values only --
@@ -52,7 +69,11 @@ export type AssignmentDeclineReason='TOO_FAR'|'VEHICLE_ISSUE'|'CANNOT_GO_NOW'|'O
 // row history) -- distinct from DriverAssignment above, which models only
 // the current/local assignment shape. Staff-visible only (order detail),
 // never shown to customers.
-export interface AssignmentHistoryEntry {id:string;driverId:string;driverName?:string;status:'ASSIGNED'|'ACCEPTED'|'DECLINED'|'SUPERSEDED'|'COMPLETED'|'FAILED'|'RETURNED'|'CANCELLED';assignedAt:string;acceptedAt?:string;declinedAt?:string;endedAt?:string}
+export interface AssignmentHistoryEntry {id:string;driverId:string;driverName?:string;status:'ASSIGNED'|'ACCEPTED'|'DECLINED'|'SUPERSEDED'|'COMPLETED'|'FAILED'|'RETURNED'|'CANCELLED';assignedAt:string;acceptedAt?:string;declinedAt?:string;endedAt?:string;arrivedAtRestaurantAt?:string}
+// Driver UI Phase: a PII-free heads-up -- no customer name, address, or
+// phone, matching the Telegram-notification minimalism precedent. Mirrors
+// exactly what list_my_standby_notices() returns.
+export interface DriverStandbyNotice {orderId:string;orderNumber:string;branchId?:string;branchName?:string;createdAt:string}
 export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback;assignmentHistory:AssignmentHistoryEntry[]}
 
 export const legalTransitions:Record<OrderStatus,OrderStatus[]>={NEW:['CONFIRMED','REJECTED','CANCELLED'],CONFIRMED:['PREPARING','CANCELLED'],PREPARING:['READY','CANCELLED'],READY:['COLLECTED','DRIVER_ASSIGNED','CANCELLED'],COLLECTED:[],DRIVER_ASSIGNED:['PICKED_UP','CANCELLED'],PICKED_UP:['ON_THE_WAY','DELIVERY_FAILED','RETURNED'],ON_THE_WAY:['ARRIVED','DELIVERY_FAILED','RETURNED'],ARRIVED:['DELIVERED','DELIVERY_FAILED','RETURNED'],DELIVERED:[],REJECTED:[],CANCELLED:[],DELIVERY_FAILED:['RETURNED'],RETURNED:[]}

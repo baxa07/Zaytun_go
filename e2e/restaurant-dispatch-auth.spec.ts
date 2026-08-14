@@ -37,12 +37,17 @@ test("P5 restaurant dispatch presentation (real Supabase): genuine automatic ass
   // can still be in flight right as "Chiqish" appears, so give it a moment
   // before trusting an immediate single-shot isVisible() check.
   await driver.waitForTimeout(500);
+  // "Free" means no active assignment/delivery card -- not literally the
+  // driver-no-active testid, since the driver may legitimately be showing
+  // driver-standby-notice instead (another order still PREPARING
+  // elsewhere in the branch). Standby is information, not ownership, so
+  // it's still "free" for a fresh scenario.
   for (let i = 0; i < 6; i++) {
-    if (await driver.getByTestId("driver-no-active").isVisible().catch(() => false)) break;
+    if (await driver.locator(".assignment-card, .delivery-card").count() === 0) break;
     await driver.getByTestId("driver-primary-action").click().catch(() => driver.getByTestId("driver-primary-action").click());
     await driver.waitForTimeout(250);
   }
-  await expect(driver.getByTestId("driver-no-active")).toBeVisible();
+  await expect(driver.locator(".assignment-card, .delivery-card")).toHaveCount(0);
 
   await customer.goto("/menu/chicken");
   await customer.getByRole("button", { name: "+" }).click();

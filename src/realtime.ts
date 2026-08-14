@@ -49,3 +49,19 @@ export function subscribeToBroadcast(topic: string, event: string, onSignal: Rea
 export function subscribeToOrderTracking(orderId: string, trackingToken: string, onChanged: RealtimeSignal): () => void {
   return subscribeToBroadcast(`tracking:${orderId}:${trackingToken}`, "order_changed", onChanged);
 }
+
+// Driver UI Phase: one broadcast topic per branch, matching exactly what
+// attempt_driver_standby_notice_internal already sends
+// ('driver-standby:'||branch_id, event 'driver_standby',
+// 20260814500000) -- a driver subscribes to every branch in their own
+// pool. The payload carries no order data (and even the order id in it is
+// never trusted directly); onChanged always refetches via
+// list_my_standby_notices(), which independently re-derives branch
+// membership and PREPARING-only visibility server-side. Every order
+// today always has a branch_id (not null since branch_foundation_v1), so
+// the internal function's 'driver-standby:none' fallback topic is
+// currently unreachable and deliberately not subscribed to here.
+export function subscribeToDriverStandby(branchIds: string[], onChanged: RealtimeSignal): () => void {
+  const unsubscribes = branchIds.map((branchId) => subscribeToBroadcast(`driver-standby:${branchId}`, "driver_standby", onChanged));
+  return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+}

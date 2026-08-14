@@ -11,18 +11,29 @@ async function freeDriver(page: import("@playwright/test").Page, identifier: str
   // See driver-lifecycle-auth.spec.ts: the post-sign-in refresh is async
   // and can still be in flight right as "Chiqish" appears.
   await page.waitForTimeout(500);
-  for (let i = 0; i < 6; i++) {
-    if (await page.getByTestId("driver-no-active").isVisible().catch(() => false)) break;
-    await page.getByTestId("driver-primary-action").click().catch(() => page.getByTestId("driver-primary-action").click());
-    await page.waitForTimeout(250);
-  }
-  await expect(page.getByTestId("driver-no-active")).toBeVisible();
+  // Off-shift with no active work renders "driver-off-duty", never
+  // "driver-no-active" (see the knownOffDuty branch in App.tsx) -- go
+  // on-shift first, before waiting on "driver-no-active" below, so a
+  // driver left off-shift by an earlier test (real Supabase, no
+  // per-file DB isolation) can never hang this helper.
   if (await page.getByTestId("driver-shift-toggle").isEnabled().catch(() => false)) {
     if ((await page.getByTestId("driver-availability-status").textContent()) !== "🟢 Ishga tayyor") {
       await page.getByTestId("driver-shift-toggle").click();
       await expect(page.getByTestId("driver-availability-status")).toHaveText("🟢 Ishga tayyor");
     }
   }
+  // "Free" means no active assignment/delivery card -- NOT literally the
+  // driver-no-active testid, since a driver may legitimately be showing
+  // driver-standby-notice instead (another order still PREPARING
+  // elsewhere in the branch, e.g. left there on purpose by
+  // customer-realtime-tracking.spec.ts's offline/online test). Standby is
+  // information, not ownership, so it's still "free" for a fresh scenario.
+  for (let i = 0; i < 6; i++) {
+    if (await page.locator(".assignment-card, .delivery-card").count() === 0) break;
+    await page.getByTestId("driver-primary-action").click().catch(() => page.getByTestId("driver-primary-action").click());
+    await page.waitForTimeout(250);
+  }
+  await expect(page.locator(".assignment-card, .delivery-card")).toHaveCount(0);
 }
 
 async function placeAndReadyOrder(customer: import("@playwright/test").Page, staff: import("@playwright/test").Page, phone: string) {
@@ -79,7 +90,10 @@ test("P6 (real Supabase): a declined assignment is automatically and immediately
   await decliningDriverPage.getByTestId("driver-decline-assignment").click();
   await expect(decliningDriverPage.getByTestId("decline-reasons")).toBeVisible();
   await decliningDriverPage.getByTestId("decline-reason-CANNOT_GO_NOW").click();
-  await expect(decliningDriverPage.getByTestId("driver-no-active")).toBeVisible();
+  // Proof the decline completed and the driver has no active work -- not
+  // literally driver-no-active, since a standby notice for some other
+  // order elsewhere in the branch may legitimately be showing instead.
+  await expect(decliningDriverPage.locator(".assignment-card, .delivery-card")).toHaveCount(0);
 
   // Automatic, excluded redispatch: the OTHER driver receives it, never
   // the one who just declined.

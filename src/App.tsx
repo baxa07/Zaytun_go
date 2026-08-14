@@ -49,11 +49,12 @@ import {
   type PaymentMethod,
   type PendingCheckout,
   type RestaurantConfig,
+  type DriverStandbyNotice,
 } from "./domain";
 import { useApp, CustomerAuthRequiredError } from "./state";
 import { extractUzbekNationalDigits, normalizeUzbekPhone } from "./phone";
 import { supabaseConfigured, getStoredTrackingToken, setStoredTrackingToken } from "./supabase";
-import { subscribeToOrderTracking } from "./realtime";
+import { subscribeToOrderTracking, subscribeToDriverStandby } from "./realtime";
 import { MapPicker } from "./components/MapPicker";
 import { ProductImage } from "./components/ProductImage";
 import { TurnstileWidget } from "./components/TurnstileWidget";
@@ -2899,6 +2900,15 @@ function OrderDetail() {
                     <p>
                       <small>Holat: {driverAvailabilityLabels[assignedDriver.availability]}</small>
                     </p>
+                    {/* Driver UI Phase: free -- the data already flows
+                        through mapOrder/driver_assignments' existing
+                        realtime subscription, this just surfaces it.
+                        Only while still DRIVER_ASSIGNED, same as the
+                        driver's own view -- once PICKED_UP it would read
+                        as stale ("still at the restaurant"). */}
+                    {order.status === "DRIVER_ASSIGNED" && order.assignmentHistory.find((a) => !a.endedAt)?.arrivedAtRestaurantAt && (
+                      <p className="success-notice" data-testid="driver-at-restaurant-notice">📍 Haydovchi restoranda</p>
+                    )}
                   </>
                 ) : (
                   <p className="warning">Haydovchi ma'lumoti topilmadi</p>
@@ -3203,7 +3213,7 @@ function DriverAvailabilityToggle({
   );
 }
 function DriverApp() {
-  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift } = useApp();
+  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds } = useApp();
   const greetingName = driverGreetingName(profileDisplayName);
   // driver_read's own RLS policy restricts a non-staff caller to id=auth.uid()
   // only, so this array holds exactly the current driver's own row.
@@ -3218,6 +3228,27 @@ function DriverApp() {
   );
   const current = activeAssignments[0];
   const queued = activeAssignments.slice(1);
+  // Driver UI Phase: standby is deliberately its own small, page-local
+  // "signal, then refetch via a protected RPC" loop (same architecture as
+  // customer tracking), not folded into the shared orders/drivers refresh
+  // cycle -- it's Supabase-only (no branch-pool/dispatch concept exists
+  // locally) and only ever relevant while there's no current assignment.
+  const [standbyNotices, setStandbyNotices] = useState<DriverStandbyNotice[]>([]);
+  useEffect(() => {
+    if (!supabaseConfigured || !myDriver) return;
+    let disposed = false;
+    const refetchStandby = () => void listMyStandbyNotices().then((notices) => { if (!disposed) setStandbyNotices(notices); });
+    let unsubscribe = () => {};
+    void listMyBranchIds().then((branchIds) => {
+      if (disposed) return;
+      refetchStandby();
+      unsubscribe = subscribeToDriverStandby(branchIds, refetchStandby);
+    });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [myDriver?.id, listMyStandbyNotices, listMyBranchIds]);
   // P4.11: attention sound for a genuinely new assignment -- identical
   // lazy-AudioContext-armed-on-first-gesture and
   // seen-ids-baseline-on-first-render pattern as the restaurant new-order
@@ -3266,6 +3297,36 @@ function DriverApp() {
       /* the visual assignment card remains the source of truth */
     }
   }, [activeAssignments]);
+  // Driver UI Phase: a distinctly different, softer chime for a genuinely
+  // new standby notice -- same lazy-armed AudioContext, same
+  // seen-ids-baseline pattern, but a clearly lower/softer pitch pair
+  // (440/523 Hz vs. the assignment chime's 660/880 Hz) so drivers learn to
+  // tell "heads up" apart from "you got one" by ear.
+  const previousStandbyIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentIds = new Set(standbyNotices.map((n) => n.orderId));
+    const hasNewArrival = [...currentIds].some((id) => !previousStandbyIds.current.has(id));
+    previousStandbyIds.current = currentIds;
+    if (!hasNewArrival) return;
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    try {
+      const playNote = (frequency: number, startOffset: number, duration: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = frequency;
+        gain.gain.value = 0.15;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + startOffset);
+        osc.stop(ctx.currentTime + startOffset + duration);
+      };
+      playNote(440, 0, 0.16);
+      playNote(523, 0.2, 0.22);
+    } catch {
+      /* the visual standby card remains the source of truth */
+    }
+  }, [standbyNotices]);
   // Only a positively-known OFF_SHIFT driver sees the off-duty screen --
   // while `myDriver` hasn't loaded yet (e.g. local/offline provider, or a
   // brief moment before the first refresh completes), this must not be
@@ -3306,6 +3367,8 @@ function DriverApp() {
           ) : (
             <DriverDelivery order={current} />
           )
+        ) : standbyNotices.length > 0 ? (
+          <DriverStandbyCard notices={standbyNotices} />
         ) : (
           <div className="empty" data-testid="driver-no-active">
             <span>🟢</span>
@@ -3326,6 +3389,19 @@ function DriverApp() {
         )}
       </main>
     </Shell>
+  );
+}
+// Driver UI Phase: informational only -- "standby is information, not
+// ownership." No accept/decline affordance at all, deliberately styled
+// (see .standby-card in styles.css) to be visually unmistakable from
+// DriverAssignmentCard's urgent, actionable presentation.
+function DriverStandbyCard({ notices }: { notices: DriverStandbyNotice[] }) {
+  return (
+    <section className="standby-card" data-testid="driver-standby-notice">
+      <p className="standby-badge">🔔 TAYYORGARLIK</p>
+      <h2>{notices.length > 1 ? `${notices.length} ta yetkazib berish tayyorlanmoqda` : "Yangi yetkazib berish tayyorlanmoqda"}</h2>
+      <p>Taxminan 20–25 daqiqa. Tayyor turing.</p>
+    </section>
   );
 }
 // P4.2/P4.3/P6.1: the prominent "new delivery" presentation for an
@@ -3413,7 +3489,7 @@ function driverPaymentSummary(order: Order): { label: string; amount?: string } 
   };
 }
 function DriverDelivery({ order }: { order: Order }) {
-  const { transition, reportIssue, transitionPending } = useApp();
+  const { transition, reportIssue, transitionPending, markDriverAtRestaurant } = useApp();
   const [issueOpen, setIssueOpen] = useState(false);
   const [issue, setIssue] = useState("");
   const next: Partial<Record<OrderStatus, OrderStatus>> = {
@@ -3452,6 +3528,24 @@ function DriverDelivery({ order }: { order: Order }) {
           >
             {labels[order.status]}
           </button>
+        )}
+        {/* Driver UI Phase: purely informational, additive -- never
+            replaces or disables the primary action above, so the driver
+            can proceed to PICKED_UP with or without tapping this. */}
+        {order.status === "DRIVER_ASSIGNED" && (
+          order.assignmentHistory.find((a) => !a.endedAt)?.arrivedAtRestaurantAt ? (
+            <p className="at-restaurant-badge" data-testid="driver-at-restaurant-badge">📍 Restoranda</p>
+          ) : (
+            <button
+              type="button"
+              className="button secondary wide"
+              data-testid="driver-mark-at-restaurant"
+              disabled={transitionPending(order.id)}
+              onClick={() => void markDriverAtRestaurant(order.id)}
+            >
+              📍 Restoranga yetib keldim
+            </button>
+          )
         )}
         <div className="pickup customer-dot">
           <i>C</i>

@@ -15,18 +15,26 @@ async function freeDriver(page: import("@playwright/test").Page, identifier: str
   await page.getByRole("button", { name: "Kirish" }).click();
   await expect(page.getByRole("button", { name: "Chiqish" })).toBeVisible();
   await page.waitForTimeout(500);
-  for (let i = 0; i < 6; i++) {
-    if (await page.getByTestId("driver-no-active").isVisible().catch(() => false)) break;
-    await page.getByTestId("driver-primary-action").click().catch(() => page.getByTestId("driver-primary-action").click());
-    await page.waitForTimeout(250);
-  }
-  await expect(page.getByTestId("driver-no-active")).toBeVisible();
+  // Off-shift with no active work renders "driver-off-duty", never
+  // "driver-no-active" (see the knownOffDuty branch in App.tsx) -- go
+  // on-shift first, before waiting on "driver-no-active" below, so a
+  // driver left off-shift by an earlier test (real Supabase, no
+  // per-file DB isolation) can never hang this helper.
   if (await page.getByTestId("driver-shift-toggle").isEnabled().catch(() => false)) {
     if ((await page.getByTestId("driver-availability-status").textContent()) !== "🟢 Ishga tayyor") {
       await page.getByTestId("driver-shift-toggle").click();
       await expect(page.getByTestId("driver-availability-status")).toHaveText("🟢 Ishga tayyor");
     }
   }
+  // "Free" means no active assignment/delivery card -- not literally the
+  // driver-no-active testid, since a driver may legitimately be showing
+  // driver-standby-notice instead (informational, not ownership).
+  for (let i = 0; i < 6; i++) {
+    if (await page.locator(".assignment-card, .delivery-card").count() === 0) break;
+    await page.getByTestId("driver-primary-action").click().catch(() => page.getByTestId("driver-primary-action").click());
+    await page.waitForTimeout(250);
+  }
+  await expect(page.locator(".assignment-card, .delivery-card")).toHaveCount(0);
 }
 
 test("customer tracking page updates live across the full delivery lifecycle, including driver arrival, with no manual reload", async ({ browser }) => {

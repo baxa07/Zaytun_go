@@ -8,6 +8,7 @@ import type {
   CustomerAddress,
   Driver,
   DriverAssignment,
+  DriverStandbyNotice,
   MenuCategory,
   MenuItem,
   RestaurantConfig,
@@ -181,6 +182,7 @@ const mapOrder = (r: Row): Order => {
         acceptedAt: a.accepted_at ? String(a.accepted_at) : undefined,
         declinedAt: a.declined_at ? String(a.declined_at) : undefined,
         endedAt: a.ended_at ? String(a.ended_at) : undefined,
+        arrivedAtRestaurantAt: a.arrived_at_restaurant_at ? String(a.arrived_at_restaurant_at) : undefined,
       };
     }).sort((x, y) => x.assignedAt.localeCompare(y.assignedAt)),
   };
@@ -205,7 +207,7 @@ const mapFeedback = (r: Row): Order["feedback"] => {
   };
 };
 const orderSelect =
-  "*,customer_addresses(*),order_items(*),order_events(*),delivery_issues(*),order_feedback(*),driver_assignments(id,driver_id,status,assigned_at,accepted_at,declined_at,ended_at,drivers(profiles(display_name)))";
+  "*,customer_addresses(*),order_items(*),order_events(*),delivery_issues(*),order_feedback(*),driver_assignments(id,driver_id,status,assigned_at,accepted_at,declined_at,ended_at,arrived_at_restaurant_at,drivers(profiles(display_name)))";
 export const toAddressPayload = (address: CustomerAddress) => ({
   district: address.district,
   street: address.street,
@@ -559,18 +561,50 @@ export class SupabaseStore {
     });
     fail(error);
   }
-  subscribe(refresh: () => void, surface: "restaurant" | "driver" = "restaurant", disconnected?: () => void) {
+  // Driver UI Phase: driver_standby_notices' own RLS stays staff-only (see
+  // 20260814500000) -- this RPC is the narrow, PII-free read path a driver
+  // actually gets, scoped server-side to their own branch pool and to
+  // still-PREPARING orders only.
+  async listMyStandbyNotices(): Promise<DriverStandbyNotice[]> {
+    const { data, error } = await supabase!.rpc("list_my_standby_notices");
+    fail(error);
+    return ((data || []) as Row[]).map((r) => ({
+      orderId: String(r.order_id),
+      orderNumber: String(r.order_number),
+      branchId: r.branch_id ? String(r.branch_id) : undefined,
+      branchName: r.branch_name ? String(r.branch_name) : undefined,
+      createdAt: String(r.created_at),
+    }));
+  }
+  // driver_branch_read already permits a driver to read their own pool
+  // membership (driver_id = auth.uid()) -- no RPC needed, same
+  // unfiltered-query-relies-on-RLS pattern list()/listDrivers() already use.
+  async listMyBranchIds(): Promise<string[]> {
+    const { data, error } = await supabase!.from("driver_branches").select("branch_id");
+    fail(error);
+    return ((data || []) as Row[]).map((r) => String(r.branch_id));
+  }
+  async markDriverAtRestaurant(id: string) {
+    const { error } = await supabase!.rpc("mark_driver_at_restaurant", { p_order_id: id });
+    fail(error);
+  }
+  subscribe(refresh: () => void, _surface: "restaurant" | "driver" = "restaurant", disconnected?: () => void) {
     const channel = supabase!.channel("zaytun-operations");
-    const tables = surface === "restaurant"
-      ? ["orders", "order_events", "driver_assignments", "delivery_issues", "drivers"]
-      : ["orders", "order_events", "driver_assignments", "delivery_issues"];
+    const tables = ["orders", "order_events", "driver_assignments", "delivery_issues", "drivers"];
     for (const table of tables)
       channel.on(
         "postgres_changes",
         { event: "*", schema: "public", table },
         refresh,
       );
+    // Same "refresh on (re)connect" safety net subscribeToOrderTracking
+    // already applies (see realtime.ts): a row written between the
+    // initial refresh() call and this channel actually reaching
+    // SUBSCRIBED is invisible to Postgres Realtime (it only pushes events
+    // after subscription completes) and would otherwise never surface
+    // until some unrelated later change happened to trigger a refetch.
     channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") refresh();
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") disconnected?.();
     });
     return () => void supabase!.removeChannel(channel as RealtimeChannel);

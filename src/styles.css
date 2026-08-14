@@ -1211,6 +1211,38 @@ h2 {
   margin-bottom: 8px;
   font-size: 13px;
 }
+/* Driver UI Phase: deliberately echoes .assignment-card's padding/radius
+   rhythm while using blue instead of gold, and never containing a
+   primary/urgent button -- visually unmistakable from an actual
+   assignment. "Standby is information, not ownership." */
+.standby-card {
+  background: #eef4fb;
+  border: 2px solid #a9c6e8;
+  border-radius: 18px;
+  padding: 20px;
+  margin: 16px 0;
+  text-align: center;
+}
+.standby-badge {
+  display: inline-block;
+  background: #cfe0f4;
+  color: #204a73;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  margin: 0 0 10px;
+}
+.at-restaurant-badge {
+  background: #edf3ef;
+  color: var(--green);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 700;
+  text-align: center;
+  margin: 10px 0;
+}
 .driver-note {
   background: #faf4e4;
   padding: 12px;

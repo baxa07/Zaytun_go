@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest'
-import {addCartLine,calculateOrderTotal,canTransition,checkoutFingerprint,createEvent,createIssue,deliveryAddressWasResubmitted,driverGreetingName,isDeliveryAddressRevisable,publicMenuState,resolveOrderSubmissionMode,resolvePendingCheckoutId,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
+import {addCartLine,calculateOrderTotal,canTransition,checkoutFingerprint,createEvent,createIssue,deliveryAddressWasResubmitted,deriveDriverAvailabilityState,driverGreetingName,isDeliveryAddressRevisable,publicMenuState,resolveOrderSubmissionMode,resolvePendingCheckoutId,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
 
 const address:CustomerAddress={customerName:'Ali',primaryPhone:'+998901234567',district:'Navoiy sh.',street:'Navoiy ko‘chasi',house:'12',landmark:'Bozor yonida',deliveryNotes:'',latitude:40.1,longitude:65.3,confidence:'COMPLETE',pinConfirmedAt:'2026-08-04T08:00:00Z',locationProvider:'mock',deliveryZoneResult:'ELIGIBLE'}
 const order:Order={id:'o1',number:'ZG-1',customer:{id:'c1',name:'Ali',primaryPhone:'+998901234567'},type:'DELIVERY',address,items:[],subtotal:0,deliveryFee:0,total:0,paymentMethod:'CASH',paymentStatus:'PENDING',specialInstructions:'',status:'NEW',createdAt:'2026-08-03T10:00:00Z',events:[],issues:[],assignmentHistory:[]}
@@ -118,5 +118,33 @@ describe('driver greeting name (hard-coded "AZIZ" launch defect)',()=>{
     expect(driverGreetingName(null)).toBeNull()
     expect(driverGreetingName(undefined)).toBeNull()
     expect(driverGreetingName('   ')).toBeNull()
+  })
+})
+describe('driver availability state (Driver UI Phase: 6 distinct, unambiguous states)',()=>{
+  const onShift={shiftStatus:'ON_SHIFT' as const,dispatchStatus:'ACTIVE' as const}
+  const offShift={shiftStatus:'OFF_SHIFT' as const,dispatchStatus:'ACTIVE' as const}
+  const paused={shiftStatus:'ON_SHIFT' as const,dispatchStatus:'PAUSED' as const}
+  it('is OFF_SHIFT when off shift, regardless of any standby/current data',()=>{
+    expect(deriveDriverAvailabilityState(offShift,undefined,false,true)).toBe('OFF_SHIFT')
+    expect(deriveDriverAvailabilityState(undefined,undefined,false,false)).toBe('OFF_SHIFT')
+    expect(deriveDriverAvailabilityState(paused,undefined,false,true)).toBe('OFF_SHIFT')
+  })
+  it('is AVAILABLE when on shift, idle, and no standby notice',()=>{
+    expect(deriveDriverAvailabilityState(onShift,undefined,false,false)).toBe('AVAILABLE')
+  })
+  it('is STANDBY when on shift, idle, and a standby notice exists -- never conflated with an actual assignment',()=>{
+    expect(deriveDriverAvailabilityState(onShift,undefined,false,true)).toBe('STANDBY')
+  })
+  it('is ASSIGNED once a real order is DRIVER_ASSIGNED and not yet marked at-restaurant',()=>{
+    expect(deriveDriverAvailabilityState(onShift,{status:'DRIVER_ASSIGNED'},false,false)).toBe('ASSIGNED')
+    expect(deriveDriverAvailabilityState(onShift,{status:'DRIVER_ASSIGNED'},false,true)).toBe('ASSIGNED')
+  })
+  it('is AT_RESTAURANT once the informational marker is set, still DRIVER_ASSIGNED',()=>{
+    expect(deriveDriverAvailabilityState(onShift,{status:'DRIVER_ASSIGNED'},true,false)).toBe('AT_RESTAURANT')
+  })
+  it('is CARRYING for PICKED_UP/ON_THE_WAY/ARRIVED',()=>{
+    expect(deriveDriverAvailabilityState(onShift,{status:'PICKED_UP'},false,false)).toBe('CARRYING')
+    expect(deriveDriverAvailabilityState(onShift,{status:'ON_THE_WAY'},false,false)).toBe('CARRYING')
+    expect(deriveDriverAvailabilityState(onShift,{status:'ARRIVED'},false,false)).toBe('CARRYING')
   })
 })
