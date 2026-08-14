@@ -247,15 +247,25 @@ test("scenario B: two compatible orders end to end -- capacity, second-order UI,
   await expect(nextStop.getByTestId("driver-primary-action")).toHaveCount(0);
 
   // Deliver stop 1 -- no refresh, the route automatically promotes stop 2.
+  // Each click waits for its own expected label first (matches scenario
+  // A's pattern) rather than firing 3 clicks back to back, which raced
+  // the label update under full-suite load and intermittently landed a
+  // click before the DOM had progressed to the next stage.
+  await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yo‘lga chiqdim");
   await driver.getByTestId("driver-primary-action").click(); // ON_THE_WAY
+  await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetib keldim");
   await driver.getByTestId("driver-primary-action").click(); // ARRIVED
+  await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetkazildi");
   await driver.getByTestId("driver-primary-action").click(); // DELIVERED
   await expect(driver.getByTestId("driver-route-next-stop")).toHaveCount(0, { timeout: 15000 }); // no longer a second stop -- it's now current
   await expect(driver.locator(".delivery-card, .assignment-card")).toHaveCount(1);
 
   // Deliver stop 2 -- batch completes, driver returns to available.
+  await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yo‘lga chiqdim");
   await driver.getByTestId("driver-primary-action").click(); // ON_THE_WAY
+  await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetib keldim");
   await driver.getByTestId("driver-primary-action").click(); // ARRIVED
+  await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetkazildi");
   await driver.getByTestId("driver-primary-action").click(); // DELIVERED
   await expect(driver.getByTestId("driver-all-stops-complete")).toBeVisible({ timeout: 15000 });
   await expect(driver.getByTestId("driver-no-active")).toBeVisible({ timeout: 15000 });
@@ -329,6 +339,81 @@ test("scenario C: a delayed second order is released while the driver is waiting
   await driverContext.close();
   await customerAContext.close();
   await customerBContext.close();
+  await staffContext.close();
+});
+
+test("scenario E: a second order that auto-assigns to the same driver OUTSIDE any batch -- via the READY-time fallback sweep, not early dispatch -- must render as its own full card, never only in a passive list", async ({ browser }) => {
+  test.setTimeout(60000);
+  // Invariant: any active assignment that belongs to the logged-in driver
+  // and has not been picked up must appear in the primary panel
+  // immediately, regardless of whether it happens to share a pickup
+  // batch with another active assignment. This is a REAL, fully
+  // automatic path, not just a manual-assignment edge case:
+  // select_best_driver_internal (the READY-time fallback used when an
+  // order reaches READY with no driver, e.g. because early dispatch
+  // found the driver's ready-time incompatible) has no batch-gap check
+  // at all -- only capacity -- so it can freely hand a driver who
+  // already holds one (possibly batched) order a second, wholly
+  // unrelated one via assign_driver_internal, which never sets
+  // pickup_batch_id. The driver frontend must not silently demote that
+  // second, genuinely active assignment to a "KEYINGI" row.
+  const driverContext = await browser.newContext();
+  const otherDriverContext = await browser.newContext();
+  const customerAContext = await browser.newContext();
+  const customerCContext = await browser.newContext();
+  const staffContext = await browser.newContext();
+  const driver = await driverContext.newPage();
+  const otherDriver = await otherDriverContext.newPage();
+  const customerA = await customerAContext.newPage();
+  const customerC = await customerCContext.newPage();
+  const staff = await staffContext.newPage();
+
+  await takeOffShift(otherDriver, "998900000099");
+  await otherDriverContext.close();
+  await freeDriver(driver, "driver@zaytun.local");
+  await signInStaff(staff);
+
+  const orderIdA = await placeDeliveryOrder(customerA, "UX Unbatched A", "+998907779108");
+  await staff.goto(`/restaurant/orders/${orderIdA}`);
+  await staff.getByTestId("approve-delivery").click();
+  await staff.getByTestId("action-confirm").click(); // real assignment at ACCEPT, driver is idle so this is a normal early pick
+  // Push A's estimated-ready time far out, so a fresh order C (default
+  // ~25 min estimate) will fall well outside the batch compatibility
+  // window the moment C is confirmed -- deterministic, no real waiting.
+  await staff.getByLabel("Taxminiy tayyorlash vaqti").fill("90");
+  await staff.getByTestId("action-set-estimate").click();
+  await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
+  await driver.getByTestId("driver-primary-action").click(); // accept A
+
+  const orderIdC = await placeDeliveryOrder(customerC, "UX Unbatched C", "+998907779110");
+  await staff.goto(`/restaurant/orders/${orderIdC}`);
+  await staff.getByTestId("approve-delivery").click();
+  await expect(staff.getByTestId("action-confirm")).toBeVisible();
+  await staff.getByTestId("action-confirm").click(); // early dispatch for C fails (gap >> compatibility window) -- driver is the only eligible one, so C gets no driver yet
+  await expect(staff.locator(".detail-head .badge")).toHaveText("Tasdiqlandi", { timeout: 15000 });
+  await expect(driver.getByTestId("driver-pre-ready-card")).toBeVisible({ timeout: 15000 }); // A's own card, unaffected
+  await expect(driver.getByTestId("driver-pickup-batch")).toHaveCount(0); // C is NOT batched with A
+
+  // C reaches READY with assigned_driver_id still null -- the READY-time
+  // fallback sweep (select_best_driver_internal, capacity-only) now picks
+  // up the SAME driver (1/2 capacity used), outside any batch.
+  await readyOrder(staff, orderIdC);
+
+  // C must appear as its OWN full, prominent assignment card -- never
+  // only as a small queue row -- immediately, with no reload.
+  await expect(driver.getByTestId("driver-assignment-card")).toBeVisible({ timeout: 15000 });
+  await expect(driver.getByTestId("driver-queue")).toHaveCount(0);
+  await expect(driver.locator(".assignment-card, .delivery-card, .pre-ready-card")).toHaveCount(2); // A's card + C's card, both full
+  await expect(driver.getByTestId("driver-capacity")).toContainText("2/2");
+
+  // C is independently actionable -- accept it, then it has its own
+  // primary action, unrelated to A's.
+  await driver.getByTestId("driver-assignment-card").getByTestId("driver-primary-action").click(); // accept C
+  await expect(driver.locator(".assignment-card, .delivery-card, .pre-ready-card")).toHaveCount(2);
+
+  await driverContext.close();
+  await customerAContext.close();
+  await customerCContext.close();
   await staffContext.close();
 });
 

@@ -3271,7 +3271,7 @@ function DriverAvailabilityToggle({
   );
 }
 function DriverApp() {
-  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds, listMyPickupBatchContext, acceptAssignment, declineAssignment, transitionPending } = useApp();
+  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds, listMyPickupBatchContext } = useApp();
   const greetingName = driverGreetingName(profileDisplayName);
   // driver_read's own RLS policy restricts a non-staff caller to id=auth.uid()
   // only, so this array holds exactly the current driver's own row.
@@ -3494,18 +3494,18 @@ function DriverApp() {
       return () => clearTimeout(t);
     }
   }, [activeAssignments]);
-  // Production hotfix: a batch-mate of `current` is now ALWAYS rendered
-  // inline by DriverMainPanel -- as the pre-pickup pairing card, the
-  // ready/wait card, or the post-pickup route's next-stop card -- in
-  // every state, not just once the current order is ready. Previously
-  // this only excluded the sibling once current left CONFIRMED/PREPARING,
-  // so a newly-added second order sat in this plain "KEYINGI" list (with
-  // its own tiny accept/decline) for its entire pre-pickup life,
-  // reading as a minor afterthought next to the one full-size card --
-  // exactly the "one full card + tiny KEYINGI row" behavior reported
-  // from production. The list below this point is now reserved for
-  // genuinely unrelated queued orders only.
-  const queuedForList = queued.filter((o) => !(current && o.pickupBatchId && o.pickupBatchId === current.pickupBatchId));
+  // Invariant: any active assignment that belongs to this driver and has
+  // not been picked up must appear in the primary panel immediately --
+  // never demoted to a passive list. A batch-mate of `current` gets the
+  // shared pickup-batch/wait/route treatment (via `batchSibling` below);
+  // anything else active (e.g. a second, unbatched order a dispatcher
+  // manually assigned to a driver who already holds one -- a real path,
+  // assign_driver_internal never sets pickup_batch_id) is not covered by
+  // that pairing, so it gets its OWN full DriverMainPanel instance,
+  // driven by its own state, with its own accept/decline or primary
+  // action -- never just a number-and-district row.
+  const batchSibling = current?.pickupBatchId ? queued.find((o) => o.pickupBatchId === current.pickupBatchId) : undefined;
+  const otherActiveOrders = queued.filter((o) => o.id !== batchSibling?.id);
   return (
     <Shell surface="driver">
       <main className="driver-page">
@@ -3577,45 +3577,18 @@ function DriverApp() {
             <p>Yangi buyurtma kelganda shu yerda ko‘rinadi.</p>
           </div>
         ) : (
-          current && <DriverMainPanel state={operationalState} order={current} queued={queued} batchContext={batchContext} />
-        )}
-        {queuedForList.length > 0 && (
-          <section className="driver-queue" data-testid="driver-queue">
-            <h3>KEYINGI</h3>
-            {queuedForList.map((o) => (
-              <div className="driver-queue-item" key={o.id} data-testid={`driver-queue-${o.id}`}>
-                <b>{o.number}</b>
-                <span>{o.address?.district || "—"}</span>
-                {/* Multi-Order Dispatch: a second compatible order is a
-                    real, separate assignment (its own accept/decline),
-                    not automatically covered by accepting the first --
-                    the queue can't just be a passive list once more than
-                    one order can be pending acceptance at once. */}
-                {!o.assignmentAcceptedAt && (
-                  <div className="driver-queue-actions">
-                    <button
-                      type="button"
-                      className="button primary"
-                      data-testid={`driver-queue-accept-${o.id}`}
-                      disabled={transitionPending(o.id)}
-                      onClick={() => void acceptAssignment(o.id)}
-                    >
-                      Qabul qilish
-                    </button>
-                    <button
-                      type="button"
-                      className="button secondary"
-                      data-testid={`driver-queue-decline-${o.id}`}
-                      disabled={transitionPending(o.id)}
-                      onClick={() => void declineAssignment(o.id)}
-                    >
-                      Ololmayman
-                    </button>
-                  </div>
-                )}
-              </div>
+          <>
+            {current && <DriverMainPanel state={operationalState} order={current} sibling={batchSibling} batchContext={batchContext} />}
+            {otherActiveOrders.map((o) => (
+              <DriverMainPanel
+                key={o.id}
+                state={deriveDriverOperationalState(myDriver, o, false)}
+                order={o}
+                sibling={undefined}
+                batchContext={batchContext}
+              />
             ))}
-          </section>
+          </>
         )}
       </main>
     </Shell>
@@ -3632,16 +3605,15 @@ function DriverApp() {
 function DriverMainPanel({
   state,
   order,
-  queued,
+  sibling,
   batchContext,
 }: {
   state: DriverOperationalState;
   order: Order;
-  queued: Order[];
+  sibling: Order | undefined;
   batchContext: PickupBatchContext[];
 }) {
   const { publicConfig } = useApp();
-  const sibling = order.pickupBatchId ? queued.find((o) => o.pickupBatchId === order.pickupBatchId) : undefined;
   // Production hotfix: "current stop / next stop" (DriverRoute) is a
   // ROUTE framing -- it must only exist once the courier has actually
   // left the restaurant with product in hand. Before that, both orders
