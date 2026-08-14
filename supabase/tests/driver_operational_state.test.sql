@@ -20,7 +20,11 @@ select has_column('public','drivers','delivery_capacity','drivers track workload
 -- local/seed equivalent to assert on here.
 select is((select shift_status::text from public.drivers where id='10000000-0000-0000-0000-000000000003'),'ON_SHIFT','seed.sql explicitly provisions driver ...003 as ON_SHIFT');
 select is((select dispatch_status::text from public.drivers where id='10000000-0000-0000-0000-000000000003'),'ACTIVE','seed.sql explicitly provisions driver ...003 as ACTIVE (not a backfill default)');
-select is((select delivery_capacity from public.drivers where id='10000000-0000-0000-0000-000000000003'),1,'delivery_capacity defaults to 1');
+-- Multi-Order Dispatch bumped the column default from 1 to 2 (and
+-- backfilled every existing row) -- seed.sql's own driver INSERT doesn't
+-- specify delivery_capacity explicitly, so it picks up whatever the
+-- column default is at the time seed.sql runs (after all migrations).
+select is((select delivery_capacity from public.drivers where id='10000000-0000-0000-0000-000000000003'),2,'delivery_capacity defaults to 2 (Multi-Order Dispatch)');
 select is((select availability::text from public.drivers where id='10000000-0000-0000-0000-000000000003'),'AVAILABLE','availability itself is untouched by this migration');
 
 -- Self-service RPCs: a driver can only ever act on their own row (no

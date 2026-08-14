@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { forceFreeDriver } from "./helpers/driverCleanup";
 
 const localPassword = "zaytun-local-2026";
 
@@ -23,6 +24,12 @@ test("P4 driver work surface (real Supabase): auto-dispatch assignment, accept, 
   // Taking the other driver off shift makes ...003 the only eligible
   // candidate, so this test can deterministically watch a single driver's
   // page rather than guessing which one gets the assignment.
+  // Multi-Order Dispatch: an earlier spec's driver may be stuck holding
+  // an accepted-but-not-yet-ready order with no driver-side action at all
+  // -- see e2e/helpers/driverCleanup.ts.
+  await forceFreeDriver("998900000099");
+  await forceFreeDriver("driver@zaytun.local");
+
   await otherDriver.goto("/driver");
   await otherDriver.getByLabel("Telefon yoki email").fill("998900000099");
   await otherDriver.getByLabel("Parol").fill(localPassword);
@@ -88,9 +95,12 @@ test("P4 driver work surface (real Supabase): auto-dispatch assignment, accept, 
   await staff.getByLabel("Parol").fill(localPassword);
   await staff.getByRole("button", { name: "Kirish" }).click();
   await staff.getByTestId("approve-delivery").click();
-  await staff.getByTestId("action-confirm").click();
+  await staff.getByTestId("action-confirm").click(); // Multi-Order Dispatch: real assignment happens right here, at ACCEPT -- not at READY
+  // Lands on the already-open driver page live, no reload, well before
+  // the food is ready.
+  await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
   await staff.getByTestId("action-start-prep").click();
-  await staff.getByTestId("action-mark-ready").click(); // triggers real automatic dispatch
+  await staff.getByTestId("action-mark-ready").click(); // reuses the existing assignment, no new search
 
   // P4.2: a genuinely new assignment produces the prominent "new delivery"
   // card, not the active-delivery card, before acceptance.

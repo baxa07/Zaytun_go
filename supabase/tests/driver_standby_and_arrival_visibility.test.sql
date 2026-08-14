@@ -39,6 +39,7 @@ $$;
 -- the driver is deterministic rather than left to the sweep) and,
 -- optionally, all the way through acceptance.
 create or replace function pg_temp.new_assigned_order(p_id text, p_driver uuid, p_accept boolean) returns void language plpgsql as $$
+declare current_driver uuid;
 begin
   perform public.create_public_order(jsonb_build_object(
     'id', p_id, 'customer', jsonb_build_object('name','Arrival Test','primaryPhone','+998900001'||right(p_id,3)),
@@ -52,7 +53,14 @@ begin
   perform public.transition_order(p_id::uuid,'CONFIRMED',null,null);
   perform public.transition_order(p_id::uuid,'PREPARING',null,null);
   perform public.transition_order(p_id::uuid,'READY',null,null);
-  perform public.assign_driver(p_id::uuid, p_driver);
+  -- Multi-Order Dispatch: the order may already be assigned (possibly to
+  -- p_driver already, via automatic early/fair-rotation dispatch) by the
+  -- time READY is reached -- only call the MANUAL override when it's
+  -- actually needed (unassigned, or assigned to someone else).
+  select assigned_driver_id into current_driver from public.orders where id=p_id::uuid;
+  if current_driver is distinct from p_driver then
+    perform public.assign_driver(p_id::uuid, p_driver);
+  end if;
   if p_accept then
     reset role;
     set local role authenticated;
@@ -67,7 +75,15 @@ $$;
 -- list_my_standby_notices(): branch-pooled driver sees the PREPARING
 -- order; out-of-pool driver sees nothing; row disappears once the order
 -- leaves PREPARING; staff cannot call it.
+--
+-- Multi-Order Dispatch: standby now only fires when genuinely nobody is
+-- eligible at ACCEPT (a real assignment happens instead otherwise) -- so
+-- this scenario pauses driver ...003 (the only driver pooled to this
+-- test's branch) first. list_my_standby_notices() itself doesn't care
+-- about the CALLING driver's own eligibility, only branch membership, so
+-- querying as the still-paused ...003 below is exactly the right check.
 -- ============================================================
+update public.drivers set dispatch_status='PAUSED' where id='10000000-0000-0000-0000-000000000003';
 select pg_temp.new_preparing_order('e1000000-0000-4000-8000-000000000001');
 -- Captured now, at superuser level -- order_read RLS would return NULL
 -- for this order once we're acting as a driver who is only standby-aware
@@ -99,6 +115,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
 select is((select count(*)::integer from public.list_my_standby_notices() where order_id='e1000000-0000-4000-8000-000000000001'::uuid),0,'the notice disappears from the RPC once the order leaves PREPARING');
 reset role;
+update public.drivers set dispatch_status='ACTIVE' where id='10000000-0000-0000-0000-000000000003';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);

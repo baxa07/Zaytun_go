@@ -1168,6 +1168,33 @@ h2 {
   color: var(--muted);
   margin-top: 8px;
 }
+/* Multi-Order Dispatch: shown on the assignment card and the pre-ready
+   sub-view -- a practical operational signal, matching the same visual
+   language as the restaurant's own prep-time hint. */
+.assignment-prep-hint {
+  background: #eef4fb;
+  color: #204a73;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+.assignment-batch-hint {
+  background: #faf4e4;
+  color: #6a4f0a;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+.pre-ready-card .hint {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  margin: 12px 0 0;
+}
 .driver-alt-nav {
   display: block;
   text-align: center;
@@ -1204,12 +1231,24 @@ h2 {
 .driver-queue-item {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 14px;
   margin-bottom: 8px;
   font-size: 13px;
+}
+.driver-queue-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.driver-queue-actions button {
+  flex: 1;
+  min-height: 40px;
 }
 /* Driver UI Phase: deliberately echoes .assignment-card's padding/radius
    rhythm while using blue instead of gold, and never containing a

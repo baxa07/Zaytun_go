@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { forceFreeDriver } from "./helpers/driverCleanup";
 
 // Customer Realtime + Driver Arrival Completion Phase. Every assertion in
 // this file deliberately never calls customer.reload() -- the whole point
@@ -9,6 +10,10 @@ import { expect, test } from "@playwright/test";
 const localPassword = "zaytun-local-2026";
 
 async function freeDriver(page: import("@playwright/test").Page, identifier: string) {
+  // See e2e/helpers/driverCleanup.ts -- an accepted, not-yet-ready order
+  // has no driver-side action at all, so the UI-only loop below can't
+  // reach it on its own.
+  await forceFreeDriver(identifier);
   await page.goto("/driver");
   await page.getByLabel("Telefon yoki email").fill(identifier);
   await page.getByLabel("Parol").fill(localPassword);

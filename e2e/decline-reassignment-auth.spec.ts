@@ -1,8 +1,14 @@
 import { expect, test } from "@playwright/test";
+import { forceFreeDriver } from "./helpers/driverCleanup";
 
 const localPassword = "zaytun-local-2026";
 
 async function freeDriver(page: import("@playwright/test").Page, identifier: string) {
+  // Multi-Order Dispatch: an earlier spec's driver may be stuck holding an
+  // accepted-but-not-yet-ready order with no driver-side action at all --
+  // see e2e/helpers/driverCleanup.ts for why the UI-only loop below can't
+  // reach that state on its own.
+  await forceFreeDriver(identifier);
   await page.goto("/driver");
   await page.getByLabel("Telefon yoki email").fill(identifier);
   await page.getByLabel("Parol").fill(localPassword);
@@ -56,9 +62,10 @@ async function placeAndReadyOrder(customer: import("@playwright/test").Page, sta
   await staff.getByLabel("Parol").fill(localPassword);
   await staff.getByRole("button", { name: "Kirish" }).click();
   await staff.getByTestId("approve-delivery").click();
-  await staff.getByTestId("action-confirm").click();
+  await staff.getByTestId("action-confirm").click(); // Multi-Order Dispatch: real assignment happens right here, at ACCEPT -- not at READY
+  await expect(staff.getByTestId("dispatch-courier-status")).toBeVisible({ timeout: 15000 });
   await staff.getByTestId("action-start-prep").click();
-  await staff.getByTestId("action-mark-ready").click();
+  await staff.getByTestId("action-mark-ready").click(); // reuses the existing assignment, no new search
   return orderId;
 }
 

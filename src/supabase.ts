@@ -143,6 +143,9 @@ const mapOrder = (r: Row): Order => {
     assignmentAcceptedAt: r.assignment_accepted_at
       ? String(r.assignment_accepted_at)
       : undefined,
+    acceptedAt: r.accepted_at ? String(r.accepted_at) : undefined,
+    pickupBatchId: r.pickup_batch_id ? String(r.pickup_batch_id) : undefined,
+    stopSequence: r.stop_sequence !== null && r.stop_sequence !== undefined ? Number(r.stop_sequence) : undefined,
     deliveryReviewStatus: r.delivery_review_status as Order["deliveryReviewStatus"],
     deliveryReviewReason: r.delivery_review_reason ? String(r.delivery_review_reason) : undefined,
     events: ((r.order_events || []) as Row[]).map((e) => ({
@@ -588,7 +591,7 @@ export class SupabaseStore {
     const { error } = await supabase!.rpc("mark_driver_at_restaurant", { p_order_id: id });
     fail(error);
   }
-  subscribe(refresh: () => void, _surface: "restaurant" | "driver" = "restaurant", disconnected?: () => void) {
+  subscribe(refresh: () => void, _surface?: "restaurant" | "driver", disconnected?: () => void) {
     const channel = supabase!.channel("zaytun-operations");
     const tables = ["orders", "order_events", "driver_assignments", "delivery_issues", "drivers"];
     for (const table of tables)

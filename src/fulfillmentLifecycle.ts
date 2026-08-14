@@ -90,9 +90,16 @@ export const remotePaymentStaffHint='Buyurtmani tekshiring va mijoz bilan to‘l
 // whether it has been accepted) is already the complete, unambiguous
 // signal for which monitoring phase to show; this is a pure read, never a
 // second source of truth for status itself.
-export type DeliveryDispatchPhase='SEARCHING'|'ASSIGNED'|'ACCEPTED'|'PICKED_UP'|'ON_THE_WAY'|'ARRIVED'
-export const deliveryDispatchPhase=(order:Pick<Order,'type'|'status'|'assignmentAcceptedAt'>):DeliveryDispatchPhase|null=>{
+// Multi-Order Dispatch: EARLY_ASSIGNED is the new phase covering a driver
+// already known (assigned at ACCEPT) while the kitchen state is still
+// CONFIRMED/PREPARING -- distinct from SEARCHING (which now only ever
+// means the rare safety-net case: nobody was eligible at ACCEPT, still
+// waiting as of READY) and from ASSIGNED (the post-READY reuse of that
+// same assignment, unchanged).
+export type DeliveryDispatchPhase='EARLY_ASSIGNED'|'SEARCHING'|'ASSIGNED'|'ACCEPTED'|'PICKED_UP'|'ON_THE_WAY'|'ARRIVED'
+export const deliveryDispatchPhase=(order:Pick<Order,'type'|'status'|'assignmentAcceptedAt'|'assignedDriverId'>):DeliveryDispatchPhase|null=>{
   if(order.type!=='DELIVERY')return null
+  if((order.status==='CONFIRMED'||order.status==='PREPARING')&&order.assignedDriverId)return 'EARLY_ASSIGNED'
   switch(order.status){
     case 'READY':return 'SEARCHING'
     case 'DRIVER_ASSIGNED':return order.assignmentAcceptedAt?'ACCEPTED':'ASSIGNED'
@@ -103,6 +110,7 @@ export const deliveryDispatchPhase=(order:Pick<Order,'type'|'status'|'assignment
   }
 }
 export const deliveryDispatchPhaseLabels:Record<DeliveryDispatchPhase,string>={
+  EARLY_ASSIGNED:'Haydovchi tayinlandi',
   SEARCHING:'Kuryer qidirilmoqda',
   ASSIGNED:'Biriktirildi',
   ACCEPTED:'Qabul qildi',

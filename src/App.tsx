@@ -3099,6 +3099,21 @@ function OrderDetail() {
                 <span className="dispatch-phase-label">{deliveryDispatchPhaseLabels[deliveryDispatchPhase(order)!]}</span>
               </div>
             )}
+            {/* Multi-Order Dispatch: while the driver is already known but
+                the kitchen isn't done yet, staff should understand why a
+                soon-to-be-READY order might sit a few extra minutes --
+                the driver may be intentionally waiting on a compatible
+                batch partner, never an unexplained delay. */}
+            {deliveryDispatchPhase(order) === "EARLY_ASSIGNED" && (
+              <p className="hint" data-testid="early-assignment-hint">
+                {(() => {
+                  const siblingCount = order.pickupBatchId ? orders.filter((o) => o.pickupBatchId === order.pickupBatchId && o.id !== order.id).length : 0;
+                  return siblingCount > 0
+                    ? `Haydovchi shu olib ketish guruhida yana ${siblingCount} ta buyurtmani ham kutmoqda bo‘lishi mumkin.`
+                    : "Haydovchi allaqachon biriktirilgan -- tayyor bo‘lishi bilanoq olib ketadi.";
+                })()}
+              </p>
+            )}
             {/* P6.13: manual reassignment while a courier already owns the
                 order is a staff-only exception path -- never shown once
                 the courier has picked up (superseding mid-route is a
@@ -3213,7 +3228,7 @@ function DriverAvailabilityToggle({
   );
 }
 function DriverApp() {
-  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds } = useApp();
+  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds, acceptAssignment, declineAssignment, transitionPending } = useApp();
   const greetingName = driverGreetingName(profileDisplayName);
   // driver_read's own RLS policy restricts a non-staff caller to id=auth.uid()
   // only, so this array holds exactly the current driver's own row.
@@ -3223,7 +3238,18 @@ function DriverApp() {
     () =>
       orders
         .filter((o) => o.type === "DELIVERY" && o.assignedDriverId && !terminalDeliveryStatuses.includes(o.status))
-        .sort((a, b) => driverAssignedAt(a).localeCompare(driverAssignedAt(b))),
+        .sort((a, b) => {
+          // Multi-Order Dispatch: once a route is computed (stop_sequence
+          // set, at the first PICKED_UP in a batch), that deliberately-
+          // chosen delivery order -- not assignment order -- decides
+          // which stop is "current." Pre-pickup, stop_sequence is still
+          // null for everyone, so this falls through to the original
+          // assignment-order sort unchanged.
+          if (a.stopSequence !== undefined && b.stopSequence !== undefined) return a.stopSequence - b.stopSequence;
+          if (a.stopSequence !== undefined) return -1;
+          if (b.stopSequence !== undefined) return 1;
+          return driverAssignedAt(a).localeCompare(driverAssignedAt(b));
+        }),
     [orders],
   );
   const current = activeAssignments[0];
@@ -3331,8 +3357,13 @@ function DriverApp() {
   // while `myDriver` hasn't loaded yet (e.g. local/offline provider, or a
   // brief moment before the first refresh completes), this must not be
   // mistaken for "not working" and must fall through to the normal
-  // idle-ready state instead.
-  const knownOffDuty = myDriver ? !driverAcceptsNewWork(myDriver) : false;
+  // idle-ready state instead. Deliberately shiftStatus alone, not
+  // driverAcceptsNewWork (which also folds in dispatchStatus): a driver who
+  // is ON_SHIFT but PAUSED is still genuinely on duty and must keep seeing
+  // pending-demand standby notices -- Multi-Order Dispatch fires those as
+  // early as CONFIRMED specifically so an online-but-paused driver knows
+  // work is waiting before deciding to resume.
+  const knownOffDuty = myDriver ? myDriver.shiftStatus !== "ON_SHIFT" : false;
   return (
     <Shell surface="driver">
       <main className="driver-page">
@@ -3362,7 +3393,19 @@ function DriverApp() {
             <p>Hozir ishlamayapsiz.</p>
           </div>
         ) : current ? (
-          current.status === "DRIVER_ASSIGNED" && !current.assignmentAcceptedAt ? (
+          // Multi-Order Dispatch: a driver may now be assigned as early as
+          // ACCEPT, well before order.status ever reaches DRIVER_ASSIGNED
+          // -- accept_assignment's own guards never checked orders.status
+          // at all, so "still needs a response" is gated on acceptance,
+          // not status alone. But once status has genuinely progressed
+          // past DRIVER_ASSIGNED (PICKED_UP or later), acceptance is
+          // already implied by construction (the server's own PICKED_UP
+          // guard requires assignment_accepted_at to be set) -- excluding
+          // those statuses here protects the LocalStore/offline provider,
+          // whose seed/mock data was never designed to populate
+          // assignmentAcceptedAt for orders that start mid-flight, from
+          // being wrongly routed back to the accept/decline card.
+          !current.assignmentAcceptedAt && !["PICKED_UP", "ON_THE_WAY", "ARRIVED"].includes(current.status) ? (
             <DriverAssignmentCard order={current} />
           ) : (
             <DriverDelivery order={current} />
@@ -3383,6 +3426,33 @@ function DriverApp() {
               <div className="driver-queue-item" key={o.id} data-testid={`driver-queue-${o.id}`}>
                 <b>{o.number}</b>
                 <span>{o.address?.district || "—"}</span>
+                {/* Multi-Order Dispatch: a second compatible order is a
+                    real, separate assignment (its own accept/decline),
+                    not automatically covered by accepting the first --
+                    the queue can't just be a passive list once more than
+                    one order can be pending acceptance at once. */}
+                {!o.assignmentAcceptedAt && (
+                  <div className="driver-queue-actions">
+                    <button
+                      type="button"
+                      className="button primary"
+                      data-testid={`driver-queue-accept-${o.id}`}
+                      disabled={transitionPending(o.id)}
+                      onClick={() => void acceptAssignment(o.id)}
+                    >
+                      Qabul qilish
+                    </button>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      data-testid={`driver-queue-decline-${o.id}`}
+                      disabled={transitionPending(o.id)}
+                      onClick={() => void declineAssignment(o.id)}
+                    >
+                      Ololmayman
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </section>
@@ -3414,12 +3484,21 @@ function DriverStandbyCard({ notices }: { notices: DriverStandbyNotice[] }) {
 // decline naturally disappears the moment the assignment is accepted --
 // no separate condition needed here.
 function DriverAssignmentCard({ order }: { order: Order }) {
-  const { acceptAssignment, declineAssignment, transitionPending, publicConfig } = useApp();
+  const { acceptAssignment, declineAssignment, transitionPending, publicConfig, orders } = useApp();
   const [declineOpen, setDeclineOpen] = useState(false);
+  // Multi-Order Dispatch: computed purely from state already in hand (the
+  // driver's own RLS-scoped order list) -- no second RPC round-trip.
+  const batchSiblingCount = order.pickupBatchId
+    ? orders.filter((o) => o.pickupBatchId === order.pickupBatchId && o.id !== order.id).length
+    : 0;
   return (
     <section className="assignment-card" data-testid="driver-assignment-card">
-      <p className="assignment-badge">YANGI YETKAZISH</p>
+      <p className="assignment-badge">🚗 YANGI YETKAZISH</p>
       <h2>{order.number}</h2>
+      <p className="assignment-prep-hint">Taxminan 20–25 daqiqada tayyor bo‘ladi.</p>
+      {batchSiblingCount > 0 && (
+        <p className="assignment-batch-hint" data-testid="assignment-batch-hint">📦 Yana {batchSiblingCount} ta buyurtma shu olib ketish guruhida</p>
+      )}
       <div className="assignment-route">
         <div>
           <small>OLIB KETISH</small>
@@ -3488,10 +3567,40 @@ function driverPaymentSummary(order: Order): { label: string; amount?: string } 
     amount: money(order.total),
   };
 }
+// Multi-Order Dispatch: an accepted order whose kitchen state (order.status)
+// hasn't reached READY yet -- the driver has committed, but there is no
+// PICKED_UP/ON_THE_WAY/etc action to take yet (next[order.status] would be
+// undefined for CONFIRMED/PREPARING). Purely informational: order number,
+// a practical prep-time signal, and a batch-partner hint if applicable.
+function DriverPreReadyCard({ order }: { order: Order }) {
+  const { orders } = useApp();
+  const batchSiblingCount = order.pickupBatchId
+    ? orders.filter((o) => o.pickupBatchId === order.pickupBatchId && o.id !== order.id).length
+    : 0;
+  return (
+    <section className="delivery-card pre-ready-card" data-testid="driver-pre-ready-card">
+      <div className="delivery-top">
+        <span>SIZGA BIRIKTIRILGAN</span>
+        <Badge status={order.status} />
+      </div>
+      <h2>{order.number}</h2>
+      <p className="assignment-prep-hint">
+        {order.estimatedMinutes ? `Taxminan ${order.estimatedMinutes} daqiqada tayyor bo‘ladi.` : "Taxminan 20–25 daqiqada tayyor bo‘ladi."}
+      </p>
+      {batchSiblingCount > 0 && (
+        <p className="assignment-batch-hint" data-testid="assignment-batch-hint">📦 Yana {batchSiblingCount} ta buyurtma shu olib ketish guruhida</p>
+      )}
+      <p className="hint">Tayyor bo‘lganda shu yerda ko‘rinadi -- hozircha kutib turing.</p>
+    </section>
+  );
+}
 function DriverDelivery({ order }: { order: Order }) {
   const { transition, reportIssue, transitionPending, markDriverAtRestaurant } = useApp();
   const [issueOpen, setIssueOpen] = useState(false);
   const [issue, setIssue] = useState("");
+  if (order.status === "CONFIRMED" || order.status === "PREPARING") {
+    return <DriverPreReadyCard order={order} />;
+  }
   const next: Partial<Record<OrderStatus, OrderStatus>> = {
     PICKED_UP: "ON_THE_WAY",
     ON_THE_WAY: "ARRIVED",

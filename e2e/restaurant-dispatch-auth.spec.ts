@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { forceFreeDriver } from "./helpers/driverCleanup";
 
 const localPassword = "zaytun-local-2026";
 
@@ -15,6 +16,12 @@ test("P5 restaurant dispatch presentation (real Supabase): genuine automatic ass
   // Two seed drivers are both ON_SHIFT/ACTIVE by default -- take the other
   // one off shift so automatic dispatch has exactly one eligible
   // candidate, making the assigned identity deterministic to assert on.
+  // Multi-Order Dispatch: an earlier spec's driver may be stuck holding
+  // an accepted-but-not-yet-ready order with no driver-side action at all
+  // -- see e2e/helpers/driverCleanup.ts.
+  await forceFreeDriver("998900000099");
+  await forceFreeDriver("driver@zaytun.local");
+
   await otherDriver.goto("/driver");
   await otherDriver.getByLabel("Telefon yoki email").fill("998900000099");
   await otherDriver.getByLabel("Parol").fill(localPassword);
@@ -68,13 +75,15 @@ test("P5 restaurant dispatch presentation (real Supabase): genuine automatic ass
   await staff.getByLabel("Parol").fill(localPassword);
   await staff.getByRole("button", { name: "Kirish" }).click();
   await staff.getByTestId("approve-delivery").click();
-  await staff.getByTestId("action-confirm").click();
-  await staff.getByTestId("action-start-prep").click();
-  await staff.getByTestId("action-mark-ready").click();
-
-  // No manual click anywhere below -- this is real Smart Dispatch, and the
-  // restaurant is never asked "which driver?".
+  await staff.getByTestId("action-confirm").click(); // Multi-Order Dispatch: real assignment happens right here, at ACCEPT -- not at READY
+  // No manual click anywhere -- this is real Smart Dispatch, and the
+  // restaurant is never asked "which driver?". Visible immediately,
+  // well before the food is ready.
   await expect(staff.getByTestId("dispatch-courier-status")).toBeVisible({ timeout: 10000 });
+  await expect(staff.getByTestId("dispatch-courier-status")).toContainText("Aziz Bekov");
+  await staff.getByTestId("action-start-prep").click();
+  await staff.getByTestId("action-mark-ready").click(); // reuses the existing assignment, no new search
+
   await expect(staff.getByTestId("dispatch-courier-status")).toContainText("Aziz Bekov");
   await expect(staff.getByTestId("dispatch-courier-status")).toContainText("Biriktirildi");
   await expect(staff.locator(".detail-head .badge")).toHaveText("Haydovchi biriktirilgan");

@@ -274,6 +274,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const pendingTransitions = useRef(new Set<string>());
   const [pendingTransitionState, setPendingTransitionState] = useState<Record<string, boolean>>({});
   const refreshInFlight = useRef<Promise<void> | null>(null);
+  const refreshQueued = useRef(false);
   const publicLoadStarted = useRef(false);
 
   useEffect(() => {
@@ -349,30 +350,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [applySession]);
 
-  const refresh = useCallback(async () => {
-    if (refreshInFlight.current) return refreshInFlight.current;
-    const task = (async () => {
-      const nextOrders = await store.list(surface ?? undefined);
-      // P4.1: a DRIVER also needs `drivers` populated -- not to see other
-      // couriers (driver_read's own RLS policy restricts a non-staff caller
-      // to id=auth.uid() only), but so the driver surface can read/control
-      // its own shift_status/dispatch_status via the exact same listDrivers()
-      // call RESTAURANT/DISPATCHER already use.
-      const nextDrivers = !supabaseConfigured || role === "RESTAURANT" || role === "DISPATCHER" || role === "DRIVER"
-        ? await store.listDrivers()
-        : [];
-      setOrders(nextOrders);
-      setDrivers(nextDrivers);
-      setLoaded(true);
-      setOperationalError("");
-    })();
+  const fetchOnce = useCallback(async () => {
+    const nextOrders = await store.list(surface ?? undefined);
+    // P4.1: a DRIVER also needs `drivers` populated -- not to see other
+    // couriers (driver_read's own RLS policy restricts a non-staff caller
+    // to id=auth.uid() only), but so the driver surface can read/control
+    // its own shift_status/dispatch_status via the exact same listDrivers()
+    // call RESTAURANT/DISPATCHER already use.
+    const nextDrivers = !supabaseConfigured || role === "RESTAURANT" || role === "DISPATCHER" || role === "DRIVER"
+      ? await store.listDrivers()
+      : [];
+    setOrders(nextOrders);
+    setDrivers(nextDrivers);
+    setLoaded(true);
+    setOperationalError("");
+  }, [role, surface]);
+
+  // Multi-Order Dispatch surfaced a latent "lost update" race here: two
+  // realtime signals for the SAME driver can now arrive moments apart (e.g.
+  // order A then order B both reaching READY within a batch), and a bare
+  // "share the one in-flight promise" coalescing scheme lets the second
+  // signal silently piggyback on a snapshot fetch that may have started
+  // before the second order's own commit -- its own caller never gets a
+  // fetch that actually reflects it, and nothing else was scheduled to
+  // catch up. A queued trailing fetch closes this: any refresh() call that
+  // arrives while one is in flight is guaranteed at least one more full
+  // fetch cycle that starts only after the current one finishes, and every
+  // caller (original or queued) awaits that same final completion.
+  const refresh = useCallback(async (): Promise<void> => {
+    if (refreshInFlight.current) {
+      refreshQueued.current = true;
+      return refreshInFlight.current;
+    }
+    const run = async (): Promise<void> => {
+      await fetchOnce();
+      if (refreshQueued.current) {
+        refreshQueued.current = false;
+        await fetchOnce();
+      }
+    };
+    const task = run();
     refreshInFlight.current = task;
     try {
       await task;
     } finally {
       refreshInFlight.current = null;
     }
-  }, [role, surface]);
+  }, [fetchOnce]);
 
   useEffect(() => {
     if (!supabaseConfigured) {

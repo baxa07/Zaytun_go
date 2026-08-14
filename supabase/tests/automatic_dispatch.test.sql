@@ -75,10 +75,19 @@ update public.driver_assignments set ended_at=now(),status='CANCELLED' where ord
 --    itself -- a well-established Postgres pattern -- and is outside what
 --    a single-connection pgTAP script can directly simulate; this proves
 --    the idempotent-outcome property that guarantee is designed to give.)
+--    Created directly as a READY order (same bypass technique as
+--    scenario 4 below), not via new_ready_order -- Multi-Order Dispatch
+--    now assigns most orders at CONFIRMED (ACCEPT) automatically, so
+--    routing through the full NEW->CONFIRMED->PREPARING->READY helper
+--    would already be assigned before this scenario's own two explicit
+--    sweep calls ever ran, no longer proving READY-sweep idempotency in
+--    isolation.
 -- ============================================================
-select pg_temp.new_ready_order('a3000000-0000-4000-8000-000000000001', '99000000-0000-4000-8000-00000000000a');
+select public.create_public_order(jsonb_build_object('id','a3000000-0000-4000-8000-000000000001','customer',jsonb_build_object('name','Dispatch Test','primaryPhone','+998900000301'),'type','DELIVERY','paymentMethod','CASH','address',jsonb_build_object('district','Navoiy','street','Test','latitude',40.09,'longitude',65.40,'pinConfirmedAt','2026-08-12T08:00:00Z','locationProvider','mock'),'items',jsonb_build_array(jsonb_build_object('menuItemId','plov','quantity',3,'modifierIds','[]'::jsonb))));
+update public.orders set branch_id='99000000-0000-4000-8000-00000000000a',delivery_review_status='APPROVED',status='READY' where id='a3000000-0000-4000-8000-000000000001';
 select public.attempt_dispatch_sweep_internal();
-select is((select count(*)::integer from public.driver_assignments where order_id='a3000000-0000-4000-8000-000000000001' and ended_at is null),1,'two sweep calls against the same state never produce a duplicate assignment');
+select public.attempt_dispatch_sweep_internal();
+select is((select count(*)::integer from public.driver_assignments where order_id='a3000000-0000-4000-8000-000000000001' and ended_at is null),1,'two sweep calls against the same genuinely-waiting state never produce a duplicate assignment');
 update public.orders set status='CANCELLED' where id='a3000000-0000-4000-8000-000000000001';
 update public.driver_assignments set ended_at=now(),status='CANCELLED' where order_id='a3000000-0000-4000-8000-000000000001' and ended_at is null;
 

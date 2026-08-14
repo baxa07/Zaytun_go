@@ -74,7 +74,14 @@ export interface AssignmentHistoryEntry {id:string;driverId:string;driverName?:s
 // phone, matching the Telegram-notification minimalism precedent. Mirrors
 // exactly what list_my_standby_notices() returns.
 export interface DriverStandbyNotice {orderId:string;orderNumber:string;branchId?:string;branchName?:string;createdAt:string}
-export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback;assignmentHistory:AssignmentHistoryEntry[]}
+export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback;assignmentHistory:AssignmentHistoryEntry[];
+  // Multi-Order Dispatch: a driver may now be assigned as early as
+  // ACCEPT (NEW->CONFIRMED), well before the order is READY -- these
+  // fields expose that decoupled state without changing `status` at all.
+  acceptedAt?:string;
+  pickupBatchId?:string;
+  stopSequence?:number;
+}
 
 export const legalTransitions:Record<OrderStatus,OrderStatus[]>={NEW:['CONFIRMED','REJECTED','CANCELLED'],CONFIRMED:['PREPARING','CANCELLED'],PREPARING:['READY','CANCELLED'],READY:['COLLECTED','DRIVER_ASSIGNED','CANCELLED'],COLLECTED:[],DRIVER_ASSIGNED:['PICKED_UP','CANCELLED'],PICKED_UP:['ON_THE_WAY','DELIVERY_FAILED','RETURNED'],ON_THE_WAY:['ARRIVED','DELIVERY_FAILED','RETURNED'],ARRIVED:['DELIVERED','DELIVERY_FAILED','RETURNED'],DELIVERED:[],REJECTED:[],CANCELLED:[],DELIVERY_FAILED:['RETURNED'],RETURNED:[]}
 export const canTransition=(from:OrderStatus,to:OrderStatus)=>legalTransitions[from].includes(to)

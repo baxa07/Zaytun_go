@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { forceFreeDriver, driverRpc } from "./helpers/driverCleanup";
 
 // Driver UI Phase: standby awareness (information, never ownership),
 // the purely-informational "arrived at restaurant" marker, and the two
@@ -11,6 +12,10 @@ import { expect, test } from "@playwright/test";
 const localPassword = "zaytun-local-2026";
 
 async function freeDriver(page: import("@playwright/test").Page, identifier: string) {
+  // See e2e/helpers/driverCleanup.ts -- an accepted, not-yet-ready order
+  // has no driver-side action at all, so the UI-only loop below can't
+  // reach it on its own.
+  await forceFreeDriver(identifier);
   await page.goto("/driver");
   await page.getByLabel("Telefon yoki email").fill(identifier);
   await page.getByLabel("Parol").fill(localPassword);
@@ -70,7 +75,24 @@ async function placeDeliveryOrder(customer: import("@playwright/test").Page, pho
   return customer.url().split("/confirmation/")[1];
 }
 
-test("a standby notice appears live with no reload, is visually/structurally distinct from an assignment, and is replaced live by the real assignment once READY", async ({ browser }) => {
+async function readyOrder(staff: import("@playwright/test").Page, orderId: string) {
+  await staff.goto(`/restaurant/orders/${orderId}`);
+  await staff.getByTestId("action-start-prep").click();
+  await expect(staff.getByTestId("action-mark-ready")).toBeVisible({ timeout: 10000 });
+  // Multi-Order Dispatch's per-transition realtime fan-out (orders,
+  // order_events, driver_assignments, drivers all fire on one early
+  // assignment) can trigger a re-render right as this click lands,
+  // occasionally swallowing it -- retry until the badge actually confirms
+  // DRIVER_ASSIGNED rather than trusting a single click.
+  for (let i = 0; i < 5; i++) {
+    if ((await staff.locator(".detail-head .badge").textContent()) === "Haydovchi biriktirilgan") break;
+    await staff.getByTestId("action-mark-ready").click().catch(() => {});
+    await staff.waitForTimeout(400);
+  }
+  await expect(staff.locator(".detail-head .badge")).toHaveText("Haydovchi biriktirilgan", { timeout: 10000 });
+}
+
+test("with no eligible driver at ACCEPT, a standby notice appears live immediately (not at PREPARING), is visually/structurally distinct from an assignment, and is replaced live by a real assignment the moment a driver checks in", async ({ browser }) => {
   const driverContext = await browser.newContext();
   const otherDriverContext = await browser.newContext();
   const customerContext = await browser.newContext();
@@ -80,35 +102,58 @@ test("a standby notice appears live with no reload, is visually/structurally dis
   const customer = await customerContext.newPage();
   const staff = await staffContext.newPage();
 
-  // Deterministic: driver ...003 is the sole eligible candidate.
-  await takeOffShift(otherDriver, "998900000099");
+  // Multi-Order Dispatch: assignment now happens at ACCEPT (CONFIRMED),
+  // not READY -- so proving "standby means genuinely nobody eligible" and
+  // "never both ASSIGNED and STANDBY for the same driver" requires BOTH
+  // seed drivers to be ineligible at ACCEPT time, not just one.
+  //
+  // Deliberately PAUSED (dispatch_status), not OFF_SHIFT: src/App.tsx's
+  // own knownOffDuty gate hides the standby notice entirely whenever
+  // shift_status isn't ON_SHIFT (an off-duty driver has no reason to see
+  // pending demand), so proving the notice itself renders live requires
+  // staying ON_SHIFT while genuinely ineligible -- exactly the same
+  // technique supabase/tests/restaurant_prep_and_driver_standby.test.sql
+  // already uses server-side for the identical scenario.
+  await freeDriver(otherDriver, "998900000099");
+  await driverRpc("998900000099", "pause_dispatch");
   await otherDriverContext.close();
   await freeDriver(driver, "driver@zaytun.local");
-  await signInStaff(staff);
+  await driverRpc("driver@zaytun.local", "pause_dispatch");
+  try {
+    await signInStaff(staff);
 
-  const orderId = await placeDeliveryOrder(customer, "+998907778810");
+    const orderId = await placeDeliveryOrder(customer, "+998907778810");
 
-  await staff.goto(`/restaurant/orders/${orderId}`);
-  await staff.getByTestId("approve-delivery").click();
-  await staff.getByTestId("action-confirm").click();
-  await staff.getByTestId("action-start-prep").click(); // fires attempt_driver_standby_notice_internal
+    await staff.goto(`/restaurant/orders/${orderId}`);
+    await staff.getByTestId("approve-delivery").click();
+    await staff.getByTestId("action-confirm").click(); // fires the early-dispatch attempt; fails (nobody eligible) -> standby fires immediately
 
-  // Lands on the already-open driver page live, no reload.
-  await expect(driver.getByTestId("driver-standby-notice")).toBeVisible({ timeout: 15000 });
-  // Information, not ownership -- no accept/decline, not the assignment card.
-  await expect(driver.locator(".assignment-card")).toHaveCount(0);
-  await expect(driver.locator(".standby-card button")).toHaveCount(0);
-  await expect(driver.getByTestId("driver-decline-assignment")).toHaveCount(0);
+    // Lands on the already-open driver page live, no reload -- at ACCEPT
+    // time, well before PREPARING.
+    await expect(driver.getByTestId("driver-standby-notice")).toBeVisible({ timeout: 15000 });
+    // Information, not ownership -- no accept/decline, not the assignment card.
+    await expect(driver.locator(".assignment-card")).toHaveCount(0);
+    await expect(driver.locator(".standby-card button")).toHaveCount(0);
+    await expect(driver.getByTestId("driver-decline-assignment")).toHaveCount(0);
 
-  await staff.getByTestId("action-mark-ready").click(); // real automatic dispatch
-
-  // The standby card is replaced live by the real assignment card, no reload.
-  await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
-  await expect(driver.getByTestId("driver-standby-notice")).toHaveCount(0);
-
-  await driverContext.close();
-  await customerContext.close();
-  await staffContext.close();
+    // The late check-in itself (here: becoming eligible again while already
+    // ON_SHIFT) -- the eligibility sweep must reach this already-open driver
+    // page live, replacing standby with a real assignment, with no reload
+    // and no further restaurant action.
+    await driverRpc("driver@zaytun.local", "resume_dispatch");
+    await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
+    await expect(driver.getByTestId("driver-standby-notice")).toHaveCount(0);
+  } finally {
+    // Guaranteed cleanup regardless of assertion outcome above -- a
+    // PAUSED driver left behind here would otherwise silently break every
+    // later test in this file (and beyond) that assumes both seed drivers
+    // are genuinely eligible after freeDriver.
+    await driverRpc("998900000099", "resume_dispatch").catch(() => {});
+    await driverRpc("driver@zaytun.local", "resume_dispatch").catch(() => {});
+    await driverContext.close();
+    await customerContext.close();
+    await staffContext.close();
+  }
 });
 
 test("the 'at restaurant' marker is live on both driver and staff, and never blocks the real transition to PICKED_UP", async ({ browser }) => {
@@ -130,13 +175,18 @@ test("the 'at restaurant' marker is live on both driver and staff, and never blo
 
   await staff.goto(`/restaurant/orders/${orderId}`);
   await staff.getByTestId("approve-delivery").click();
-  await staff.getByTestId("action-confirm").click();
-  await staff.getByTestId("action-start-prep").click();
-  await staff.getByTestId("action-mark-ready").click(); // real automatic dispatch
+  await staff.getByTestId("action-confirm").click(); // Multi-Order Dispatch: real assignment happens right here, at ACCEPT
 
+  // Lands on the already-open driver page live, no reload, well before
+  // the food is ready.
   await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
   await driver.getByTestId("driver-primary-action").click(); // accept
-  await expect(driver.locator(".delivery-card")).toBeVisible();
+  // The order isn't READY yet -- the pre-ready sub-view, not the full
+  // delivery-card action flow.
+  await expect(driver.getByTestId("driver-pre-ready-card")).toBeVisible();
+
+  await readyOrder(staff, orderId);
+  await expect(driver.locator(".delivery-card")).toBeVisible({ timeout: 15000 });
 
   await driver.getByTestId("driver-mark-at-restaurant").click();
   await expect(driver.getByTestId("driver-at-restaurant-badge")).toBeVisible();
@@ -212,14 +262,14 @@ test("cancellation while DRIVER_ASSIGNED reflects live on the driver's own scree
 
   await staff.goto(`/restaurant/orders/${orderId}`);
   await staff.getByTestId("approve-delivery").click();
-  await staff.getByTestId("action-confirm").click();
-  await staff.getByTestId("action-start-prep").click();
-  await staff.getByTestId("action-mark-ready").click(); // real automatic dispatch
+  await staff.getByTestId("action-confirm").click(); // Multi-Order Dispatch: real assignment happens right here, at ACCEPT
   await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
+  await readyOrder(staff, orderId);
 
-  // legalTransitions only allows DRIVER_ASSIGNED->CANCELLED (not from
-  // PICKED_UP onward), so this stage is the only one where the existing
-  // restaurant action-cancel control is reachable at all.
+  // legalTransitions allows CANCELLED from every pre-departure stage
+  // (including DRIVER_ASSIGNED, reached here); this exercises the
+  // restaurant's own action-cancel control at the stage staff is most
+  // likely to actually use it.
   await staff.getByPlaceholder("Bekor qilish sababi").fill("Sinov uchun bekor qilish");
   await staff.getByTestId("action-cancel").click();
 
