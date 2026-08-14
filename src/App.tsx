@@ -3122,6 +3122,19 @@ function OrderDetail() {
                 })()}
               </p>
             )}
+            {/* Full Live Operational Validation: the hint above disappears
+                the instant THIS order itself reaches DRIVER_ASSIGNED
+                (deliveryDispatchPhase moves on to ACCEPTED), even while
+                the driver is still genuinely at the restaurant waiting on
+                a not-yet-ready batch partner -- staff watching this exact
+                order had no explanation at all for why the driver hadn't
+                left yet. Purely additive: a second, separate hint (new
+                testid, own condition), never altering the block above. */}
+            {order.status === "DRIVER_ASSIGNED" && order.pickupBatchId && orders.some((o) => o.pickupBatchId === order.pickupBatchId && o.id !== order.id && !terminalDeliveryStatuses.includes(o.status)) && (
+              <p className="hint" data-testid="driver-waiting-on-batch-partner-hint">
+                Kuryer shu buyurtmani oldi, ammo shu olib ketish guruhidagi boshqa buyurtma tayyor bo‘lishini kutmoqda.
+              </p>
+            )}
             {/* P6.13: manual reassignment while a courier already owns the
                 order is a staff-only exception path -- never shown once
                 the courier has picked up (superseding mid-route is a
