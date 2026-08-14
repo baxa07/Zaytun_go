@@ -1391,8 +1391,17 @@ h2 {
   text-align: center;
   margin: 12px 0;
 }
-.route-current-label,
-.route-next-hint {
+.route-mission-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--green);
+  padding: 0 4px 8px;
+}
+.route-current-label {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1405,14 +1414,51 @@ h2 {
   font-size: 14px;
   color: #1d2922;
 }
-.route-next-hint {
+/* Deliberately smaller/quieter than .delivery-card (the current-stop
+   card) -- visible and useful, never competing with the active stop. */
+.route-next-card {
   background: #f2f4f2;
-  border-radius: 10px;
-  padding: 10px 14px;
-  margin-top: 8px;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-top: 10px;
 }
-.route-next-hint b {
+.route-next-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.route-next-card h3 {
+  font-size: 15px;
+  margin: 4px 0 2px;
+}
+.route-next-address {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0 0 6px;
+}
+.route-next-distance {
+  font-size: 13px;
   color: #1d2922;
+}
+.route-next-details {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.route-next-details summary {
+  color: var(--green);
+  font-weight: 600;
+  cursor: pointer;
+}
+.route-next-details-body {
+  padding-top: 6px;
+  color: var(--muted);
+}
+.route-next-details-body p {
+  margin: 2px 0;
 }
 .issue-form {
   display: grid;

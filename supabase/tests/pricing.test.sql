@@ -1,5 +1,5 @@
 begin;
-select plan(31);
+select plan(39);
 
 create function pg_temp.pricing_payload(p_id uuid, p_items jsonb, p_type text default 'PICKUP', p_payment text default 'CASH')
 returns jsonb language sql as $$
@@ -59,6 +59,26 @@ select is((select public.create_public_order(pg_temp.pricing_payload('40000000-0
 select lives_ok($$select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000018','[{"menuItemId":"chicken","quantity":3,"modifierIds":[]}]','DELIVERY'))$$,'delivery order at/above the free-delivery threshold accepted');
 select is((select delivery_fee from public.orders where id='40000000-0000-4000-8000-000000000018'),0,'subtotal at or above the free-delivery threshold is not charged a delivery fee');
 select is((select total from public.orders where id='40000000-0000-4000-8000-000000000018'),204000,'free-delivery total equals subtotal alone');
+
+-- Production hotfix: there is no delivery-order minimum -- only the
+-- free-delivery-fee threshold. Exact mandated boundary values, tested
+-- directly against calculate_delivery_quote (the one shared source of
+-- truth every order-creation path reads) so they don't depend on menu
+-- item prices lining up exactly.
+select is((public.calculate_delivery_quote(40.0873,65.4026,1,'DELIVERY')->>'eligible')::boolean,true,'smallest technically valid positive basket (1 so‘m) is not rejected by any minimum');
+select is((public.calculate_delivery_quote(40.0873,65.4026,1,'DELIVERY')->>'deliveryFee')::integer,10000,'1 so‘m subtotal is charged the base delivery fee');
+select is((public.calculate_delivery_quote(40.0873,65.4026,99999,'DELIVERY')->>'deliveryFee')::integer,10000,'99,999 -> +10,000');
+select is((public.calculate_delivery_quote(40.0873,65.4026,100000,'DELIVERY')->>'deliveryFee')::integer,10000,'100,000 (old minimum) -> +10,000, no longer rejected');
+select is((public.calculate_delivery_quote(40.0873,65.4026,149999,'DELIVERY')->>'deliveryFee')::integer,10000,'149,999 -> +10,000');
+select is((public.calculate_delivery_quote(40.0873,65.4026,150000,'DELIVERY')->>'deliveryFee')::integer,0,'150,000 -> free delivery (threshold is subtotal < 150,000, not <=)');
+select is((public.calculate_delivery_quote(40.0873,65.4026,150001,'DELIVERY')->>'deliveryFee')::integer,0,'150,001 -> free delivery');
+
+-- Security regression: a client cannot submit its own deliveryFee (or
+-- subtotal/total) and have it trusted -- the whole payload is rejected
+-- outright the instant any of these keys is present, never silently
+-- recomputed-and-ignored. subtotal/total tampering is already proven
+-- above; this proves deliveryFee specifically.
+select throws_ok($$select public.create_public_order(pg_temp.pricing_payload('40000000-0000-4000-8000-000000000019','[{"menuItemId":"chicken","quantity":1,"modifierIds":[]}]','DELIVERY')||'{"deliveryFee":0}'::jsonb)$$,'22023','CLIENT_PRICING_FIELDS_FORBIDDEN|Narx va jami summa server tomonidan hisoblanadi','client deliveryFee tampering rejected');
 
 set local role anon;
 select throws_ok($$insert into public.orders(number,customer_name,primary_phone,order_type,payment_method,subtotal) values('ZG-HACK','X','+998901234567','PICKUP','CASH',1)$$,'42501',null,'anonymous direct order insert remains denied');

@@ -1,0 +1,21 @@
+-- Production hotfix: remove the delivery-order minimum entirely. Zaytun's
+-- actual business rule has only ever been the free-delivery-fee threshold
+-- (subtotal >= 150,000 -> fee 0, else fee 10,000, already correctly
+-- implemented in calculate_delivery_quote/calculate_delivery_quote_internal
+-- via free_delivery_threshold/base_delivery_fee) -- there was never meant
+-- to be a SEPARATE minimum-order gate blocking small delivery baskets
+-- outright. minimum_delivery_order (originally bootstrapped to 100000 in
+-- 20260805100000_production_bootstrap.sql, and in supabase/seed.sql for
+-- local dev) is the ONE single source of truth every quote/order-creation
+-- path already reads via `p_subtotal < s.minimum_delivery_order` --
+-- calculate_delivery_quote, create_order_internal, and the manual-review
+-- admission-control variant all key off this same column, so setting it
+-- to 0 (already a valid, schema-permitted value -- see the
+-- minimum_delivery_order>=0 check) removes the rule everywhere at once,
+-- server-authoritatively, with zero function-logic changes: the
+-- comparison becomes a permanent no-op for any non-negative subtotal.
+-- The frontend's own mirrored check (src/App.tsx's `subtotal <
+-- publicConfig.minimumDeliverySubtotal`) reads this same value from
+-- get_public_restaurant_config and therefore also becomes a no-op
+-- automatically -- not a separate fix, not a "hide the warning" patch.
+update public.delivery_settings set minimum_delivery_order = 0 where id = true;

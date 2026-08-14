@@ -3844,18 +3844,56 @@ function DriverReadyWithBatch({ order, sibling, batch }: { order: Order; sibling
 // existing, unchanged DriverDelivery (single-order path stays exactly as
 // simple as before -- this wrapper only appears once there's a genuine
 // second stop) with the deterministic server-computed stop_sequence.
+//
+// Production hotfix: the two batched orders looked unrelated -- the second
+// stop was reduced to a single small row (order number + district only),
+// so the driver had no way to tell "these two orders are one delivery
+// mission" until they'd already finished the first one. This still keeps
+// stop 1 as the sole actionable card (DriverDelivery, byte-identical) --
+// stop 2 gets a real summary (district, street/house, distance, an
+// expandable order-contents/collection disclosure) but deliberately NO
+// primary action of its own: no ARRIVED/DELIVERED affordance, no way to
+// service it out of order. Visibility only, never execution -- Stop 1
+// remains the sole authoritative current stop.
 function DriverRoute({ order, next }: { order: Order; next: Order }) {
+  const nextPayment = driverPaymentSummary(next);
   return (
     <div className="driver-route">
+      <div className="route-mission-header" data-testid="driver-route-mission-header">
+        <span>2 TA BUYURTMA</span>
+        <span>·</span>
+        <span>BITTA YO‘NALISH</span>
+      </div>
       <div className="route-current-label" data-testid="driver-route-current-stop">
         <span>HOZIRGI MANZIL</span>
         <b>{order.stopSequence ?? 1}-manzil</b>
       </div>
       <DriverDelivery order={order} />
-      <div className="route-next-hint" data-testid="driver-route-next-stop">
-        <span>KEYIN</span>
-        <b>{next.number}</b>
-        <span>{next.address?.district || "—"}</span>
+      <div className="route-next-card" data-testid="driver-route-next-stop">
+        <div className="route-next-top">
+          <span>{next.stopSequence ?? (order.stopSequence ?? 1) + 1}-manzil</span>
+          <span>KEYINGI</span>
+        </div>
+        <h3>{next.number}</h3>
+        <p className="route-next-address">
+          {next.address?.district || "—"}
+          <br />
+          {next.address && `${next.address.street}, ${next.address.house}`}
+        </p>
+        {next.address?.deliveryDistanceKm !== undefined && <b className="route-next-distance">{next.address.deliveryDistanceKm.toFixed(1)} km</b>}
+        <details className="route-next-details" data-testid="driver-route-next-details">
+          <summary>Tafsilotlarni ko‘rish</summary>
+          <div className="route-next-details-body">
+            {next.items.map((it) => (
+              <p key={it.id}>
+                {it.quantity} × {it.name}
+              </p>
+            ))}
+            <p>
+              {nextPayment.amount ? "Undirish kerak" : "To‘lov"}: <b>{nextPayment.amount ?? nextPayment.label}</b>
+            </p>
+          </div>
+        </details>
       </div>
     </div>
   );

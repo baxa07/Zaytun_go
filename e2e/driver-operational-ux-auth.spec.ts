@@ -224,6 +224,23 @@ test("scenario B: two compatible orders end to end -- capacity, second-order UI,
   const firstStopLabel = await driver.getByTestId("driver-route-current-stop").locator("b").textContent();
   expect(firstStopLabel).toContain("1-manzil");
 
+  // Production hotfix: the two batched orders must read as one delivery
+  // mission with two stops, not an unrelated order plus a tiny row --
+  // stop 2 gets a real summary (order number, district, street/house,
+  // distance, expandable contents), never just a bare number.
+  await expect(driver.getByTestId("driver-route-mission-header")).toContainText("2 TA BUYURTMA");
+  const nextStop = driver.getByTestId("driver-route-next-stop");
+  await expect(nextStop.locator("h3")).not.toBeEmpty(); // real order number, not blank
+  await expect(nextStop).toContainText("KEYINGI");
+  await expect(nextStop).toContainText("Navoiy shahri"); // district, not just the order number
+  await expect(nextStop.getByTestId("driver-route-next-details")).toBeVisible();
+
+  // Safety: stop 2 must never be independently actionable before stop 1
+  // completes -- exactly one driver-primary-action on the whole page
+  // (stop 1's), and it is not reachable from within the next-stop card.
+  await expect(driver.getByTestId("driver-primary-action")).toHaveCount(1);
+  await expect(nextStop.getByTestId("driver-primary-action")).toHaveCount(0);
+
   // Deliver stop 1 -- no refresh, the route automatically promotes stop 2.
   await driver.getByTestId("driver-primary-action").click(); // ON_THE_WAY
   await driver.getByTestId("driver-primary-action").click(); // ARRIVED
