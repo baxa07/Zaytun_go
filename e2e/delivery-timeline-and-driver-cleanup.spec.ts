@@ -37,7 +37,9 @@ test.describe("customer delivery timeline: approved 7-stage mapping", () => {
     // Free the seeded driver first, same technique as canonical-lifecycle.spec.ts.
     await driver.goto("/driver");
     await expect(driver.locator(".delivery-card")).toBeVisible();
+    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetib keldim");
     await driver.getByTestId("driver-primary-action").click();
+    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetkazildi");
     await driver.getByTestId("driver-primary-action").click();
     await expect(driver.getByTestId("driver-no-active")).toBeVisible();
 

@@ -2,9 +2,12 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   arrivalKeyboard,
   formatArrivalMessage,
+  formatNewAssignmentMessage,
   formatNewOrderMessage,
+  newAssignmentKeyboard,
   newOrderKeyboard,
   type ArrivalNotificationData,
+  type AssignmentNotificationData,
   type NotificationData,
 } from "./message.ts";
 
@@ -86,4 +89,39 @@ Deno.test("arrival keyboard has exactly one tracking-link button carrying both t
   const url = keyboard.inline_keyboard[0][0].url ?? "";
   assertStringIncludes(url, `/track/${arrival.orderId}`);
   assertStringIncludes(url, arrival.trackingToken);
+});
+
+const assignment: AssignmentNotificationData = {
+  chatId: 777222,
+  orderNumber: "ZG-1073",
+  branchName: "Zaytun Kafe",
+  distanceKm: 2.1,
+};
+
+Deno.test("driver assignment message matches the requested shape and includes the branch and distance", () => {
+  const message = formatNewAssignmentMessage(assignment);
+  assertEquals(
+    message,
+    "🚗 Yangi yetkazish — ZG-1073\n\nOlib ketish: Zaytun Kafe\nMasofa: 2.1 km\n\nHaydovchi panelini ochib buyurtmani qabul qiling.",
+  );
+});
+
+Deno.test("driver assignment message omits the distance line entirely when it is not known, rather than showing a fabricated value", () => {
+  const message = formatNewAssignmentMessage({ ...assignment, distanceKm: undefined });
+  assertEquals(message.toLowerCase().includes("masofa"), false);
+});
+
+Deno.test("driver assignment message never includes any customer information -- name, phone, or address -- matching the driver app's own pre-acceptance boundary", () => {
+  const message = formatNewAssignmentMessage(assignment);
+  assertEquals(/\+?998\d{9}/.test(message), false, "no phone-shaped digit run");
+  assertEquals(message.toLowerCase().includes("mijoz"), false, "no customer label");
+  assertEquals(message.toLowerCase().includes("tel:"), false, "no phone label");
+});
+
+Deno.test("driver assignment keyboard has exactly one button pointing at the production driver panel", () => {
+  const keyboard = newAssignmentKeyboard();
+  assertEquals(keyboard.inline_keyboard.length, 1);
+  assertEquals(keyboard.inline_keyboard[0].length, 1);
+  assertEquals(keyboard.inline_keyboard[0][0].text, "Haydovchi panelini ochish");
+  assertStringIncludes(keyboard.inline_keyboard[0][0].url ?? "", "/driver");
 });

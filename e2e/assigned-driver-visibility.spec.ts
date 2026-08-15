@@ -8,7 +8,9 @@ import { expect, test } from "@playwright/test";
 async function freeUpDriverOne(driver: import("@playwright/test").Page) {
   await driver.goto("/driver");
   await expect(driver.locator(".delivery-card")).toBeVisible();
+  await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetib keldim");
   await driver.getByTestId("driver-primary-action").click(); // ON_THE_WAY -> ARRIVED
+  await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetkazildi");
   await driver.getByTestId("driver-primary-action").click(); // ARRIVED -> DELIVERED
   await expect(driver.getByTestId("driver-no-active")).toBeVisible();
 }

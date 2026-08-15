@@ -16,19 +16,26 @@ import { createTelegramClient, type TelegramClient } from "./telegram.ts";
 import {
   arrivalKeyboard,
   formatArrivalMessage,
+  formatNewAssignmentMessage,
   formatNewOrderMessage,
+  newAssignmentKeyboard,
   newOrderKeyboard,
   type ArrivalNotificationData,
+  type AssignmentNotificationData,
   type NotificationData,
 } from "./message.ts";
 
-// One shared outbox/dispatch pipeline, two message channels -- adding a
+// One shared outbox/dispatch pipeline, three message channels -- adding a
 // channel here means adding a case, not a second Edge Function or a
 // second dispatch trigger (dispatch_notification_via_pg_net is already
-// channel-agnostic).
+// channel-agnostic). TELEGRAM_DRIVER_NEW_ASSIGNMENT's stored channel
+// value carries a ":<assignment id>" suffix for per-assignment
+// idempotency (see the enqueue trigger) -- fetchNotification strips it
+// before returning, so the discriminant here is always the bare literal.
 export type OutboundNotification =
   | { channel: "TELEGRAM_RESTAURANT_NEW_ORDER"; data: NotificationData }
-  | { channel: "TELEGRAM_CUSTOMER_ARRIVED"; data: ArrivalNotificationData };
+  | { channel: "TELEGRAM_CUSTOMER_ARRIVED"; data: ArrivalNotificationData }
+  | { channel: "TELEGRAM_DRIVER_NEW_ASSIGNMENT"; data: AssignmentNotificationData };
 
 export interface HandlerDeps {
   env: { get(key: string): string | undefined };
@@ -95,6 +102,8 @@ export async function handleTelegramNotify(req: Request, deps: HandlerDeps): Pro
   const { text, keyboard, chatId } =
     notification.channel === "TELEGRAM_RESTAURANT_NEW_ORDER"
       ? { text: formatNewOrderMessage(notification.data), keyboard: newOrderKeyboard(), chatId: notification.data.chatId }
+      : notification.channel === "TELEGRAM_DRIVER_NEW_ASSIGNMENT"
+      ? { text: formatNewAssignmentMessage(notification.data), keyboard: newAssignmentKeyboard(), chatId: notification.data.chatId }
       : { text: formatArrivalMessage(notification.data), keyboard: arrivalKeyboard(notification.data), chatId: notification.data.chatId };
 
   try {
@@ -146,6 +155,55 @@ if (import.meta.main) {
               orderNumber: order.number,
               orderId: outboxRow.order_id,
               trackingToken: order.tracking_token,
+            },
+          };
+        }
+
+        if (outboxRow.channel.startsWith("TELEGRAM_DRIVER_NEW_ASSIGNMENT:")) {
+          const assignmentId = outboxRow.channel.slice("TELEGRAM_DRIVER_NEW_ASSIGNMENT:".length);
+          const { data: assignment } = await admin
+            .from("driver_assignments")
+            .select("driver_id")
+            .eq("id", assignmentId)
+            .maybeSingle();
+          // The driver this specific assignment went to -- not "whoever
+          // currently holds the order," which may have changed by the
+          // time this dispatches (decline, supersede).
+          if (!assignment) return null;
+          const { data: driver } = await admin
+            .from("drivers")
+            .select("telegram_chat_id")
+            .eq("id", assignment.driver_id)
+            .maybeSingle();
+          // Unconfigured mapping is a normal, expected rollout state --
+          // never an error. The driver's own in-app sound/UI still works;
+          // this is purely an additional fallback channel.
+          if (!driver?.telegram_chat_id) return null;
+
+          const { data: order } = await admin
+            .from("orders")
+            .select("number, branch_id")
+            .eq("id", outboxRow.order_id)
+            .maybeSingle();
+          if (!order) return null;
+          const { data: branch } = await admin
+            .from("branches")
+            .select("name")
+            .eq("id", order.branch_id)
+            .maybeSingle();
+          const { data: address } = await admin
+            .from("customer_addresses")
+            .select("delivery_distance_km")
+            .eq("order_id", outboxRow.order_id)
+            .maybeSingle();
+
+          return {
+            channel: "TELEGRAM_DRIVER_NEW_ASSIGNMENT",
+            data: {
+              chatId: Number(driver.telegram_chat_id),
+              orderNumber: order.number,
+              branchName: branch?.name || "Zaytun Kafe",
+              distanceKm: address?.delivery_distance_km ?? undefined,
             },
           };
         }

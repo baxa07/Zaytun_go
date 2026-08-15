@@ -21,7 +21,9 @@ test.describe("P4 driver availability and home states", () => {
     await expect(page.locator(".delivery-card")).toBeVisible();
     // Free the seeded driver: the seed order starts already at ON_THE_WAY
     // (already accepted), so ARRIVED then DELIVERED completes it.
+    await expect(page.getByTestId("driver-primary-action")).toHaveText("Yetib keldim");
     await page.getByTestId("driver-primary-action").click();
+    await expect(page.getByTestId("driver-primary-action")).toHaveText("Yetkazildi");
     await page.getByTestId("driver-primary-action").click();
     await expect(page.getByTestId("driver-no-active")).toBeVisible();
 

@@ -67,7 +67,9 @@ test.describe("H3 customer feedback", () => {
 
     await driver.goto("/driver");
     await expect(driver.locator(".delivery-card")).toBeVisible();
+    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetib keldim");
     await driver.getByTestId("driver-primary-action").click();
+    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetkazildi");
     await driver.getByTestId("driver-primary-action").click();
     await expect(driver.getByTestId("driver-no-active")).toBeVisible();
 

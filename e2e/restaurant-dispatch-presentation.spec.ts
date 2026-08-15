@@ -52,7 +52,9 @@ test.describe("P5 restaurant dispatch presentation", () => {
 
     await driver.goto("/driver");
     await expect(driver.locator(".delivery-card")).toBeVisible();
+    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetib keldim");
     await driver.getByTestId("driver-primary-action").click();
+    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetkazildi");
     await driver.getByTestId("driver-primary-action").click();
     await expect(driver.getByTestId("driver-no-active")).toBeVisible();
 

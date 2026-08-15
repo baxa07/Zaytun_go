@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { handleTelegramNotify, type HandlerDeps } from "./index.ts";
 import type { TelegramClient } from "./telegram.ts";
-import type { ArrivalNotificationData, NotificationData } from "./message.ts";
+import type { ArrivalNotificationData, AssignmentNotificationData, NotificationData } from "./message.ts";
 
 const SECRET = "fake-notify-secret-never-real";
 const VALID_ENV = new Map([["TELEGRAM_NOTIFY_SECRET", SECRET]]);
@@ -167,4 +167,39 @@ Deno.test("TELEGRAM_CUSTOMER_ARRIVED message -> uses the order's own chat id, or
   const url = replyMarkup.inline_keyboard[0][0].url;
   assertEquals(url.includes(sampleArrival.orderId), true);
   assertEquals(url.includes(sampleArrival.trackingToken), true);
+});
+
+const sampleAssignment: AssignmentNotificationData = {
+  chatId: 777222,
+  orderNumber: "ZG-1073",
+  branchName: "Zaytun Kafe",
+  distanceKm: 2.1,
+};
+
+Deno.test("TELEGRAM_DRIVER_NEW_ASSIGNMENT channel -> sends the assignment message to the assigned driver's own chat id, marks SENT", async () => {
+  const { client, calls } = fakeTelegram();
+  const sentIds: string[] = [];
+  const deps: HandlerDeps = {
+    env: envFrom(VALID_ENV),
+    telegram: client,
+    fetchNotification: async () => ({ channel: "TELEGRAM_DRIVER_NEW_ASSIGNMENT", data: sampleAssignment }),
+    markSent: async (id) => { sentIds.push(id); },
+    markFailed: async () => {},
+  };
+  const res = await handleTelegramNotify(post({ outboxId: "outbox-assignment-1" }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(sentIds, ["outbox-assignment-1"]);
+  assertEquals(calls.length, 1);
+  const [chatId, text] = calls[0].args as [number, string];
+  assertEquals(chatId, 777222);
+  assertEquals(text.includes("ZG-1073"), true);
+  assertEquals(text.includes("Zaytun Kafe"), true);
+});
+
+Deno.test("TELEGRAM_DRIVER_NEW_ASSIGNMENT, no chat id found (unconfigured mapping) -> fetchNotification returns null -> 200, no Telegram call, assignment itself is never affected", async () => {
+  const { deps, sentIds, failedIds } = baseDeps({ fetchNotification: async () => null });
+  const res = await handleTelegramNotify(post({ outboxId: "outbox-assignment-unconfigured" }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(sentIds, []);
+  assertEquals(failedIds, []);
 });

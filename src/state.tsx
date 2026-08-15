@@ -12,6 +12,7 @@ import { useLocation } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { store } from "./data";
 import { addCartLine, resolveOrderSubmissionMode } from "./domain";
+import { setPendingMutationCount } from "./pwa";
 import type {
   ActorType,
   AssignmentDeclineReason,
@@ -278,6 +279,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const refreshQueued = useRef(false);
   const publicLoadStarted = useRef(false);
+  // Phase D: the service worker's own auto-activation must never reload
+  // out from under an in-flight operational mutation (accept order,
+  // ready, pickup, delivered, accept/decline assignment) -- withOrderLock
+  // is the single choke point every one of those goes through, so
+  // mirroring its pending-id count here is a complete signal, not a
+  // partial/best-effort one.
+  useEffect(() => {
+    setPendingMutationCount(Object.keys(pendingTransitionState).length);
+  }, [pendingTransitionState]);
 
   useEffect(() => {
     if (publicLoadStarted.current) return;

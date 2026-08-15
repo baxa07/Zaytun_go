@@ -7,7 +7,9 @@ import { expect, test, type Page } from "@playwright/test";
 async function freeDriverOne(driver: Page) {
   await driver.goto("/driver");
   if (await driver.locator(".delivery-card").isVisible().catch(() => false)) {
+    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetib keldim");
     await driver.getByTestId("driver-primary-action").click();
+    await expect(driver.getByTestId("driver-primary-action")).toHaveText("Yetkazildi");
     await driver.getByTestId("driver-primary-action").click();
   }
   await expect(driver.getByTestId("driver-no-active")).toBeVisible();

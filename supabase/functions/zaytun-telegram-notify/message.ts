@@ -96,3 +96,33 @@ export function arrivalKeyboard(data: ArrivalNotificationData) {
     inline_keyboard: [[{ text: "Buyurtmani ko‘rish", url: `${TRACK_URL_BASE}/${data.orderId}?token=${data.trackingToken}` }]],
   };
 }
+
+// Driver assignment notification (Phase D): deliberately contains no
+// customer information at all -- number, pickup branch, distance. This
+// matches the driver app's own pre-acceptance information boundary
+// (DriverAssignmentCard shows district + prep estimate, never customer
+// name/phone/address until accepted), never getting ahead of what the
+// authenticated driver panel itself would reveal at this stage.
+const DRIVER_URL = "https://zaytungonavoiy.netlify.app/driver";
+
+export interface AssignmentNotificationData {
+  chatId: number;
+  orderNumber: string;
+  branchName: string;
+  distanceKm?: number;
+}
+
+export function formatNewAssignmentMessage(data: AssignmentNotificationData): string {
+  return [
+    `🚗 Yangi yetkazish — ${data.orderNumber}`,
+    "",
+    `Olib ketish: ${data.branchName}`,
+    ...(data.distanceKm !== undefined ? [`Masofa: ${data.distanceKm.toFixed(1)} km`] : []),
+    "",
+    "Haydovchi panelini ochib buyurtmani qabul qiling.",
+  ].join("\n");
+}
+
+export function newAssignmentKeyboard() {
+  return { inline_keyboard: [[{ text: "Haydovchi panelini ochish", url: DRIVER_URL }]] };
+}

@@ -206,6 +206,14 @@ h2 {
   justify-content: space-between;
   gap: 16px;
 }
+/* Phase D: ops-head now carries a third item (the sound status control)
+   alongside the title and the existing new-order-count pill -- wrap
+   rather than let a narrow staff device (a phone, not this surface's
+   usual tablet/desktop) squeeze or clip it. */
+.ops-head {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
 .cart-pill,
 .notice {
   background: var(--green);
@@ -1290,10 +1298,26 @@ h2 {
 .big {
   min-height: 58px;
 }
-/* Driver UI Final Operational UX */
-.driver-sound-activate.armed {
+/* Phase D, Part F: small, restrained sound status -- shared by Restaurant
+   and Driver. The enable button keeps the ordinary .button.text sizing at
+   all times (only visibility toggles) -- it must never change size
+   between armed/unarmed, since even a hidden element's reserved layout
+   space changing size can shift later siblings (e.g. the shift-toggle
+   button) at the exact moment arming happens, which can land a
+   still-in-flight click on the wrong target. The confirmation pill is a
+   separate, freshly-mounted element instead, never resized. */
+button.sound-status.armed {
   visibility: hidden;
   pointer-events: none;
+}
+span.sound-status {
+  display: inline-block;
+  background: #edf3ef;
+  color: var(--green);
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-weight: 700;
+  font-size: 12px;
 }
 .batch-panel {
   background: #f2f4f2;
