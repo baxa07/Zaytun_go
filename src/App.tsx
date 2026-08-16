@@ -3520,7 +3520,9 @@ function DriverApp() {
   // accept/decline update. Re-check live state at execution time so that
   // stale callback cannot produce one last alert after the driver acted.
   const hasUnansweredAssignmentRef = useRef(hasUnansweredAssignment);
-  hasUnansweredAssignmentRef.current = hasUnansweredAssignment;
+  useEffect(() => {
+    hasUnansweredAssignmentRef.current = hasUnansweredAssignment;
+  }, [hasUnansweredAssignment]);
   useEffect(() => {
     if (!hasUnansweredAssignment) return;
     const interval = window.setInterval(
