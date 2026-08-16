@@ -91,6 +91,14 @@ export function formatArrivalMessage(data: ArrivalNotificationData): string {
   ].join("\n");
 }
 
+export function formatOnTheWayMessage(data: ArrivalNotificationData): string {
+  return [
+    `🚗 ${data.orderNumber} yo‘lga chiqdi`,
+    "",
+    "Buyurtmangiz siz tomon ketmoqda.",
+  ].join("\n");
+}
+
 export function arrivalKeyboard(data: ArrivalNotificationData) {
   return {
     inline_keyboard: [[{ text: "Buyurtmani ko‘rish", url: `${TRACK_URL_BASE}/${data.orderId}?token=${data.trackingToken}` }]],

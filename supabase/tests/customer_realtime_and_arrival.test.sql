@@ -1,5 +1,5 @@
 begin;
-select plan(24);
+select plan(27);
 
 -- Customer Realtime + Driver Arrival + Telegram Notification Completion
 -- Phase. A dedicated branch with both seed drivers, mirroring the
@@ -138,6 +138,17 @@ select throws_ok(
   'ARRIVED is rejected from DRIVER_ASSIGNED -- PICKED_UP and ON_THE_WAY cannot be skipped'
 );
 reset role;
+
+-- ============================================================
+-- ON_THE_WAY queues the linked-customer notification once
+-- ============================================================
+update public.orders
+set customer_telegram_chat_id=555111333,status='ON_THE_WAY'
+where id='c5000000-0000-4000-8000-000000000001'::uuid;
+select is((select count(*)::integer from public.notification_outbox where order_id='c5000000-0000-4000-8000-000000000001'::uuid and channel='TELEGRAM_CUSTOMER_ON_THE_WAY'),1,'exactly one on-the-way notification is enqueued for a linked order');
+select is((select status from public.notification_outbox where order_id='c5000000-0000-4000-8000-000000000001'::uuid and channel='TELEGRAM_CUSTOMER_ON_THE_WAY'),'PENDING','the on-the-way outbox row starts PENDING');
+update public.orders set status='ON_THE_WAY' where id='c5000000-0000-4000-8000-000000000001'::uuid;
+select is((select count(*)::integer from public.notification_outbox where order_id='c5000000-0000-4000-8000-000000000001'::uuid and channel='TELEGRAM_CUSTOMER_ON_THE_WAY'),1,'a same-status write cannot duplicate the on-the-way notification');
 
 -- ============================================================
 -- get_order_tracking never exposes the Telegram chat id or link tokens

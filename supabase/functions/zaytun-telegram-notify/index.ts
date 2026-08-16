@@ -16,6 +16,7 @@ import { createTelegramClient, type TelegramClient } from "./telegram.ts";
 import {
   arrivalKeyboard,
   formatArrivalMessage,
+  formatOnTheWayMessage,
   formatNewAssignmentMessage,
   formatNewOrderMessage,
   newAssignmentKeyboard,
@@ -34,6 +35,7 @@ import {
 // before returning, so the discriminant here is always the bare literal.
 export type OutboundNotification =
   | { channel: "TELEGRAM_RESTAURANT_NEW_ORDER"; data: NotificationData }
+  | { channel: "TELEGRAM_CUSTOMER_ON_THE_WAY"; data: ArrivalNotificationData }
   | { channel: "TELEGRAM_CUSTOMER_ARRIVED"; data: ArrivalNotificationData }
   | { channel: "TELEGRAM_DRIVER_NEW_ASSIGNMENT"; data: AssignmentNotificationData };
 
@@ -104,6 +106,8 @@ export async function handleTelegramNotify(req: Request, deps: HandlerDeps): Pro
       ? { text: formatNewOrderMessage(notification.data), keyboard: newOrderKeyboard(), chatId: notification.data.chatId }
       : notification.channel === "TELEGRAM_DRIVER_NEW_ASSIGNMENT"
       ? { text: formatNewAssignmentMessage(notification.data), keyboard: newAssignmentKeyboard(), chatId: notification.data.chatId }
+      : notification.channel === "TELEGRAM_CUSTOMER_ON_THE_WAY"
+      ? { text: formatOnTheWayMessage(notification.data), keyboard: arrivalKeyboard(notification.data), chatId: notification.data.chatId }
       : { text: formatArrivalMessage(notification.data), keyboard: arrivalKeyboard(notification.data), chatId: notification.data.chatId };
 
   try {
@@ -141,7 +145,7 @@ if (import.meta.main) {
           .maybeSingle();
         if (!outboxRow || outboxRow.status !== "PENDING") return null;
 
-        if (outboxRow.channel === "TELEGRAM_CUSTOMER_ARRIVED") {
+        if (outboxRow.channel === "TELEGRAM_CUSTOMER_ARRIVED" || outboxRow.channel === "TELEGRAM_CUSTOMER_ON_THE_WAY") {
           const { data: order } = await admin
             .from("orders")
             .select("number, tracking_token, customer_telegram_chat_id")
@@ -149,7 +153,7 @@ if (import.meta.main) {
             .maybeSingle();
           if (!order || !order.customer_telegram_chat_id) return null;
           return {
-            channel: "TELEGRAM_CUSTOMER_ARRIVED",
+            channel: outboxRow.channel,
             data: {
               chatId: order.customer_telegram_chat_id,
               orderNumber: order.number,

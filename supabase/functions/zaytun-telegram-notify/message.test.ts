@@ -2,6 +2,7 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   arrivalKeyboard,
   formatArrivalMessage,
+  formatOnTheWayMessage,
   formatNewAssignmentMessage,
   formatNewOrderMessage,
   newAssignmentKeyboard,
@@ -79,6 +80,14 @@ Deno.test("arrival message never includes a phone number, coordinates, or the in
   assertEquals(/\+?\d{9,}/.test(message), false, "no phone-shaped digit run");
   assertEquals(message.includes(arrival.orderId), false, "internal id must not appear in the message body itself");
   assertEquals(message.toLowerCase().includes("koordinat"), false);
+});
+
+Deno.test("on-the-way message identifies the order without leaking tracking capabilities", () => {
+  const message = formatOnTheWayMessage(arrival);
+  assertStringIncludes(message, "ZG-1088 yo‘lga chiqdi");
+  assertStringIncludes(message, "Buyurtmangiz siz tomon ketmoqda.");
+  assertEquals(message.includes(arrival.trackingToken), false);
+  assertEquals(message.includes(arrival.orderId), false);
 });
 
 Deno.test("arrival keyboard has exactly one tracking-link button carrying both the order id and tracking token", () => {

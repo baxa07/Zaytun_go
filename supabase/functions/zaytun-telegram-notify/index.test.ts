@@ -149,6 +149,20 @@ Deno.test("TELEGRAM_CUSTOMER_ARRIVED channel -> sends the arrival message with a
   assertEquals(sentIds, ["outbox-arrival-1"]);
 });
 
+Deno.test("TELEGRAM_CUSTOMER_ON_THE_WAY channel -> sends the trip-start message with tracking link, marks SENT", async () => {
+  const { client, calls } = fakeTelegram();
+  const sentIds: string[] = [];
+  const deps: HandlerDeps = {
+    env: envFrom(VALID_ENV), telegram: client,
+    fetchNotification: async () => ({ channel: "TELEGRAM_CUSTOMER_ON_THE_WAY", data: sampleArrival }),
+    markSent: async (id) => { sentIds.push(id); }, markFailed: async () => {},
+  };
+  const res = await handleTelegramNotify(post({ outboxId: "outbox-on-way-1" }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(sentIds, ["outbox-on-way-1"]);
+  assertEquals(String(calls[0].args[1]).includes("ZG-1088 yo‘lga chiqdi"), true);
+});
+
 Deno.test("TELEGRAM_CUSTOMER_ARRIVED message -> uses the order's own chat id, order number, and a tracking link carrying the token, never an internal-only id alone", async () => {
   const { client, calls } = fakeTelegram();
   const deps: HandlerDeps = {
