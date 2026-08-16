@@ -3371,7 +3371,7 @@ function DriverAvailabilityToggle({
   );
 }
 function DriverApp() {
-  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds, listMyPickupBatchContext } = useApp();
+  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds, listMyPickupBatchContext, transitionPending } = useApp();
   const greetingName = driverGreetingName(profileDisplayName);
   // driver_read's own RLS policy restricts a non-staff caller to id=auth.uid()
   // only, so this array holds exactly the current driver's own row.
@@ -3512,11 +3512,23 @@ function DriverApp() {
   // an assignment still awaiting accept/decline must keep paging the
   // driver, not just chime once on arrival. Stops the instant every
   // active assignment has been answered (accepted or declined/released).
-  const hasUnansweredAssignment = activeAssignments.some((o) => !o.assignmentAcceptedAt);
+  const hasUnansweredAssignment = activeAssignments.some(
+    (o) => !o.assignmentAcceptedAt && !transitionPending(o.id),
+  );
+  // clearInterval prevents future scheduling, but a callback already
+  // queued by the browser may still run once after React observes the
+  // accept/decline update. Re-check live state at execution time so that
+  // stale callback cannot produce one last alert after the driver acted.
+  const hasUnansweredAssignmentRef = useRef(hasUnansweredAssignment);
+  hasUnansweredAssignmentRef.current = hasUnansweredAssignment;
   useEffect(() => {
     if (!hasUnansweredAssignment) return;
     const interval = window.setInterval(
-      () => playChime([[660, 0, 0.16], [880, 0.2, 0.22]], 0.2),
+      () => {
+        if (hasUnansweredAssignmentRef.current) {
+          playChime([[660, 0, 0.16], [880, 0.2, 0.22]], 0.2);
+        }
+      },
       soundRepeatMs(),
     );
     return () => window.clearInterval(interval);
