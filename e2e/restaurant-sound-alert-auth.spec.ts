@@ -29,11 +29,15 @@ async function installFakeAudio(page: Page) {
     class FakeAudioContext {
       currentTime = 0;
       destination = {};
+      state = "suspended";
       createGain() {
         return new FakeGain();
       }
       createOscillator() {
         return new FakeOscillator();
+      }
+      async resume() {
+        this.state = "running";
       }
     }
     (window as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext;
@@ -55,9 +59,10 @@ async function signInStaff(page: Page) {
 // itself a qualifying click) -- check status first rather than assuming
 // the button is still there to click.
 async function ensureSoundArmed(page: Page) {
-  if (await page.getByTestId("restaurant-sound-status").isVisible().catch(() => false)) return;
-  await page.getByTestId("restaurant-sound-enable").click({ force: true }).catch(() => {});
-  await expect(page.getByTestId("restaurant-sound-status")).toBeVisible({ timeout: 5000 });
+  const status = page.getByTestId("restaurant-sound-status");
+  if ((await status.textContent())?.includes("Ovoz yoqilgan")) return;
+  await page.getByRole("heading", { name: "Buyurtmalar" }).click();
+  await expect(status).toContainText("Ovoz yoqilgan", { timeout: 5000 });
 }
 
 async function placePickupOrder(customer: Page, name: string, phone: string) {

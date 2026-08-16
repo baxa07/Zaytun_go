@@ -1,14 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-// Phase D, Part B/F: the sound enable/status UI itself, on the local
-// provider (no realtime needed for this one). Hydration/new-arrival/
-// repeat behavior against a real backend lives in
-// restaurant-sound-alert-auth.spec.ts, since the local provider has no
-// live updates without a reload -- a reload always establishes a fresh
-// hydration baseline, which would make that specific scenario untestable
-// here.
-test("sound starts locked, an explicit gesture enables it, and the status reflects both states", async ({ page }) => {
+async function installFakeAudio(page: import("@playwright/test").Page) {
   await page.addInitScript(() => {
+    (window as unknown as { __oscillatorStarts: number }).__oscillatorStarts = 0;
+    (window as unknown as { __audioResumes: number }).__audioResumes = 0;
     class FakeGain {
       gain = { value: 0 };
       connect() {}
@@ -17,27 +12,63 @@ test("sound starts locked, an explicit gesture enables it, and the status reflec
       type = "sine";
       frequency = { value: 0 };
       connect() {}
-      start() {}
+      start() {
+        (window as unknown as { __oscillatorStarts: number }).__oscillatorStarts++;
+      }
       stop() {}
     }
     class FakeAudioContext {
       currentTime = 0;
       destination = {};
-      createGain() {
-        return new FakeGain();
-      }
-      createOscillator() {
-        return new FakeOscillator();
+      state = "suspended";
+      createGain() { return new FakeGain(); }
+      createOscillator() { return new FakeOscillator(); }
+      async resume() {
+        this.state = "running";
+        (window as unknown as { __audioResumes: number }).__audioResumes++;
       }
     }
     (window as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext;
   });
+}
+
+test("sound defaults ON, unlocks silently on a normal gesture, and explicit mute/unmute persists", async ({ page }) => {
+  await installFakeAudio(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/restaurant");
+  await page.evaluate(() => localStorage.removeItem("zaytun-go:sound-preference"));
+  await page.reload();
 
-  await expect(page.getByTestId("restaurant-sound-enable")).toBeVisible();
-  await expect(page.getByTestId("restaurant-sound-status")).toHaveCount(0);
+  const status = page.getByTestId("restaurant-sound-status");
+  const toggle = page.getByTestId("restaurant-sound-toggle");
+  await expect(status).toContainText("Ovoz birinchi bosishda faollashadi");
+  await expect(toggle).toHaveText("Ovozni o‘chirish");
 
-  await page.getByTestId("restaurant-sound-enable").click();
-  await expect(page.getByTestId("restaurant-sound-status")).toBeVisible();
-  await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz yoqilgan");
+  await page.getByRole("heading", { name: "Buyurtmalar" }).click();
+  await expect(status).toContainText("Ovoz yoqilgan");
+  expect(await page.evaluate(() => (window as unknown as { __audioResumes: number }).__audioResumes)).toBe(1);
+  expect(await page.evaluate(() => (window as unknown as { __oscillatorStarts: number }).__oscillatorStarts)).toBe(0);
+
+  await toggle.click();
+  await expect(status).toContainText("Ovoz o‘chirilgan");
+  await page.reload();
+  await expect(status).toContainText("Ovoz o‘chirilgan");
+  await expect(toggle).toHaveText("Ovozni yoqish");
+
+  await toggle.click();
+  await expect(status).toContainText("Ovoz yoqilgan");
+  await page.reload();
+  await expect(status).toContainText("Ovoz birinchi bosishda faollashadi");
+  await expect(toggle).toHaveText("Ovozni o‘chirish");
+
+  await page.getByRole("heading", { name: "Buyurtmalar" }).click();
+  await expect(status).toContainText("Ovoz yoqilgan");
+  await page.screenshot({ path: "qa/screenshots/12-restaurant-sound-default-on-mobile.png", fullPage: true });
+
+  await page.goto("/driver");
+  const driverStatus = page.getByTestId("driver-sound-status");
+  await expect(driverStatus).toContainText("Ovoz birinchi bosishda faollashadi");
+  await page.getByRole("heading", { name: "Bugungi yetkazish" }).click();
+  await expect(driverStatus).toContainText("Ovoz yoqilgan");
+  await page.screenshot({ path: "qa/screenshots/13-driver-sound-default-on-mobile.png", fullPage: true });
 });

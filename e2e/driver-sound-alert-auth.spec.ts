@@ -29,11 +29,15 @@ async function installFakeAudio(page: Page) {
     class FakeAudioContext {
       currentTime = 0;
       destination = {};
+      state = "suspended";
       createGain() {
         return new FakeGain();
       }
       createOscillator() {
         return new FakeOscillator();
+      }
+      async resume() {
+        this.state = "running";
       }
     }
     (window as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext;
@@ -43,9 +47,10 @@ async function installFakeAudio(page: Page) {
 const soundStarts = (page: Page) => page.evaluate(() => (window as unknown as { __oscillatorStarts: number }).__oscillatorStarts);
 
 async function ensureSoundArmed(page: Page) {
-  if (await page.getByTestId("driver-sound-status").isVisible().catch(() => false)) return;
-  await page.getByTestId("driver-sound-enable").click({ force: true }).catch(() => {});
-  await expect(page.getByTestId("driver-sound-status")).toBeVisible({ timeout: 5000 });
+  const status = page.getByTestId("driver-sound-status");
+  if ((await status.textContent())?.includes("Ovoz yoqilgan")) return;
+  await page.getByRole("heading", { name: "Bugungi yetkazish" }).click();
+  await expect(status).toContainText("Ovoz yoqilgan", { timeout: 5000 });
 }
 
 async function freeDriver(page: Page, identifier: string) {
@@ -138,17 +143,28 @@ test("hydration with an existing assignment plays no sound; a genuinely new assi
   await ensureSoundArmed(driver);
   await signInStaff(staff);
 
+  // Explicit mute is a preference, not a browser-lock state, and must
+  // suppress even a genuinely new assignment while persisting reload.
+  await driver.getByTestId("driver-sound-toggle").click();
+  await expect(driver.getByTestId("driver-sound-status")).toContainText("Ovoz o‘chirilgan");
+
   const orderIdA = await placeDeliveryOrder(customerA, "Sound Driver A", "+998907779501");
   await acceptOrder(staff, orderIdA);
   await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
   const afterFirstAssignment = await soundStarts(driver);
-  expect(afterFirstAssignment).toBeGreaterThan(0);
+  expect(afterFirstAssignment).toBe(0);
 
   // Hydration check: reload with this same active, unaccepted assignment
   // still present -- must not replay a sound for it.
   await driver.reload();
-  await ensureSoundArmed(driver);
+  await expect(driver.getByTestId("driver-sound-status")).toContainText("Ovoz o‘chirilgan");
   await driver.waitForTimeout(500);
+  expect(await soundStarts(driver)).toBe(0);
+
+  // Explicit unmute happens inside a legitimate click, so it persists and
+  // unlocks immediately without manufacturing an assignment sound.
+  await driver.getByTestId("driver-sound-toggle").click();
+  await expect(driver.getByTestId("driver-sound-status")).toContainText("Ovoz yoqilgan");
   expect(await soundStarts(driver)).toBe(0);
 
   // Accept it -- the repeat for THIS assignment must stop.
@@ -158,6 +174,7 @@ test("hydration with an existing assignment plays no sound; a genuinely new assi
   // A second order joins (batched, since same branch/compatible window)
   // -- must sound immediately, without a reload, and without collapsing
   // into a passive row (the recently fixed invariant).
+  await driver.evaluate(() => ((window as unknown as { __zaytunSoundRepeatMs: number }).__zaytunSoundRepeatMs = 250));
   const orderIdB = await placeDeliveryOrder(customerB, "Sound Driver B", "+998907779502");
   await acceptOrder(staff, orderIdB);
   await expect(driver.getByTestId("driver-pickup-batch")).toBeVisible({ timeout: 15000 });
@@ -166,7 +183,7 @@ test("hydration with an existing assignment plays no sound; a genuinely new assi
   const afterSecondAssignment = await soundStarts(driver);
 
   // Repeats while B remains unanswered.
-  await driver.waitForTimeout(9000);
+  await driver.waitForTimeout(400);
   expect(await soundStarts(driver)).toBeGreaterThan(afterSecondAssignment);
 
   // Accepting B stops the repeat, and both orders remain full, active
@@ -175,7 +192,7 @@ test("hydration with an existing assignment plays no sound; a genuinely new assi
   await driver.getByTestId(`driver-batch-accept-${orderIdB}`).click();
   await expect(driver.getByTestId("driver-batch-count")).toContainText("2/2 buyurtma");
   const afterAcceptB = await soundStarts(driver);
-  await driver.waitForTimeout(9000);
+  await driver.waitForTimeout(400);
   expect(await soundStarts(driver)).toBe(afterAcceptB);
 
   await driverContext.close();

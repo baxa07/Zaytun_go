@@ -1884,55 +1884,105 @@ function saveAcknowledgedOrders(ids: Set<string>) {
     /* alert simply won't persist across reload -- not critical */
   }
 }
-// Phase D, Part F: a small, restrained status -- never competes visually
-// with orders/assignments, just answers "is the alert sound actually on."
-// Shared by Restaurant and Driver rather than two bespoke copies. Clicking
-// while locked is itself the required user gesture (browsers block
-// AudioContext playback before one), so this doubles as the explicit
-// unlock action Part B asks for.
+// Phase D follow-up: preference, browser unlock and actual readiness are
+// deliberately separate. A missing preference means ON; only an explicit
+// mute is persisted as OFF. Creating/resuming the AudioContext is silent --
+// alert oscillators are still created exclusively by the existing arrival
+// effects below, after their hydration baselines have been established.
 const SOUND_PREFERENCE_KEY = "zaytun-go:sound-preference";
-function rememberSoundEnabled() {
+function soundRepeatMs(): number {
+  return (window as typeof window & { __zaytunSoundRepeatMs?: number }).__zaytunSoundRepeatMs ?? 8000;
+}
+function loadSoundEnabled(): boolean {
   try {
-    localStorage.setItem(SOUND_PREFERENCE_KEY, "enabled");
+    return localStorage.getItem(SOUND_PREFERENCE_KEY) !== "muted";
   } catch {
-    /* the in-session armed state still works -- persistence is a nicety */
+    return true;
   }
 }
+function saveSoundEnabled(enabled: boolean) {
+  try {
+    localStorage.setItem(SOUND_PREFERENCE_KEY, enabled ? "enabled" : "muted");
+  } catch {
+    /* the in-session preference still works */
+  }
+}
+function useOperationalSound() {
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(loadSoundEnabled);
+  const soundEnabledRef = useRef(soundEnabled);
+  const [soundReady, setSoundReady] = useState(false);
+
+  const unlockSound = useCallback(() => {
+    if (!soundEnabledRef.current) return;
+    try {
+      const ctx = audioCtxRef.current ?? new AudioContext();
+      audioCtxRef.current = ctx;
+      const markReady = () => {
+        if (ctx.state === "suspended") return;
+        // Avoid restructuring the operational header during the same
+        // pointerdown that may also activate an order action underneath.
+        setTimeout(() => setSoundReady(true), 0);
+      };
+      if (ctx.state === "suspended" && typeof ctx.resume === "function") {
+        void ctx.resume().then(markReady).catch(() => {});
+      } else {
+        markReady();
+      }
+    } catch {
+      /* visual notifications remain the source of truth */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!soundEnabled || soundReady) return;
+    document.addEventListener("pointerdown", unlockSound);
+    document.addEventListener("keydown", unlockSound);
+    return () => {
+      document.removeEventListener("pointerdown", unlockSound);
+      document.removeEventListener("keydown", unlockSound);
+    };
+  }, [soundEnabled, soundReady, unlockSound]);
+
+  const toggleSound = useCallback(() => {
+    const enabled = !soundEnabledRef.current;
+    soundEnabledRef.current = enabled;
+    saveSoundEnabled(enabled);
+    setSoundEnabled(enabled);
+    if (enabled) unlockSound();
+  }, [unlockSound]);
+
+  return { audioCtxRef, soundEnabled, soundReady, soundEnabledRef, toggleSound };
+}
 function SoundStatusControl({
-  armed,
-  onEnable,
+  enabled,
+  ready,
+  onToggle,
   testIdPrefix,
 }: {
-  armed: boolean;
-  onEnable: () => void;
+  enabled: boolean;
+  ready: boolean;
+  onToggle: () => void;
   testIdPrefix: string;
 }) {
-  // The enable button stays mounted (hidden via CSS, never conditionally
-  // removed) even once armed -- unmounting it right as the SAME tap that
-  // arms audio might also be a genuine tap on something else underneath
-  // shifts the layout between press and release and can silently drop
-  // that click (found via a real click on the driver's "Qabul qilish"
-  // losing its very first press this way). Only the confirmation span is
-  // ever conditionally rendered -- it isn't a click target, so mounting
-  // it fresh carries none of that risk.
   return (
-    <>
+    <div className="sound-control">
+      <span className="sound-status" data-testid={`${testIdPrefix}-sound-status`}>
+        {!enabled
+          ? "🔕 Ovoz o‘chirilgan"
+          : ready
+            ? "🔔 Ovoz yoqilgan"
+            : "🔔 Ovoz birinchi bosishda faollashadi"}
+      </span>
       <button
         type="button"
-        className={`button text sound-status${armed ? " armed" : ""}`}
-        data-testid={`${testIdPrefix}-sound-enable`}
-        aria-hidden={armed}
-        tabIndex={armed ? -1 : 0}
-        onClick={onEnable}
+        className="button text sound-toggle"
+        data-testid={`${testIdPrefix}-sound-toggle`}
+        onClick={onToggle}
       >
-        🔕 Ovoz o‘chiq — yoqish
+        {enabled ? "Ovozni o‘chirish" : "Ovozni yoqish"}
       </button>
-      {armed && (
-        <span className="sound-status armed" data-testid={`${testIdPrefix}-sound-status`}>
-          🔔 Ovoz yoqilgan
-        </span>
-      )}
-    </>
+    </div>
   );
 }
 function Restaurant() {
@@ -1965,41 +2015,13 @@ function Restaurant() {
   // assumed to work from mount. If it's ever unavailable/blocked, the
   // persistent visual alert below is unaffected -- nothing about order
   // processing ever depends on sound succeeding.
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const [soundArmed, setSoundArmed] = useState(false);
-  const armSound = useCallback(() => {
-    if (audioCtxRef.current) return;
-    try {
-      // AudioContext creation itself must stay synchronous within the
-      // gesture (browser autoplay policy). The resulting DOM change
-      // (hiding the enable button, mounting the confirmation pill) is
-      // deferred a tick so it can never restructure the page mid-click --
-      // this listener fires on ANY first pointerdown, including a tap
-      // that's ALSO a genuine click on something else (e.g. the driver's
-      // own primary action button); reconciling synchronously within that
-      // same click let React lose track of the in-flight click on the
-      // still-being-reconciled node (found via a real click silently
-      // producing no transition at all).
-      audioCtxRef.current = new AudioContext();
-      rememberSoundEnabled();
-      setTimeout(() => setSoundArmed(true), 0);
-    } catch {
-      /* persistent visual alert remains the source of truth */
-    }
-  }, []);
-  useEffect(() => {
-    document.addEventListener("pointerdown", armSound, { once: true });
-    document.addEventListener("keydown", armSound, { once: true });
-    return () => {
-      document.removeEventListener("pointerdown", armSound);
-      document.removeEventListener("keydown", armSound);
-    };
-  }, [armSound]);
+  const { audioCtxRef, soundEnabled, soundReady, soundEnabledRef, toggleSound } = useOperationalSound();
   // Deliberately loud and urgent -- a missed delivery order is far
   // costlier than an occasionally-jarring alert, so this is not tuned as
   // a subtle UI chime. Square-wave oscillators at high gain, a 4-note
   // alternating pattern instead of a soft two-note tone.
   const playAlertChime = useCallback(() => {
+    if (!soundEnabledRef.current) return;
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     try {
@@ -2021,7 +2043,7 @@ function Restaurant() {
     } catch {
       /* visible alert remains the source of truth -- never block on audio */
     }
-  }, []);
+  }, [audioCtxRef, soundEnabledRef]);
   const previousUnacknowledgedIds = useRef<Set<string>>(new Set());
   // Phase D: the baseline used to start empty, so the FIRST render after
   // real data loaded (e.g. 6 pre-existing unacknowledged orders on a
@@ -2058,7 +2080,7 @@ function Restaurant() {
   const hasUnacknowledgedOrders = unacknowledgedNew.length > 0;
   useEffect(() => {
     if (!hasUnacknowledgedOrders) return;
-    const interval = window.setInterval(playAlertChime, 8000);
+    const interval = window.setInterval(playAlertChime, soundRepeatMs());
     return () => window.clearInterval(interval);
   }, [hasUnacknowledgedOrders, playAlertChime]);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -2115,7 +2137,7 @@ function Restaurant() {
           <div className="notice">
             🔔 {orders.filter((o) => o.status === "NEW").length} yangi buyurtma
           </div>
-          <SoundStatusControl armed={soundArmed} onEnable={armSound} testIdPrefix="restaurant" />
+          <SoundStatusControl enabled={soundEnabled} ready={soundReady} onToggle={toggleSound} testIdPrefix="restaurant" />
         </div>
         <div className="metrics">
           <span>
@@ -3425,8 +3447,8 @@ function DriverApp() {
     // which render created it), so omitting it from deps loses nothing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orders, myDriver?.id]);
-  // P4.11: attention sounds -- identical lazy-AudioContext-armed-on-first-
-  // gesture and seen-ids-baseline-on-first-render pattern as the
+  // P4.11: attention sounds -- identical default-on, gesture-unlocked
+  // preference and seen-ids-baseline-on-first-render pattern as the
   // restaurant new-order alert (Restaurant(), above), so a reload with
   // already-known state never replays a sound, and an ordinary realtime
   // refresh that returns the same set never re-fires one either. Four
@@ -3435,30 +3457,9 @@ function DriverApp() {
   // order joining an existing pickup, one order becoming ready, and the
   // whole pickup batch becoming ready -- each played at most once per
   // event, never repeated after the driver has moved on.
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const [soundArmed, setSoundArmed] = useState(false);
-  const armSound = useCallback(() => {
-    if (audioCtxRef.current) return;
-    try {
-      // See Restaurant()'s identical armSound for why the state update
-      // (and resulting DOM change) is deferred a tick rather than applied
-      // synchronously within this same gesture.
-      audioCtxRef.current = new AudioContext();
-      rememberSoundEnabled();
-      setTimeout(() => setSoundArmed(true), 0);
-    } catch {
-      /* the visual assignment card remains the source of truth */
-    }
-  }, []);
-  useEffect(() => {
-    document.addEventListener("pointerdown", armSound, { once: true });
-    document.addEventListener("keydown", armSound, { once: true });
-    return () => {
-      document.removeEventListener("pointerdown", armSound);
-      document.removeEventListener("keydown", armSound);
-    };
-  }, [armSound]);
-  const playChime = (notes: [frequency: number, startOffset: number, duration: number][], gainLevel: number) => {
+  const { audioCtxRef, soundEnabled, soundReady, soundEnabledRef, toggleSound } = useOperationalSound();
+  const playChime = useCallback((notes: [frequency: number, startOffset: number, duration: number][], gainLevel: number) => {
+    if (!soundEnabledRef.current) return;
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     try {
@@ -3475,7 +3476,7 @@ function DriverApp() {
     } catch {
       /* the visual card remains the source of truth */
     }
-  };
+  }, [audioCtxRef, soundEnabledRef]);
   // New real assignment (current.id) vs. a second order joining an
   // existing pickup (lands in queued instead) -- distinguished by WHERE
   // the newly-arrived id ends up, not by a separate signal. Deliberately
@@ -3506,8 +3507,7 @@ function DriverApp() {
     } else {
       playChime([[587, 0, 0.14], [784, 0.16, 0.14], [880, 0.32, 0.2]], 0.18); // 📦 Yana bitta buyurtma qo‘shildi
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAssignments, loaded]);
+  }, [activeAssignments, loaded, current, playChime]);
   // Business-critical repeat, same reasoning as the restaurant alert:
   // an assignment still awaiting accept/decline must keep paging the
   // driver, not just chime once on arrival. Stops the instant every
@@ -3517,10 +3517,10 @@ function DriverApp() {
     if (!hasUnansweredAssignment) return;
     const interval = window.setInterval(
       () => playChime([[660, 0, 0.16], [880, 0.2, 0.22]], 0.2),
-      8000,
+      soundRepeatMs(),
     );
     return () => window.clearInterval(interval);
-  }, [hasUnansweredAssignment]);
+  }, [hasUnansweredAssignment, playChime]);
   // Food ready (single) vs. the whole batch ready (both members reach
   // DRIVER_ASSIGNED together) -- tracked by each order's own previous
   // status, not a separate poll.
@@ -3542,8 +3542,7 @@ function DriverApp() {
     } else {
       playChime([[784, 0, 0.18], [988, 0.18, 0.24]], 0.2); // ✅ Buyurtma tayyor
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAssignments]);
+  }, [activeAssignments, current, playChime]);
   // Driver UI Phase: a distinctly different, softer chime for a genuinely
   // new standby notice -- same lazy-armed AudioContext, same
   // seen-ids-baseline pattern, but a clearly lower/softer pitch pair
@@ -3555,6 +3554,7 @@ function DriverApp() {
     const hasNewArrival = [...currentIds].some((id) => !previousStandbyIds.current.has(id));
     previousStandbyIds.current = currentIds;
     if (!hasNewArrival) return;
+    if (!soundEnabledRef.current) return;
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     try {
@@ -3573,7 +3573,7 @@ function DriverApp() {
     } catch {
       /* the visual standby card remains the source of truth */
     }
-  }, [standbyNotices]);
+  }, [standbyNotices, audioCtxRef, soundEnabledRef]);
   // Only a positively-known OFF_SHIFT driver sees the off-duty screen --
   // while `myDriver` hasn't loaded yet (e.g. local/offline provider, or a
   // brief moment before the first refresh completes), this must not be
@@ -3627,7 +3627,7 @@ function DriverApp() {
             <p className="eyebrow">XAYRLI KUN{greetingName ? `, ${greetingName}` : ""}</p>
             <h1>Bugungi yetkazish</h1>
           </div>
-          <SoundStatusControl armed={soundArmed} onEnable={armSound} testIdPrefix="driver" />
+          <SoundStatusControl enabled={soundEnabled} ready={soundReady} onToggle={toggleSound} testIdPrefix="driver" />
         </div>
         <DriverAvailabilityToggle
           driver={myDriver}

@@ -1298,26 +1298,30 @@ h2 {
 .big {
   min-height: 58px;
 }
-/* Phase D, Part F: small, restrained sound status -- shared by Restaurant
-   and Driver. The enable button keeps the ordinary .button.text sizing at
-   all times (only visibility toggles) -- it must never change size
-   between armed/unarmed, since even a hidden element's reserved layout
-   space changing size can shift later siblings (e.g. the shift-toggle
-   button) at the exact moment arming happens, which can land a
-   still-in-flight click on the wrong target. The confirmation pill is a
-   separate, freshly-mounted element instead, never resized. */
-button.sound-status.armed {
-  visibility: hidden;
-  pointer-events: none;
+/* Phase D follow-up: preference and browser readiness remain legible as
+   separate concepts without competing with operational actions. The
+   wrapper stays mounted and stable while a first gesture unlocks audio. */
+.sound-control {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  max-width: 210px;
+  text-align: right;
 }
-span.sound-status {
+.sound-status {
   display: inline-block;
   background: #edf3ef;
   color: var(--green);
   border-radius: 20px;
-  padding: 6px 12px;
+  padding: 6px 10px;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.sound-toggle.button.text {
+  min-height: 28px;
+  padding: 2px 4px;
+  font-size: 11px;
 }
 .batch-panel {
   background: #f2f4f2;
