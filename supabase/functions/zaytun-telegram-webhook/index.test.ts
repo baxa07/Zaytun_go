@@ -48,6 +48,88 @@ Deno.test("/start -> sends welcome text with exactly the two specified URL butto
   });
 });
 
+Deno.test("group message captures only minimal restaurant candidate metadata", async () => {
+  const { client } = fakeTelegram();
+  const seen: unknown[] = [];
+  const deps: HandlerDeps = {
+    env: envFrom(VALID_ENV),
+    telegram: client,
+    consumeLink: noopConsumeLink,
+    captureCandidate: (candidate) => seen.push(candidate),
+  };
+  const res = await handleTelegramWebhook(
+    post({
+      message: {
+        text: "unrelated restaurant conversation",
+        date: 1786878000,
+        chat: { id: -1001234567890, type: "supergroup", title: "Zaytun Operations" },
+        from: { username: "not-captured", first_name: "Not captured" },
+      },
+    }),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  assertEquals(seen, [{
+    chatId: -1001234567890,
+    chatType: "supergroup",
+    chatTitle: "Zaytun Operations",
+    messageTime: 1786878000,
+  }]);
+});
+
+Deno.test("private /start captures the narrow driver candidate identity already supplied by Telegram", async () => {
+  const { client } = fakeTelegram();
+  const seen: unknown[] = [];
+  const deps: HandlerDeps = {
+    env: envFrom(VALID_ENV),
+    telegram: client,
+    consumeLink: noopConsumeLink,
+    captureCandidate: (candidate) => seen.push(candidate),
+  };
+  const res = await handleTelegramWebhook(
+    post({
+      message: {
+        text: "/start",
+        date: 1786878060,
+        chat: { id: 99887766, type: "private" },
+        from: { username: "driver_candidate", first_name: "Ali", last_name: "Valiyev" },
+      },
+    }),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  assertEquals(seen, [{
+    chatId: 99887766,
+    chatType: "private",
+    username: "driver_candidate",
+    displayName: "Ali Valiyev",
+    messageTime: 1786878060,
+    command: "/start",
+  }]);
+});
+
+Deno.test("private non-/start messages are never captured", async () => {
+  const { client } = fakeTelegram();
+  const seen: unknown[] = [];
+  const deps: HandlerDeps = {
+    env: envFrom(VALID_ENV),
+    telegram: client,
+    consumeLink: noopConsumeLink,
+    captureCandidate: (candidate) => seen.push(candidate),
+  };
+  await handleTelegramWebhook(
+    post({
+      message: {
+        text: "private conversation that must not be captured",
+        date: 1786878120,
+        chat: { id: 123, type: "private", username: "private_user" },
+      },
+    }),
+    deps,
+  );
+  assertEquals(seen, []);
+});
+
 Deno.test("unrelated message -> no Telegram calls, still 200 (left as an ordinary chat for staff)", async () => {
   const { client, calls } = fakeTelegram();
   const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: noopConsumeLink };

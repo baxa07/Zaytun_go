@@ -50,6 +50,17 @@ export interface HandlerDeps {
   // unknown/expired/already-consumed tokens. chatId always comes from
   // Telegram's own webhook payload, never from message text.
   consumeLink: (token: string, chatId: number) => Promise<boolean>;
+  captureCandidate?: (candidate: TelegramChatCandidate) => void;
+}
+
+export interface TelegramChatCandidate {
+  chatId: number;
+  chatType: string;
+  messageTime: number | null;
+  chatTitle?: string;
+  username?: string;
+  displayName?: string;
+  command?: "/start";
 }
 
 function textResponse(status: number, body: string): Response {
@@ -61,6 +72,32 @@ function textResponse(status: number, body: string): Response {
 // discipline as send-sms-hook's own logging.
 function logOutcome(outcome: string): void {
   console.log(JSON.stringify({ event: "zaytun_telegram_webhook", outcome }));
+}
+
+function candidateFromUpdate(update: TelegramUpdate): TelegramChatCandidate | null {
+  const message = update.message;
+  if (!message) return null;
+  const chatType = message.chat.type ?? "unknown";
+  if (chatType === "group" || chatType === "supergroup") {
+    return {
+      chatId: message.chat.id,
+      chatType,
+      chatTitle: message.chat.title,
+      messageTime: message.date ?? null,
+    };
+  }
+  if (chatType !== "private" || message.text !== "/start") return null;
+  const firstName = message.from?.first_name ?? message.chat.first_name;
+  const lastName = message.from?.last_name ?? message.chat.last_name;
+  const displayName = [firstName, lastName].filter(Boolean).join(" ") || undefined;
+  return {
+    chatId: message.chat.id,
+    chatType,
+    username: message.from?.username ?? message.chat.username,
+    displayName,
+    messageTime: message.date ?? null,
+    command: "/start",
+  };
 }
 
 export async function handleTelegramWebhook(req: Request, deps: HandlerDeps): Promise<Response> {
@@ -99,6 +136,14 @@ export async function handleTelegramWebhook(req: Request, deps: HandlerDeps): Pr
   }
 
   try {
+    const candidate = candidateFromUpdate(update);
+    if (candidate && deps.captureCandidate) {
+      try {
+        deps.captureCandidate(candidate);
+      } catch {
+        logOutcome("candidate_capture_failed");
+      }
+    }
     const text = update.message?.text ?? "";
     if (text === "/start") {
       await telegram.sendMessage(update.message!.chat.id, WELCOME_TEXT, START_KEYBOARD);
@@ -157,6 +202,9 @@ if (import.meta.main) {
         if (!orderId) return false;
         const { error } = await admin.from("orders").update({ customer_telegram_chat_id: chatId }).eq("id", orderId);
         return !error;
+      },
+      captureCandidate: (candidate) => {
+        console.log(JSON.stringify({ event: "telegram_chat_candidate", ...candidate }));
       },
     });
   });

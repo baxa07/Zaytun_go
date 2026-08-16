@@ -35,6 +35,19 @@ export function createTelegramClient(botToken: string, fetchImpl: typeof fetch =
 export interface TelegramUpdate {
   message?: {
     text?: string;
-    chat: { id: number; type?: string };
+    date?: number;
+    from?: {
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+    };
+    chat: {
+      id: number;
+      type?: string;
+      title?: string;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+    };
   };
 }
