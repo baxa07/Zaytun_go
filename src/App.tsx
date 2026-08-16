@@ -77,6 +77,7 @@ import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDe
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
+const customerCompletedStatuses: OrderStatus[] = ["DELIVERED", "COLLECTED", "DELIVERY_FAILED", "RETURNED", "CANCELLED", "REJECTED"];
 // UI-only guard against obvious resend-button hammering -- Supabase's own
 // hosted per-phone/per-IP rate limits (see docs/production-readiness.md)
 // are the actual enforcement; this just avoids firing requests the server
@@ -256,7 +257,7 @@ function Shell({
             <>
               <NavLink to="/menu">Menyu</NavLink>
               <NavLink to="/cart">Savat{cartCount > 0 ? ` · ${cartCount}` : ""}</NavLink>
-              <NavLink to="/track/ord-new">Kuzatish</NavLink>
+              <NavLink to="/orders">Buyurtmalarim</NavLink>
             </>
           ) : (
             <>
@@ -1506,6 +1507,91 @@ function TelegramLinkCard({ orderId }: { orderId: string }) {
       </button>
       {state === "error" && <em className="error" data-testid="telegram-link-error">Havola yaratilmadi. Birozdan keyin qayta urinib ko‘ring.</em>}
     </section>
+  );
+}
+
+function MyOrders() {
+  const { orders, authReady, isCustomerAuthenticated, loadMyOrders, sendCustomerOtp, verifyCustomerOtp, signOut } = useApp();
+  const [step, setStep] = useState<"phone" | "code">("phone");
+  const [phone, setPhone] = useState("");
+  const [canonicalPhone, setCanonicalPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
+
+  useEffect(() => {
+    if (!isCustomerAuthenticated) return;
+    setLoadingOrders(true);
+    void loadMyOrders().catch((failure: unknown) => {
+      setError(failure instanceof Error ? failure.message : "Buyurtmalar yuklanmadi");
+    }).finally(() => setLoadingOrders(false));
+  }, [isCustomerAuthenticated, loadMyOrders]);
+
+  const sorted = useMemo(() => [...orders].sort((a, b) => {
+    const aDone = customerCompletedStatuses.includes(a.status) ? 1 : 0;
+    const bDone = customerCompletedStatuses.includes(b.status) ? 1 : 0;
+    return aDone - bDone || b.createdAt.localeCompare(a.createdAt);
+  }), [orders]);
+
+  if (!authReady) return <Shell><main className="narrow"><p role="status">Sessiya tekshirilmoqda…</p></main></Shell>;
+  if (!isCustomerAuthenticated) {
+    return (
+      <Shell><main className="narrow"><section className="form-card" data-testid="customer-login-card">
+        <p className="eyebrow">BUYURTMALARIM</p>
+        <h1>{step === "phone" ? "Telefon bilan kirish" : "SMS kodni kiriting"}</h1>
+        <p>Buyurtmalaringizni boshqa brauzerda ham telefon raqamingiz orqali tiklang.</p>
+        {step === "phone" ? (
+          <UzbekPhoneField label="Telefon" value={phone} onChange={setPhone} error="" />
+        ) : (
+          <Field label="SMS kod" value={code} onChange={setCode} />
+        )}
+        {step === "phone" && turnstileSiteKey && (
+          <TurnstileWidget key={captchaKey} siteKey={turnstileSiteKey} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} onError={() => setError("Xavfsizlik tekshiruvi yuklanmadi")} />
+        )}
+        {!turnstileSiteKey && <p className="error">SMS himoyasi sozlanmagan. Administratorga murojaat qiling.</p>}
+        {error && <p className="error" role="alert">{error}</p>}
+        <button type="button" className="button primary wide" disabled={busy || (step === "phone" && (!turnstileSiteKey || !captchaToken))} onClick={async () => {
+          setBusy(true); setError("");
+          try {
+            if (step === "phone") {
+              const normalized = await sendCustomerOtp(phone, captchaToken || undefined);
+              setCanonicalPhone(normalized); setStep("code");
+              setCaptchaToken(null); setCaptchaKey((value) => value + 1);
+            } else {
+              await verifyCustomerOtp(canonicalPhone, code);
+            }
+          } catch (failure) {
+            setError(failure instanceof Error ? failure.message : "Kirish amalga oshmadi");
+            if (step === "phone") { setCaptchaToken(null); setCaptchaKey((value) => value + 1); }
+          } finally { setBusy(false); }
+        }}>{busy ? "Kutilmoqda…" : step === "phone" ? "SMS kod yuborish" : "Tasdiqlash"}</button>
+        {step === "code" && <button type="button" className="button text" onClick={() => { setStep("phone"); setCode(""); setError(""); }}>Raqamni o‘zgartirish</button>}
+      </section></main></Shell>
+    );
+  }
+
+  return (
+    <Shell><main className="page my-orders" data-testid="my-orders-page">
+      <div className="page-title"><div><p className="eyebrow">BUYURTMALARIM</p><h1>Buyurtmalarim</h1></div><button type="button" className="button text" onClick={() => void signOut()}>Chiqish</button></div>
+      {loadingOrders && <p role="status">Buyurtmalar yuklanmoqda…</p>}
+      {!loadingOrders && sorted.length === 0 && <section className="empty"><p>Hali buyurtma yo‘q.</p><Link className="button primary" to="/menu">Menyuni ochish</Link></section>}
+      <div className="order-list">
+        {sorted.map((order) => <article className="form-card my-order-card" key={order.id} data-testid="my-order-card">
+          <div><h2>{order.number}</h2><OrderBadge order={order}/></div>
+          <p>{order.type === "DELIVERY" ? "Yetkazib berish" : "Olib ketish"} · {new Date(order.createdAt).toLocaleString("uz-UZ")}</p>
+          <b>{money(order.total)}</b>
+          <div className="actions"><Link className="button secondary" to={`/track/${order.id}`}>{customerCompletedStatuses.includes(order.status) ? "Tafsilotlar" : "Kuzatish"}</Link></div>
+          {order.type === "DELIVERY" && !customerCompletedStatuses.includes(order.status) && (
+            <TelegramLinkCard orderId={order.id}/>
+          )}
+        </article>)}
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+    </main></Shell>
   );
 }
 const deliveryRatingLabels: Record<FeedbackDeliveryRating, string> = {
@@ -4613,6 +4699,7 @@ export default function App() {
       <Route path="/checkout" element={<Checkout />} />
       <Route path="/confirmation/:id" element={<Confirmation />} />
       <Route path="/track/:id" element={<Track />} />
+      <Route path="/orders" element={<MyOrders />} />
       <Route
         path="/restaurant"
         element={

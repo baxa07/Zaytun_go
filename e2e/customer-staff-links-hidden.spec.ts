@@ -21,12 +21,12 @@ test.describe("customer surfaces never expose staff entry", () => {
     });
   }
 
-  test("customer nav shows only Menyu / Savat / Kuzatish", async ({ page }) => {
+  test("customer nav shows only Menyu / Savat / Buyurtmalarim", async ({ page }) => {
     await page.goto("/menu");
     const nav = page.locator("header nav");
     await expect(nav.getByRole("link", { name: "Menyu" })).toBeVisible();
     await expect(nav.getByRole("link", { name: /Savat/ })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Kuzatish" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Buyurtmalarim" })).toBeVisible();
     await expect(nav.getByRole("link")).toHaveCount(3);
   });
 
@@ -47,13 +47,13 @@ test.describe("customer surfaces never expose staff entry", () => {
     });
   }
 
-  test("mobile viewport (390x844): customer nav shows only Menyu / Savat / Kuzatish", async ({ page }) => {
+  test("mobile viewport (390x844): customer nav shows only Menyu / Savat / Buyurtmalarim", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/menu");
     const nav = page.locator("header nav");
     await expect(nav.getByRole("link", { name: "Menyu" })).toBeVisible();
     await expect(nav.getByRole("link", { name: /Savat/ })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Kuzatish" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Buyurtmalarim" })).toBeVisible();
     await expect(nav.getByRole("link")).toHaveCount(3);
   });
 });

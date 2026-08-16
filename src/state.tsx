@@ -171,6 +171,7 @@ type State = {
   isCustomerAuthenticated: boolean;
   refresh: () => Promise<void>;
   loadTrackedOrder: (id: string) => Promise<Order | undefined>;
+  loadMyOrders: () => Promise<Order[]>;
   signIn: (identifier: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   // Customer-facing phone+OTP auth, deliberately separate from signIn
@@ -498,6 +499,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return tracked;
   }, []);
 
+  const loadMyOrders = useCallback(async () => {
+    const mine = await store.list();
+    setOrders(mine);
+    return mine;
+  }, []);
+
   const submitOrderFeedback = useCallback(async (orderId: string, submission: OrderFeedbackSubmission) => {
     const updated = await store.submitOrderFeedback(orderId, submission);
     setOrders((current) => [updated, ...current.filter((order) => order.id !== updated.id)]);
@@ -530,6 +537,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     isCustomerAuthenticated,
     refresh,
     loadTrackedOrder,
+    loadMyOrders,
     signIn: async (identifier, password) => {
       if (!supabase) return;
       setAuthError("");
@@ -693,7 +701,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // "not in store, empty" fallback listMyStandbyNotices/listMyBranchIds
     // already use.
     listMyPickupBatchContext: async () => ("listMyPickupBatchContext" in store ? store.listMyPickupBatchContext() : []),
-  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, requestTelegramLink, role, runOperation, session, submitOrderFeedback, withOrderLock]);
+  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadMyOrders, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, requestTelegramLink, role, runOperation, session, submitOrderFeedback, withOrderLock]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }

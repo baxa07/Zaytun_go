@@ -43,12 +43,12 @@ function setCustomerAuthRequired(value: boolean) {
   psql(`update delivery_settings set customer_auth_required=${value} where id=true;`);
 }
 
-function queryOrder(orderId: string): { customer_id: string | null; primary_phone: string; actor_type: string; actor_id: string } {
+function queryOrder(orderId: string): { number: string; customer_id: string | null; primary_phone: string; actor_type: string; actor_id: string } {
   const out = psql(
-    `select o.customer_id, o.primary_phone, e.actor_type, e.actor_id from orders o join order_events e on e.order_id = o.id and e.previous_status is null where o.id = '${orderId}';`,
+    `select o.number, o.customer_id, o.primary_phone, e.actor_type, e.actor_id from orders o join order_events e on e.order_id = o.id and e.previous_status is null where o.id = '${orderId}';`,
   );
-  const [customer_id, primary_phone, actor_type, actor_id] = out.split("|");
-  return { customer_id: customer_id || null, primary_phone, actor_type, actor_id };
+  const [number, customer_id, primary_phone, actor_type, actor_id] = out.split("|");
+  return { number, customer_id: customer_id || null, primary_phone, actor_type, actor_id };
 }
 
 // Mints a throwaway second real auth identity (via the local-only fixture
@@ -179,5 +179,53 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
 
     const orderCount = psql(`select count(*) from orders where primary_phone in ('+998901234566','+998000000003');`);
     expect(orderCount).toBe("0");
+  });
+
+  test("Buyurtmalarim recovers an owned order without the original tracking token, and OTP restores it after sign-out", async ({ page }) => {
+    test.setTimeout(60000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await addItemToCartAndReachCheckout(page);
+    await page.getByLabel("Ism *").fill("Recovery Mijoz");
+    await page.getByLabel("Telefon *").fill("+998901234577");
+    await page.getByTestId("checkout-submit").click();
+    await page.getByLabel("Telefon", { exact: true }).fill("000000002");
+    await page.getByTestId("otp-send").click();
+    await page.getByLabel("Tasdiqlash kodi").fill("222222");
+    await page.getByTestId("otp-verify").click();
+    await expect(page).toHaveURL(/\/confirmation\//, { timeout: 15000 });
+    const orderId = page.url().split("/confirmation/")[1];
+
+    await page.evaluate(() => localStorage.removeItem("zgo.tracking"));
+    await page.goto("/orders");
+    await expect(page.getByTestId("my-orders-page")).toBeVisible();
+    await page.screenshot({ path: "qa/screenshots/14-customer-my-orders.png", fullPage: true });
+    await expect(page.getByTestId("my-order-card").filter({ hasText: queryOrder(orderId).number })).toBeVisible();
+    await page.getByTestId("my-order-card").filter({ hasText: queryOrder(orderId).number }).getByRole("link", { name: "Kuzatish" }).click();
+    await expect(page).toHaveURL(new RegExp(`/track/${orderId}$`));
+    await expect(page.getByText(queryOrder(orderId).number, { exact: true })).toBeVisible();
+    await page.screenshot({ path: "qa/screenshots/15-customer-tracking-recovery.png", fullPage: true });
+
+    // Persisted Supabase session survives a complete reload and still does
+    // not need the removed local tracking-token map.
+    await page.reload();
+    await expect(page.getByText(queryOrder(orderId).number, { exact: true })).toBeVisible();
+
+    await page.goto("/orders");
+    await page.getByRole("button", { name: "Chiqish" }).click();
+    await expect(page.getByTestId("customer-login-card")).toBeVisible();
+    await page.screenshot({ path: "qa/screenshots/16-customer-phone-login.png", fullPage: true });
+    await page.getByLabel("Telefon").fill("000000002");
+    // Local GoTrue enforces the configured per-phone resend interval just
+    // like hosted Auth; the first OTP was sent earlier in this same test.
+    await page.waitForTimeout(5500);
+    const sendButton = page.getByRole("button", { name: "SMS kod yuborish" });
+    await expect(sendButton).toBeEnabled({ timeout: 15000 });
+    await sendButton.click();
+    await expect(page.getByLabel("SMS kod")).toBeVisible({ timeout: 15000 });
+    await page.screenshot({ path: "qa/screenshots/17-customer-otp-code.png", fullPage: true });
+    await page.getByLabel("SMS kod").fill("222222");
+    await page.getByRole("button", { name: "Tasdiqlash" }).click();
+    await expect(page.getByTestId("my-orders-page")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("my-order-card").filter({ hasText: queryOrder(orderId).number })).toBeVisible();
   });
 });

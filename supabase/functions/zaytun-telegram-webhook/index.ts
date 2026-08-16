@@ -49,7 +49,7 @@ export interface HandlerDeps {
   // links the resolved order to chatId; returns false for
   // unknown/expired/already-consumed tokens. chatId always comes from
   // Telegram's own webhook payload, never from message text.
-  consumeLink: (token: string, chatId: number) => Promise<boolean>;
+  consumeLink: (token: string, chatId: number, telegramUserId: number, chatType: string) => Promise<boolean>;
   captureCandidate?: (candidate: TelegramChatCandidate) => void;
 }
 
@@ -153,7 +153,14 @@ export async function handleTelegramWebhook(req: Request, deps: HandlerDeps): Pr
       // "/start <token>" in the message text -- the token itself is
       // opaque here, validated entirely inside consumeLink.
       const token = text.slice("/start ".length).trim();
-      const linked = token ? await deps.consumeLink(token, update.message!.chat.id) : false;
+      const message = update.message!;
+      // Telegram private chat ids identify the same user; `from.id` is
+      // preferred when present, with chat.id as the documented private-chat
+      // identity fallback for older/minimal update shapes.
+      const telegramUserId = message.from?.id ?? message.chat.id;
+      const linked = token && message.chat.type === "private"
+        ? await deps.consumeLink(token, message.chat.id, telegramUserId, message.chat.type)
+        : false;
       await telegram.sendMessage(update.message!.chat.id, linked ? LINK_SUCCESS_TEXT : LINK_FAILED_TEXT);
       logOutcome(linked ? "link_consumed" : "link_invalid");
     } else {
@@ -185,23 +192,14 @@ if (import.meta.main) {
     return handleTelegramWebhook(req, {
       env: Deno.env,
       telegram: botToken ? createTelegramClient(botToken) : null,
-      consumeLink: async (token, chatId) => {
-        // A single conditional UPDATE (not select-then-update) makes
-        // consumption atomic under concurrent/duplicate webhook deliveries
-        // -- only the request that actually flips consumed_at from null
-        // gets a row back, so a Telegram retry of the same update can
-        // never link/notify twice from one token.
-        const { data: consumedRows } = await admin
-          .from("telegram_link_requests")
-          .update({ consumed_at: new Date().toISOString() })
-          .eq("token", token)
-          .is("consumed_at", null)
-          .gt("expires_at", new Date().toISOString())
-          .select("order_id");
-        const orderId = consumedRows?.[0]?.order_id;
-        if (!orderId) return false;
-        const { error } = await admin.from("orders").update({ customer_telegram_chat_id: chatId }).eq("id", orderId);
-        return !error;
+      consumeLink: async (token, chatId, telegramUserId, chatType) => {
+        const { data, error } = await admin.rpc("consume_customer_telegram_link", {
+          p_token: token,
+          p_chat_id: chatId,
+          p_telegram_user_id: telegramUserId,
+          p_chat_type: chatType,
+        });
+        return !error && data === true;
       },
       captureCandidate: (candidate) => {
         console.log(JSON.stringify({ event: "telegram_chat_candidate", ...candidate }));

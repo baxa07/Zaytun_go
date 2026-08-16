@@ -37,6 +37,7 @@ export interface TelegramUpdate {
     text?: string;
     date?: number;
     from?: {
+      id?: number;
       username?: string;
       first_name?: string;
       last_name?: string;

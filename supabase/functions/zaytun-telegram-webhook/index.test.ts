@@ -251,6 +251,21 @@ Deno.test("/start <token> with an invalid/expired/already-consumed link -> failu
   assertEquals(text, "Havola muddati o‘tgan yoki noto‘g‘ri. Buyurtma sahifasidan qaytadan urinib ko‘ring.");
 });
 
+Deno.test("/start <token> in a group can never link a customer destination", async () => {
+  const { client, calls } = fakeTelegram();
+  let consumed = false;
+  const deps: HandlerDeps = {
+    env: envFrom(VALID_ENV), telegram: client,
+    consumeLink: async () => { consumed = true; return true; },
+  };
+  const res = await handleTelegramWebhook(
+    post({ message: { text: "/start secret-token", chat: { id: -100777, type: "supergroup" } } }), deps,
+  );
+  assertEquals(res.status, 200);
+  assertEquals(consumed, false);
+  assertEquals((calls[0].args as [number, string])[1], "Havola muddati o‘tgan yoki noto‘g‘ri. Buyurtma sahifasidan qaytadan urinib ko‘ring.");
+});
+
 Deno.test("/start  (payload is only whitespace) -> treated as invalid without ever calling consumeLink", async () => {
   const { client, calls } = fakeTelegram();
   let consumeLinkCalled = false;

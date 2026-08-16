@@ -341,6 +341,14 @@ export class SupabaseStore {
     return data ? mapOrder(data as Row) : undefined;
   }
   async getTracked(id: string) {
+    const { data: sessionData } = await supabase!.auth.getSession();
+    if (sessionData.session) {
+      const owned = await supabase!.rpc("get_my_order_tracking", { p_order_id: id });
+      if (!owned.error && owned.data) return mapOrder(owned.data as Row);
+      // A staff session or an authenticated customer asking for an order
+      // they do not own may still hold an explicit legacy tracking token.
+      // Fall through to that capability path; never broaden the DB read.
+    }
     const token = (
       JSON.parse(localStorage.getItem("zgo.tracking") || "{}") as Record<
         string,
@@ -382,6 +390,11 @@ export class SupabaseStore {
   // customer. Returns a single-use link token (not a chat id, not a bot
   // secret); the caller builds the t.me deep link from it.
   async requestTelegramLink(id: string): Promise<string> {
+    const { data: sessionData } = await supabase!.auth.getSession();
+    if (sessionData.session) {
+      const owned = await supabase!.rpc("request_my_telegram_link", { p_order_id: id });
+      if (!owned.error && owned.data) return owned.data as string;
+    }
     const token = getStoredTrackingToken(id);
     if (!token) throw new Error("Bu buyurtma uchun kuzatish ruxsati topilmadi");
     const { data, error } = await supabase!.rpc("request_telegram_link", {

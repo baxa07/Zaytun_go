@@ -117,3 +117,35 @@ test("pre-existing NEW orders on reload never trigger sound; a genuinely new arr
   await staffContext.close();
   await customerContext.close();
 });
+
+test("full authenticated app refresh never converts browser audio lock into a persisted mute", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await installFakeAudio(page);
+  await signInStaff(page);
+
+  await page.evaluate(() => localStorage.removeItem("zaytun-go:sound-preference"));
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByRole("button", { name: "Chiqish" })).toBeVisible();
+  await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
+  await expect(page.getByTestId("restaurant-sound-toggle")).toHaveText("Ovozni o‘chirish");
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference"))).toBeNull();
+
+  // A second refresh exercises session restoration and the complete app
+  // initialization path again. Neither Auth hydration nor the service
+  // worker may manufacture an explicit mute preference.
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference"))).toBeNull();
+
+  await page.getByTestId("restaurant-sound-toggle").click();
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference"))).toBe("muted");
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz o‘chirilgan");
+
+  await page.getByTestId("restaurant-sound-toggle").click();
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference"))).toBe("enabled");
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
+  await context.close();
+});
