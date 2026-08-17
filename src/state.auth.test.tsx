@@ -739,7 +739,7 @@ describe("identifier-based sign-in (email or Uzbek phone)", () => {
     mocks.signInWithPassword.mockResolvedValueOnce({error:{message:"Invalid login credentials"}});
     await submitLogin("+998901234567","wrong-password");
     expect((await screen.findByRole("alert")).textContent).toContain("Invalid login credentials");
-    expect(window.turnstile?.remove).toHaveBeenCalled();
+    await waitFor(() => expect(window.turnstile?.remove).toHaveBeenCalled());
     expect(mocks.signInWithPassword).toHaveBeenCalledWith({phone:"+998901234567",password:"wrong-password",options:{captchaToken:"staff-captcha-token"}});
   });
 

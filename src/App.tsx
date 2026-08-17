@@ -74,7 +74,7 @@ import type { AddressSuggestion, MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
 import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
 import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,declineReasonLabels,deliveryDispatchPhase,deliveryDispatchPhaseLabels,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,orderExceptions,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint,type OrderExceptionKind} from './fulfillmentLifecycle'
-import {formatOperationalDateTime,formatOperationalTime} from './operationalTime'
+import {formatOperationalDateTime,formatOperationalHeaderDate,formatOperationalTime} from './operationalTime'
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
@@ -2105,6 +2105,11 @@ function SoundStatusControl({
 }
 function Restaurant() {
   const { orders, loaded, operationalError } = useApp();
+  const [operationalNow, setOperationalNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setOperationalNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [acknowledged, setAcknowledged] = useState<Set<string>>(() =>
     loadAcknowledgedOrders(),
   );
@@ -2249,7 +2254,9 @@ function Restaurant() {
         )}
         <div className="ops-head">
           <div>
-            <p className="eyebrow">DUSHANBA · 3 AVGUST</p>
+            <p className="eyebrow" data-testid="restaurant-operational-date">
+              {formatOperationalHeaderDate(operationalNow)}
+            </p>
             <h1>Buyurtmalar</h1>
           </div>
           <div className="notice">
