@@ -36,7 +36,10 @@ test("sound defaults ON, unlocks silently on a normal gesture, and explicit mute
   await installFakeAudio(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/restaurant");
-  await page.evaluate(() => localStorage.removeItem("zaytun-go:sound-preference"));
+  await page.evaluate(() => {
+    localStorage.removeItem("zaytun-go:sound-preference");
+    localStorage.removeItem("zaytun-go:sound-preference-v2");
+  });
   await page.reload();
 
   const status = page.getByTestId("restaurant-sound-status");

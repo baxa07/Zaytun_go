@@ -124,28 +124,49 @@ test("full authenticated app refresh never converts browser audio lock into a pe
   await installFakeAudio(page);
   await signInStaff(page);
 
-  await page.evaluate(() => localStorage.removeItem("zaytun-go:sound-preference"));
+  await page.evaluate(() => {
+    localStorage.removeItem("zaytun-go:sound-preference");
+    localStorage.removeItem("zaytun-go:sound-preference-v2");
+  });
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByRole("button", { name: "Chiqish" })).toBeVisible();
   await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
   await expect(page.getByTestId("restaurant-sound-toggle")).toHaveText("Ovozni o‘chirish");
-  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference"))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference-v2"))).toBeNull();
 
   // A second refresh exercises session restoration and the complete app
   // initialization path again. Neither Auth hydration nor the service
   // worker may manufacture an explicit mute preference.
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
-  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference"))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference-v2"))).toBeNull();
 
   await page.getByTestId("restaurant-sound-toggle").click();
-  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference"))).toBe("muted");
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference-v2"))).toBe("explicit-muted");
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz o‘chirilgan");
 
   await page.getByTestId("restaurant-sound-toggle").click();
-  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference"))).toBe("enabled");
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference-v2"))).toBe("enabled");
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
+  await context.close();
+});
+
+test("legacy ambiguous mute is normalized ON without clearing unrelated storage", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installFakeAudio(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("zaytun-go:sound-preference", "muted");
+    localStorage.removeItem("zaytun-go:sound-preference-v2");
+    localStorage.setItem("zaytun-go:unrelated-proof", "preserved");
+  });
+  await signInStaff(page);
+  await expect(page.getByTestId("restaurant-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference-v2"))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:unrelated-proof"))).toBe("preserved");
+  await page.screenshot({ path: "qa/screenshots/25-restaurant-sound-default-on-390x844.png", fullPage: true });
   await context.close();
 });

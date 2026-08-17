@@ -98,6 +98,36 @@ async function signInStaff(page: Page) {
   await expect(page.getByRole("button", { name: "Chiqish" })).toBeVisible();
 }
 
+test("driver clean and legacy-only storage default ON; an explicit V2 mute alone persists OFF", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installFakeAudio(page);
+  await page.goto("/driver");
+  await page.evaluate(() => {
+    localStorage.setItem("zaytun-go:sound-preference", "muted");
+    localStorage.removeItem("zaytun-go:sound-preference-v2");
+  });
+  await page.reload();
+  await page.getByLabel("Telefon yoki email").fill("driver@zaytun.local");
+  await page.getByLabel("Parol").fill(localPassword);
+  await page.getByRole("button", { name: "Kirish" }).click();
+  await expect(page.getByTestId("driver-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
+  await page.screenshot({ path: "qa/screenshots/26-driver-sound-default-on-390x844.png", fullPage: true });
+  await page.reload();
+  await expect(page.getByTestId("driver-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
+  await page.getByTestId("driver-sound-toggle").click();
+  await expect(page.getByTestId("driver-sound-status")).toContainText("Ovoz o‘chirilgan");
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference-v2"))).toBe("explicit-muted");
+  await page.reload();
+  await expect(page.getByTestId("driver-sound-status")).toContainText("Ovoz o‘chirilgan");
+  await page.getByTestId("driver-sound-toggle").click();
+  expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference-v2"))).toBe("enabled");
+  await page.reload();
+  await expect(page.getByTestId("driver-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
+  await context.close();
+});
+
 async function placeDeliveryOrder(customer: Page, name: string, phone: string) {
   await customer.goto("/menu/chicken");
   await customer.getByRole("button", { name: "+" }).click();
@@ -132,6 +162,7 @@ test("hydration with an existing assignment plays no sound; a genuinely new assi
   const customerA = await customerAContext.newPage();
   const customerB = await customerBContext.newPage();
   const staff = await staffContext.newPage();
+  await driver.setViewportSize({ width: 390, height: 844 });
 
   await takeOffShift(otherDriver, "998900000099");
   await otherDriverContext.close();
@@ -174,7 +205,6 @@ test("hydration with an existing assignment plays no sound; a genuinely new assi
   // A second order joins (batched, since same branch/compatible window)
   // -- must sound immediately, without a reload, and without collapsing
   // into a passive row (the recently fixed invariant).
-  await driver.evaluate(() => ((window as unknown as { __zaytunSoundRepeatMs: number }).__zaytunSoundRepeatMs = 250));
   const orderIdB = await placeDeliveryOrder(customerB, "Sound Driver B", "+998907779502");
   await acceptOrder(staff, orderIdB);
   await expect(driver.getByTestId("driver-pickup-batch")).toBeVisible({ timeout: 15000 });
@@ -183,7 +213,7 @@ test("hydration with an existing assignment plays no sound; a genuinely new assi
   const afterSecondAssignment = await soundStarts(driver);
 
   // Repeats while B remains unanswered.
-  await driver.waitForTimeout(400);
+  await driver.waitForTimeout(9000);
   expect(await soundStarts(driver)).toBeGreaterThan(afterSecondAssignment);
 
   // Accepting B stops the repeat, and both orders remain full, active
@@ -192,7 +222,7 @@ test("hydration with an existing assignment plays no sound; a genuinely new assi
   await driver.getByTestId(`driver-batch-accept-${orderIdB}`).click();
   await expect(driver.getByTestId("driver-batch-count")).toContainText("2/2 buyurtma");
   const afterAcceptB = await soundStarts(driver);
-  await driver.waitForTimeout(400);
+  await driver.waitForTimeout(9000);
   expect(await soundStarts(driver)).toBe(afterAcceptB);
 
   await driverContext.close();

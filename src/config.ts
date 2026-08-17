@@ -25,7 +25,7 @@ export function validateEnvironment(environment:Environment,production=false):En
   if(!numeric(text(environment,'VITE_DEFAULT_MAP_LAT'),-90,90))add('VITE_DEFAULT_MAP_LAT','-90 dan 90 gacha son bo‘lishi kerak')
   if(!numeric(text(environment,'VITE_DEFAULT_MAP_LNG'),-180,180))add('VITE_DEFAULT_MAP_LNG','-180 dan 180 gacha son bo‘lishi kerak')
   if(!numeric(text(environment,'VITE_DEFAULT_MAP_ZOOM'),1,21))add('VITE_DEFAULT_MAP_ZOOM','1 dan 21 gacha son bo‘lishi kerak')
-  if(production){const origin=text(environment,'VITE_PUBLIC_APP_ORIGIN');if(!origin)add('VITE_PUBLIC_APP_ORIGIN','production domeni kiritilmagan');else if(!validUrl(origin,true))add('VITE_PUBLIC_APP_ORIGIN','HTTPS origin bo‘lishi kerak')}
+  if(production){const origin=text(environment,'VITE_PUBLIC_APP_ORIGIN');if(!origin)add('VITE_PUBLIC_APP_ORIGIN','production domeni kiritilmagan');else if(!validUrl(origin,true))add('VITE_PUBLIC_APP_ORIGIN','HTTPS origin bo‘lishi kerak');const turnstile=text(environment,'VITE_TURNSTILE_SITE_KEY');if(!turnstile)add('VITE_TURNSTILE_SITE_KEY','kiritilmagan');else if(!/^[0-9]x[A-Za-z0-9_-]{15,}$/.test(turnstile))add('VITE_TURNSTILE_SITE_KEY','haqiqiy Cloudflare site key bo‘lishi kerak')}
   return{valid:issues.length===0,issues,dataProvider:(dataProvider==='supabase'?'supabase':'local'),mapProvider:(mapProvider==='yandex'?'yandex':'mock')}
 }
 

@@ -35,9 +35,11 @@ describe('delivery address revision eligibility (stale-state gate)',()=>{
   })
 })
 describe('order submission mode (customer_auth_required rollout gate)',()=>{
-  it('always selects PUBLIC when the flag is off, authenticated or not',()=>{
+  it('selects PUBLIC only for an unauthenticated customer while the rollout flag is off',()=>{
     expect(resolveOrderSubmissionMode(false,false)).toBe('PUBLIC')
-    expect(resolveOrderSubmissionMode(false,true)).toBe('PUBLIC')
+  })
+  it('always binds an existing verified customer session to customer ownership, even before final flag activation',()=>{
+    expect(resolveOrderSubmissionMode(false,true)).toBe('CUSTOMER')
   })
   it('selects CUSTOMER when the flag is on and a verified customer session exists',()=>{
     expect(resolveOrderSubmissionMode(true,true)).toBe('CUSTOMER')

@@ -708,6 +708,7 @@ function Checkout() {
   // plumbing an imperative reset() through a ref for this one use.
   const [otpCaptchaToken, setOtpCaptchaToken] = useState<string | null>(null);
   const [otpCaptchaResetKey, setOtpCaptchaResetKey] = useState(0);
+  const [otpCaptchaFailed, setOtpCaptchaFailed] = useState(false);
   // No fallback/default sitekey -- an unconfigured CAPTCHA disables sending
   // entirely (see the otp-captcha-unavailable branch below) rather than
   // silently sending without one. Deliberately unset on production for now
@@ -1103,20 +1104,33 @@ function Checkout() {
                 <TurnstileWidget
                   key={otpCaptchaResetKey}
                   siteKey={turnstileSiteKey}
-                  onVerify={setOtpCaptchaToken}
+                  onVerify={(token) => {
+                    setOtpCaptchaFailed(false);
+                    setOtpError("");
+                    setOtpCaptchaToken(token);
+                  }}
                   onExpire={() => {
                     setOtpCaptchaToken(null);
                     setOtpError("Tasdiqlash muddati tugadi. Qaytadan urinib ko‘ring.");
                   }}
                   onError={() => {
                     setOtpCaptchaToken(null);
-                    setOtpError("Xavfsizlik tekshiruvini yuklab bo‘lmadi. Internetni tekshiring.");
+                    setOtpCaptchaFailed(true);
+                    setOtpError("Xavfsizlik tekshiruvi yuklanmadi");
                   }}
                 />
               ) : (
                 <p className="error" role="alert" data-testid="otp-captcha-unavailable">
                   Xavfsizlik tekshiruvi sozlanmagan. Birozdan keyin qayta urinib ko‘ring.
                 </p>
+              )}
+              {turnstileSiteKey && otpCaptchaFailed && (
+                <button type="button" className="button secondary" data-testid="otp-captcha-retry" onClick={() => {
+                  setOtpCaptchaFailed(false);
+                  setOtpError("");
+                  setOtpCaptchaToken(null);
+                  setOtpCaptchaResetKey((value) => value + 1);
+                }}>Qayta urinish</button>
               )}
               {otpStep === "phone" && (
                 <>
@@ -1520,6 +1534,7 @@ function MyOrders() {
   const [error, setError] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaKey, setCaptchaKey] = useState(0);
+  const [captchaFailed, setCaptchaFailed] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
 
@@ -1550,10 +1565,11 @@ function MyOrders() {
           <Field label="SMS kod" value={code} onChange={setCode} />
         )}
         {step === "phone" && turnstileSiteKey && (
-          <TurnstileWidget key={captchaKey} siteKey={turnstileSiteKey} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} onError={() => setError("Xavfsizlik tekshiruvi yuklanmadi")} />
+          <TurnstileWidget key={captchaKey} siteKey={turnstileSiteKey} onVerify={(token) => { setCaptchaFailed(false); setError(""); setCaptchaToken(token); }} onExpire={() => setCaptchaToken(null)} onError={() => { setCaptchaToken(null); setCaptchaFailed(true); setError("Xavfsizlik tekshiruvi yuklanmadi"); }} />
         )}
         {!turnstileSiteKey && <p className="error">SMS himoyasi sozlanmagan. Administratorga murojaat qiling.</p>}
         {error && <p className="error" role="alert">{error}</p>}
+        {captchaFailed && <button type="button" className="button secondary" data-testid="orders-captcha-retry" onClick={() => { setCaptchaFailed(false); setError(""); setCaptchaToken(null); setCaptchaKey((value) => value + 1); }}>Qayta urinish</button>}
         <button type="button" className="button primary wide" disabled={busy || (step === "phone" && (!turnstileSiteKey || !captchaToken))} onClick={async () => {
           setBusy(true); setError("");
           try {
@@ -1975,20 +1991,28 @@ function saveAcknowledgedOrders(ids: Set<string>) {
 // mute is persisted as OFF. Creating/resuming the AudioContext is silent --
 // alert oscillators are still created exclusively by the existing arrival
 // effects below, after their hydration baselines have been established.
-const SOUND_PREFERENCE_KEY = "zaytun-go:sound-preference";
+const LEGACY_SOUND_PREFERENCE_KEY = "zaytun-go:sound-preference";
+const SOUND_PREFERENCE_KEY = "zaytun-go:sound-preference-v2";
 function soundRepeatMs(): number {
   return (window as typeof window & { __zaytunSoundRepeatMs?: number }).__zaytunSoundRepeatMs ?? 8000;
 }
 function loadSoundEnabled(): boolean {
   try {
-    return localStorage.getItem(SOUND_PREFERENCE_KEY) !== "muted";
+    // V1's bare `muted` value has no proof that it came from a deliberate
+    // click (older releases could leave it behind during initialization).
+    // Only V2's explicit marker is authoritative. Missing, legacy-only,
+    // malformed, or stale state therefore safely defaults ON once.
+    return localStorage.getItem(SOUND_PREFERENCE_KEY) !== "explicit-muted";
   } catch {
     return true;
   }
 }
 function saveSoundEnabled(enabled: boolean) {
   try {
-    localStorage.setItem(SOUND_PREFERENCE_KEY, enabled ? "enabled" : "muted");
+    localStorage.setItem(SOUND_PREFERENCE_KEY, enabled ? "enabled" : "explicit-muted");
+    // Keep the former key coherent for rollback compatibility. Reads in
+    // this release deliberately use only the versioned provenance marker.
+    localStorage.setItem(LEGACY_SOUND_PREFERENCE_KEY, enabled ? "enabled" : "muted");
   } catch {
     /* the in-session preference still works */
   }

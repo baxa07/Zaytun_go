@@ -25,6 +25,8 @@ declare global {
 }
 
 const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+const SCRIPT_MARKER = "data-zaytun-turnstile-script";
+const SCRIPT_TIMEOUT_MS = 15_000;
 // Module-level, not component-level: the script tag must only ever be
 // injected once per page, no matter how many times this component mounts
 // (e.g. across the widget's own key-based reset remounts).
@@ -34,12 +36,36 @@ function loadTurnstileScript(): Promise<void> {
   if (window.turnstile) return Promise.resolve();
   if (!scriptLoadPromise) {
     scriptLoadPromise = new Promise((resolve, reject) => {
+      const staleScript = document.querySelector<HTMLScriptElement>(`script[${SCRIPT_MARKER}]`);
+      staleScript?.remove();
       const script = document.createElement("script");
       script.src = SCRIPT_SRC;
       script.async = true;
       script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Turnstile script failed to load"));
+      script.setAttribute(SCRIPT_MARKER, "true");
+      let settled = false;
+      let timeout = 0;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        script.remove();
+        scriptLoadPromise = null;
+        reject(error);
+      };
+      const succeed = () => {
+        if (settled) return;
+        if (!window.turnstile) {
+          fail(new Error("Turnstile API missing after script load"));
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timeout);
+        resolve();
+      };
+      timeout = window.setTimeout(() => fail(new Error("Turnstile script load timed out")), SCRIPT_TIMEOUT_MS);
+      script.onload = succeed;
+      script.onerror = () => fail(new Error("Turnstile script failed to load"));
       document.head.appendChild(script);
     });
   }

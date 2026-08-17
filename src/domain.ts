@@ -17,7 +17,7 @@ export const publicMenuState=(ready:boolean,error:string,categoryCount:number,it
 // order creation, independent of React/Supabase, so the flag=false/true
 // and authenticated/unauthenticated combinations can be verified directly.
 export type OrderSubmissionMode='PUBLIC'|'CUSTOMER'|'REQUIRES_CUSTOMER_AUTH'
-export const resolveOrderSubmissionMode=(customerAuthRequired:boolean,hasCustomerSession:boolean):OrderSubmissionMode=>!customerAuthRequired?'PUBLIC':hasCustomerSession?'CUSTOMER':'REQUIRES_CUSTOMER_AUTH'
+export const resolveOrderSubmissionMode=(customerAuthRequired:boolean,hasCustomerSession:boolean):OrderSubmissionMode=>hasCustomerSession?'CUSTOMER':customerAuthRequired?'REQUIRES_CUSTOMER_AUTH':'PUBLIC'
 
 export interface MenuModifier {id:string;name:string;price:number}
 export interface MenuItem {id:string;categoryId:string;name:string;description:string;price:number;image:string;modifiers?:MenuModifier[];available:boolean}

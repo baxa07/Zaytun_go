@@ -99,15 +99,35 @@ test.describe("customer_auth_required=false (production default): anonymous chec
   });
 });
 
+test("Turnstile script failure is fail-closed and the visible retry loads a fresh widget", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let scriptRequests = 0;
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js", async (route) => {
+    scriptRequests += 1;
+    if (scriptRequests === 1) await route.abort("failed");
+    else await route.continue();
+  });
+  await page.goto("/orders");
+  await expect(page.getByText("Xavfsizlik tekshiruvi yuklanmadi")).toBeVisible();
+  await expect(page.getByRole("button", { name: "SMS kod yuborish" })).toBeDisabled();
+  await page.screenshot({ path: "qa/screenshots/24-turnstile-error-retry-390x844.png", fullPage: true });
+  await page.getByTestId("orders-captcha-retry").click();
+  await expect(page.getByTestId("orders-captcha-retry")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "SMS kod yuborish" })).toBeEnabled({ timeout: 15000 });
+  expect(scriptRequests).toBe(2);
+});
+
 test.describe("customer_auth_required=true: full customer phone-OTP checkout flow", () => {
   test.beforeAll(() => setCustomerAuthRequired(true));
   test.afterAll(() => setCustomerAuthRequired(false));
 
   test("checkout is intercepted by inline OTP, preserves state, verifies, and submits an authenticated order", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     await addItemToCartAndReachCheckout(page);
     await page.getByLabel("Ism *").fill("OTP Mijoz");
     await page.getByLabel("Telefon *").fill("+998901234588");
     await page.getByLabel("Buyurtma izohi").fill("Pechene qo‘shmang");
+    await page.screenshot({ path: "qa/screenshots/18-checkout-before-submit-390x844.png", fullPage: true });
     await page.getByTestId("checkout-submit").click();
 
     // Unauthenticated + flag=true: submission is intercepted, not rejected --
@@ -117,6 +137,8 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     await expect(page.getByLabel("Ism *")).toHaveValue("OTP Mijoz");
     await expect(page.getByLabel("Buyurtma izohi")).toHaveValue("Pechene qo‘shmang");
     await expect(page.locator('[role="alert"]')).toHaveCount(0);
+    await page.screenshot({ path: "qa/screenshots/19-inline-otp-390x844.png", fullPage: true });
+    await page.screenshot({ path: "qa/screenshots/20-turnstile-normal-390x844.png", fullPage: true });
 
     await page.getByLabel("Telefon", { exact: true }).fill("000000001");
     await page.getByTestId("otp-send").click();
@@ -127,6 +149,7 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     await page.getByTestId("otp-verify").click();
     await expect(page.getByTestId("otp-error")).toContainText("Kod noto‘g‘ri yoki muddati tugagan");
     await expect(page).not.toHaveURL(/\/confirmation\//);
+    await page.screenshot({ path: "qa/screenshots/21-invalid-otp-390x844.png", fullPage: true });
 
     // Correct fixed local OTP: verifies and resumes the same checkout
     // automatically, without asking the user to press submit again.
@@ -135,6 +158,7 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     await page.getByTestId("otp-verify").click();
 
     await expect(page).toHaveURL(/\/confirmation\//, { timeout: 15000 });
+    await page.screenshot({ path: "qa/screenshots/22-verified-auto-submit-390x844.png", fullPage: true });
     const orderId = page.url().split("/confirmation/")[1];
     const order = queryOrder(orderId);
     expect(order.customer_id).not.toBeNull();
@@ -198,6 +222,7 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     await page.evaluate(() => localStorage.removeItem("zgo.tracking"));
     await page.goto("/orders");
     await expect(page.getByTestId("my-orders-page")).toBeVisible();
+    await page.screenshot({ path: "qa/screenshots/23-buyurtmalarim-390x844.png", fullPage: true });
     await page.screenshot({ path: "qa/screenshots/14-customer-my-orders.png", fullPage: true });
     await expect(page.getByTestId("my-order-card").filter({ hasText: queryOrder(orderId).number })).toBeVisible();
     await page.getByTestId("my-order-card").filter({ hasText: queryOrder(orderId).number }).getByRole("link", { name: "Kuzatish" }).click();
