@@ -172,7 +172,7 @@ type State = {
   refresh: () => Promise<void>;
   loadTrackedOrder: (id: string) => Promise<Order | undefined>;
   loadMyOrders: () => Promise<Order[]>;
-  signIn: (identifier: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string, captchaToken: string) => Promise<void>;
   signOut: () => Promise<void>;
   // Customer-facing phone+OTP auth, deliberately separate from signIn
   // (staff email/password, driver phone/password) -- no password involved.
@@ -539,12 +539,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refresh,
     loadTrackedOrder,
     loadMyOrders,
-    signIn: async (identifier, password) => {
+    signIn: async (identifier, password, captchaToken) => {
       if (!supabase) return;
       setAuthError("");
+      if (!captchaToken) throw new Error("Xavfsizlik tekshiruvini yakunlang.");
       const trimmed = identifier.trim();
       if (trimmed.includes("@")) {
-        const { error } = await supabase.auth.signInWithPassword({ email: trimmed, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: trimmed, password, options: { captchaToken } });
         if (error) throw new Error(error.message);
         return;
       }
@@ -555,6 +556,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.signInWithPassword({
         phone: normalizedPhone,
         password,
+        options: { captchaToken },
       });
       if (error) throw new Error(error.message);
     },

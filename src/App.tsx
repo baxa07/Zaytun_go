@@ -4534,6 +4534,10 @@ function DriverLogin({ authError }: { authError: string }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [passwordCaptchaToken, setPasswordCaptchaToken] = useState<string | null>(null);
+  const [passwordCaptchaFailed, setPasswordCaptchaFailed] = useState(false);
+  const [passwordCaptchaKey, setPasswordCaptchaKey] = useState(0);
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
   const [otpStep, setOtpStep] = useState<"phone" | "code">("phone");
   const [phone, setPhone] = useState("");
   const [canonicalPhone, setCanonicalPhone] = useState("");
@@ -4590,16 +4594,22 @@ function DriverLogin({ authError }: { authError: string }) {
                   e.preventDefault();
                   setPasswordError("");
                   try {
-                    await signIn(identifier, password);
+                    if (!passwordCaptchaToken) throw new Error("Xavfsizlik tekshiruvini yakunlang.");
+                    await signIn(identifier, password, passwordCaptchaToken);
                   } catch (failure) {
                     setPasswordError(failure instanceof Error ? failure.message : "Kirish amalga oshmadi");
+                  } finally {
+                    setPasswordCaptchaToken(null);
+                    setPasswordCaptchaKey((value) => value + 1);
                   }
                 }}
               >
                 <Field label="Telefon yoki email" value={identifier} onChange={setIdentifier} />
                 <Field label="Parol" value={password} onChange={setPassword} />
+                {turnstileSiteKey ? <TurnstileWidget key={passwordCaptchaKey} siteKey={turnstileSiteKey} onVerify={(token)=>{setPasswordCaptchaFailed(false);setPasswordError("");setPasswordCaptchaToken(token)}} onExpire={()=>setPasswordCaptchaToken(null)} onError={()=>{setPasswordCaptchaToken(null);setPasswordCaptchaFailed(true);setPasswordError("Xavfsizlik tekshiruvi yuklanmadi")}}/> : <p className="error">Xavfsizlik tekshiruvi sozlanmagan.</p>}
+                {passwordCaptchaFailed&&<button type="button" className="button secondary" onClick={()=>{setPasswordCaptchaFailed(false);setPasswordError("");setPasswordCaptchaKey((value)=>value+1)}}>Qayta urinish</button>}
                 {(passwordError || authError) && <p className="error" role="alert">{passwordError || authError}</p>}
-                <button className="button primary wide">Kirish</button>
+                <button className="button primary wide" disabled={!turnstileSiteKey||!passwordCaptchaToken}>Kirish</button>
               </form>
               <button
                 type="button"
@@ -4686,6 +4696,10 @@ function AuthGate({ children, surface }: { children: React.ReactNode; surface: "
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaFailed, setCaptchaFailed] = useState(false);
+  const [captchaKey, setCaptchaKey] = useState(0);
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
   const permitted = surface === "driver" ? role === "DRIVER" : role === "RESTAURANT" || role === "DISPATCHER";
   if (!authReady) return <div className="empty" role="status">Sessiya tekshirilmoqda…</div>;
   if (!supabaseConfigured) return <>{children}</>;
@@ -4706,16 +4720,22 @@ function AuthGate({ children, surface }: { children: React.ReactNode; surface: "
               e.preventDefault();
               setError("");
               try {
-                await signIn(identifier, password);
+                if (!captchaToken) throw new Error("Xavfsizlik tekshiruvini yakunlang.");
+                await signIn(identifier, password, captchaToken);
               } catch (failure) {
                 setError(failure instanceof Error ? failure.message : "Kirish amalga oshmadi");
+              } finally {
+                setCaptchaToken(null);
+                setCaptchaKey((value) => value + 1);
               }
             }}
           >
             <Field label="Telefon yoki email" value={identifier} onChange={setIdentifier} />
             <Field label="Parol" value={password} onChange={setPassword} />
+            {turnstileSiteKey ? <TurnstileWidget key={captchaKey} siteKey={turnstileSiteKey} onVerify={(token)=>{setCaptchaFailed(false);setError("");setCaptchaToken(token)}} onExpire={()=>setCaptchaToken(null)} onError={()=>{setCaptchaToken(null);setCaptchaFailed(true);setError("Xavfsizlik tekshiruvi yuklanmadi")}}/> : <p className="error">Xavfsizlik tekshiruvi sozlanmagan.</p>}
+            {captchaFailed&&<button type="button" className="button secondary" onClick={()=>{setCaptchaFailed(false);setError("");setCaptchaKey((value)=>value+1)}}>Qayta urinish</button>}
             {(error || authError) && <p className="error" role="alert">{error || authError}</p>}
-            <button className="button primary wide">Kirish</button>
+            <button className="button primary wide" disabled={!turnstileSiteKey||!captchaToken}>Kirish</button>
           </form>
           <small>
             Mahalliy hisoblar `supabase/seed.sql` va README’da

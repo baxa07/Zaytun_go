@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { AppProvider, useApp, isVerifiedCustomerSession, mapCustomerAuthError, mapDriverAuthError, type AppRole } from "./state";
@@ -43,7 +44,7 @@ const mocks = vi.hoisted(() => ({
   requestClarification: vi.fn(),
   acceptAssignment: vi.fn(),
   authCallback: null as ((event: string, session: unknown) => void) | null,
-  signInWithPassword: vi.fn(async () => ({ error: null })),
+  signInWithPassword: vi.fn<(args:unknown)=>Promise<{error:{message:string}|null}>>(async () => ({ error: null })),
   signInWithOtp: vi.fn<(args: { phone: string; options?: { captchaToken?: string; shouldCreateUser?: boolean } }) => Promise<{ error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ error: null })),
   verifyOtp: vi.fn<() => Promise<{ data: { session: { user: { id: string; phone?: string; phone_confirmed_at?: string } } | null }; error: { code?: string; status?: number; message?: string } | null }>>(async () => ({ data: { session: { user: { id: "customer-otp-1", phone: "998901234567", phone_confirmed_at: "2026-08-10T00:00:00.000Z" } } }, error: null })),
   ensureCurrentCustomer: vi.fn(async () => undefined),
@@ -114,7 +115,17 @@ function OperationalProbe() {
   return <div>{loaded ? `loaded:${orders.length}` : "waiting"}{operationalError && ` error:${operationalError}`}</div>;
 }
 
+function MissingCaptchaSignInProbe() {
+  const { signIn } = useApp();
+  const [message,setMessage]=useState("");
+  return <><button onClick={()=>void signIn("+998901234567","password","").catch((error:Error)=>setMessage(error.message))}>missing-captcha</button><span>{message}</span></>;
+}
+
 beforeEach(() => {
+  window.turnstile = {
+    render: (_container, options) => { options.callback("staff-captcha-token"); return "staff-widget"; },
+    remove: vi.fn(),
+  };
   mocks.session = null;
   mocks.role = null;
   mocks.displayName = null;
@@ -714,7 +725,22 @@ describe("identifier-based sign-in (email or Uzbek phone)", () => {
   it("signs in with email exactly as before, unchanged", async () => {
     await submitLogin("restaurant@zaytun.local");
     await waitFor(() => expect(mocks.signInWithPassword).toHaveBeenCalledOnce());
-    expect(mocks.signInWithPassword).toHaveBeenCalledWith({ email: "restaurant@zaytun.local", password: "zaytun-local-2026" });
+    expect(mocks.signInWithPassword).toHaveBeenCalledWith({ email: "restaurant@zaytun.local", password: "zaytun-local-2026", options: { captchaToken: "staff-captcha-token" } });
+  });
+
+  it("fails closed before Supabase when a password login has no CAPTCHA token", async()=>{
+    renderAt("/restaurant",<MissingCaptchaSignInProbe/>);
+    fireEvent.click(await screen.findByRole("button",{name:"missing-captcha"}));
+    expect(await screen.findByText("Xavfsizlik tekshiruvini yakunlang.")).toBeTruthy();
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("resets the CAPTCHA after Supabase rejects a wrong password",async()=>{
+    mocks.signInWithPassword.mockResolvedValueOnce({error:{message:"Invalid login credentials"}});
+    await submitLogin("+998901234567","wrong-password");
+    expect((await screen.findByRole("alert")).textContent).toContain("Invalid login credentials");
+    expect(window.turnstile?.remove).toHaveBeenCalled();
+    expect(mocks.signInWithPassword).toHaveBeenCalledWith({phone:"+998901234567",password:"wrong-password",options:{captchaToken:"staff-captcha-token"}});
   });
 
   it.each([
@@ -726,7 +752,7 @@ describe("identifier-based sign-in (email or Uzbek phone)", () => {
   ])("normalizes phone input %s to the canonical '+998...' Supabase phone param", async (identifier) => {
     await submitLogin(identifier);
     await waitFor(() => expect(mocks.signInWithPassword).toHaveBeenCalledOnce());
-    expect(mocks.signInWithPassword).toHaveBeenCalledWith({ phone: "+998901234567", password: "zaytun-local-2026" });
+    expect(mocks.signInWithPassword).toHaveBeenCalledWith({ phone: "+998901234567", password: "zaytun-local-2026", options: { captchaToken: "staff-captcha-token" } });
   });
 
   it("rejects a too-short number without calling Supabase", async () => {
@@ -748,7 +774,7 @@ describe("identifier-based sign-in (email or Uzbek phone)", () => {
     // Role is only ever read from the mocked profiles select, never derived
     // from the identifier the user typed; a phone-based sign-in call cannot
     // by itself grant any role.
-    expect(mocks.signInWithPassword).toHaveBeenCalledWith({ phone: "+998901234567", password: "zaytun-local-2026" });
+    expect(mocks.signInWithPassword).toHaveBeenCalledWith({ phone: "+998901234567", password: "zaytun-local-2026", options: { captchaToken: "staff-captcha-token" } });
   });
 });
 
