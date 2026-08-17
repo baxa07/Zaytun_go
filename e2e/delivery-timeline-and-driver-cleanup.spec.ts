@@ -28,7 +28,7 @@ const noHorizontalOverflow = async (page: Page) => {
   expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
 };
 
-test.describe("customer delivery timeline: approved 7-stage mapping", () => {
+test.describe("customer delivery timeline: event-driven 8-stage mapping", () => {
   test("Haydovchiga berildi begins at driver pickup, not at assignment, across the full flow", async ({ context }) => {
     const customer = await context.newPage();
     const staff = await context.newPage();
@@ -77,6 +77,10 @@ test.describe("customer delivery timeline: approved 7-stage mapping", () => {
     // Accepted but not yet physically picked up: still Tayyorlanmoqda.
     await expect(customer.getByTestId("order-status")).toHaveText("Tayyorlanmoqda");
 
+    await driver.getByTestId("driver-mark-at-restaurant").click();
+    await customer.reload();
+    await expect(customer.locator(".timeline > div").filter({ hasText: "Haydovchi restoranga keldi" })).toHaveClass(/done/);
+
     await driver.getByTestId("driver-primary-action").click(); // PICKED_UP
     await customer.reload();
     await expect(customer.getByTestId("order-status")).toHaveText("Haydovchiga berildi");
@@ -94,8 +98,8 @@ test.describe("customer delivery timeline: approved 7-stage mapping", () => {
     await expect(customer.getByTestId("order-status")).toHaveText("Yetkazildi");
 
     const stageLabels = await customer.locator(".timeline b").allTextContents();
-    expect(stageLabels).toEqual(["Buyurtma qabul qilindi", "Manzil tasdiqlandi", "Tayyorlanmoqda", "Haydovchiga berildi", "Yo‘lda", "Yetib keldi", "Yetkazildi"]);
-    await expect(customer.locator(".timeline > div.done")).toHaveCount(7);
+    expect(stageLabels).toEqual(["Buyurtma qabul qilindi", "Manzil tasdiqlandi", "Tayyorlanmoqda", "Haydovchi restoranga keldi", "Haydovchiga berildi", "Yo‘lda", "Yetib keldi", "Yetkazildi"]);
+    await expect(customer.locator(".timeline > div.done")).toHaveCount(8);
   });
 });
 
@@ -124,7 +128,7 @@ test.describe("responsive: customer delivery timeline and driver surface", () =>
     { name: "phone-320", width: 320, height: 700 },
   ];
 
-  test("seven-stage timeline stays overflow-free and readable at desktop and mobile widths", async ({ page }) => {
+  test("eight-stage timeline stays overflow-free and readable at desktop and mobile widths", async ({ page }) => {
     const orderId = await placeDeliveryOrder(page);
     const staff = await page.context().newPage();
     await staff.goto(`/restaurant/orders/${orderId}`);

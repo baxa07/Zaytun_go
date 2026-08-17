@@ -252,6 +252,7 @@ type State = {
   listMyStandbyNotices: () => Promise<DriverStandbyNotice[]>;
   listMyBranchIds: () => Promise<string[]>;
   markDriverAtRestaurant: (orderId: string) => Promise<void>;
+  confirmManualPayment: (orderId: string) => Promise<void>;
   listMyPickupBatchContext: () => Promise<PickupBatchContext[]>;
 };
 
@@ -320,11 +321,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // to every customer who signs in.
     const { data, error } = await supabase
       .from("profiles")
-      .select("role,display_name")
+      .select("role,display_name,active")
       .eq("id", nextSession.user.id)
       .maybeSingle();
     if (error) throw new Error(`Xodim roli yuklanmadi: ${error.message}`);
-    setRole((data?.role as AppRole | undefined) ?? null);
+    setRole(data?.active === false ? null : ((data?.role as AppRole | undefined) ?? null));
     setProfileDisplayName((data?.display_name as string | undefined) ?? null);
     setAuthReady(true);
   }, []);
@@ -697,6 +698,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     listMyStandbyNotices: async () => ("listMyStandbyNotices" in store ? store.listMyStandbyNotices() : []),
     listMyBranchIds: async () => ("listMyBranchIds" in store ? store.listMyBranchIds() : []),
     markDriverAtRestaurant: (orderId) => withOrderLock(orderId, () => store.markDriverAtRestaurant(orderId)),
+    confirmManualPayment: (orderId) => withOrderLock(orderId, () => store.confirmManualPayment(orderId)),
     // Local/offline provider has no branch-pool/batch concept -- same
     // "not in store, empty" fallback listMyStandbyNotices/listMyBranchIds
     // already use.

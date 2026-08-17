@@ -1,6 +1,6 @@
 import{expect,test}from'@playwright/test'
 
-test('pickup with card at restaurant completes without driver stages',async({context})=>{
+test('pickup with physical terminal completes without driver stages',async({context})=>{
   const customer=await context.newPage()
   const staff=await context.newPage()
   const driver=await context.newPage()
@@ -9,9 +9,9 @@ test('pickup with card at restaurant completes without driver stages',async({con
   await customer.getByTestId('buy-now').click()
   await customer.getByTestId('type-pickup').click()
   await expect(customer.getByLabel('Naqd pul')).toBeVisible()
-  await expect(customer.getByLabel('Restoranda karta orqali')).toBeVisible()
-  await customer.getByLabel('Restoranda karta orqali').check()
-  await expect(customer.getByTestId('review-payment-method')).toContainText('Restoranda karta orqali')
+  await expect(customer.getByLabel('Terminal — restoranda')).toBeVisible()
+  await customer.getByLabel('Terminal — restoranda').check()
+  await expect(customer.getByTestId('review-payment-method')).toContainText('Terminal')
   await customer.getByLabel('Ism *').fill('Pickup Test Mijoz')
   await customer.getByLabel('Telefon *').fill('+998901112233')
   await customer.getByTestId('checkout-submit').click()
@@ -20,10 +20,11 @@ test('pickup with card at restaurant completes without driver stages',async({con
   await customer.getByTestId('track-link').click()
   await expect(customer.locator('.timeline>div')).toHaveCount(5)
   await expect(customer.locator('.timeline')).not.toContainText('Yo‘lda')
-  await expect(customer.getByTestId('pickup-tracking-details')).toContainText('To‘lov restoranda karta orqali amalga oshiriladi.')
+  await expect(customer.getByTestId('pickup-tracking-details')).toContainText('To‘lov restorandagi terminal orqali olinadi.')
 
   await staff.goto(`/restaurant/orders/${orderId}`)
   await expect(staff.getByText('Olib ketish',{exact:true}).first()).toBeVisible()
+  await expect(staff.getByTestId('order-payment-preference')).toContainText('Kutilmoqda')
   await expect(staff.getByTestId('restaurant-location-detail')).toHaveCount(0)
   await staff.getByTestId('action-confirm').click()
   await staff.getByTestId('action-start-prep').click()
@@ -41,14 +42,14 @@ test('pickup with card at restaurant completes without driver stages',async({con
   await expect(driver.locator('.driver-page')).not.toContainText(orderNumber)
 })
 
-test('switching pickup card to delivery resets payment to cash',async({page})=>{
+test('switching pickup terminal to delivery resets payment to cash',async({page})=>{
   await page.goto('/menu/chicken')
   await page.getByRole('button',{name:'+'}).click()
   await page.getByTestId('buy-now').click()
   await page.getByTestId('type-pickup').click()
-  await page.getByLabel('Restoranda karta orqali').check()
+  await page.getByLabel('Terminal — restoranda').check()
   await page.getByTestId('type-delivery').click()
-  await expect(page.getByLabel('Restoranda karta orqali')).toHaveCount(0)
+  await expect(page.getByLabel('Terminal — restoranda')).toHaveCount(0)
   await expect(page.getByLabel('Naqd pul')).toBeChecked()
 })
 

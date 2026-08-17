@@ -1,5 +1,5 @@
 begin;
-select plan(18);
+select plan(20);
 
 -- Driver UI Phase: list_my_standby_notices() and mark_driver_at_restaurant().
 -- Dedicated branch fixture, mirroring the established pattern from
@@ -133,6 +133,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000003',true);
 select lives_ok($$select public.mark_driver_at_restaurant('e2000000-0000-4000-8000-000000000001'::uuid)$$,'the accepted driver can mark themselves at the restaurant');
 select isnt((select arrived_at_restaurant_at from public.driver_assignments where order_id='e2000000-0000-4000-8000-000000000001'::uuid and ended_at is null),null,'arrived_at_restaurant_at is now set');
+select is((select count(*)::integer from public.order_events where order_id='e2000000-0000-4000-8000-000000000001' and notes='DRIVER_ARRIVED_RESTAURANT'),1,'first arrival creates one immutable order event');
 
 select set_config('zaytun.test_first_arrival_ts',(select arrived_at_restaurant_at::text from public.driver_assignments where order_id='e2000000-0000-4000-8000-000000000001'::uuid and ended_at is null),true);
 select pg_sleep(0.01); -- ensure a second now() call would differ if it were (wrongly) overwriting
@@ -142,6 +143,7 @@ select is(
   current_setting('zaytun.test_first_arrival_ts'),
   'a second call is idempotent -- the original timestamp is kept, not overwritten'
 );
+select is((select count(*)::integer from public.order_events where order_id='e2000000-0000-4000-8000-000000000001' and notes='DRIVER_ARRIVED_RESTAURANT'),1,'duplicate arrival remains exactly-once');
 reset role;
 
 -- Wrong driver (...004 was never assigned this order) cannot mark it.

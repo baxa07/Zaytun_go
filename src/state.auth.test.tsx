@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   session: null as { user: { id: string; phone?: string; phone_confirmed_at?: string } } | null,
   role: null as AppRole | null,
   displayName: null as string | null,
+  profileActive: true,
   list: vi.fn<() => Promise<Order[]>>(),
   listDrivers: vi.fn(),
   subscribe: vi.fn(() => vi.fn()),
@@ -95,7 +96,7 @@ vi.mock("./supabase", () => ({
           // A customer (phone-OTP) session has no profiles row by design;
           // maybeSingle (not single) is what makes that resolve to
           // role=null instead of a thrown PostgREST "zero rows" error.
-          maybeSingle: vi.fn(async () => ({ data: mocks.role ? { role: mocks.role, display_name: mocks.displayName } : null, error: null })),
+          maybeSingle: vi.fn(async () => ({ data: mocks.role ? { role: mocks.role, display_name: mocks.displayName, active: mocks.profileActive } : null, error: null })),
         })),
       })),
     })),
@@ -117,6 +118,7 @@ beforeEach(() => {
   mocks.session = null;
   mocks.role = null;
   mocks.displayName = null;
+  mocks.profileActive = true;
   mocks.list.mockReset().mockResolvedValue([]);
   mocks.listDrivers.mockReset().mockResolvedValue([]);
   mocks.transition.mockReset();
@@ -751,6 +753,13 @@ describe("identifier-based sign-in (email or Uzbek phone)", () => {
 });
 
 describe("role gate is independent of auth method", () => {
+  it("rejects an inactive operational profile even with a valid session and role", async () => {
+    mocks.session = { user: { id: "inactive-staff" } };
+    mocks.role = "RESTAURANT";
+    mocks.profileActive = false;
+    renderAt("/restaurant");
+    expect(await screen.findByRole("heading", { name: "Ruxsat yo‘q" })).toBeTruthy();
+  });
   it("blocks a DRIVER-role session from the restaurant surface", async () => {
     mocks.session = { user: { id: "driver-1" } };
     mocks.role = "DRIVER";

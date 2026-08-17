@@ -1,11 +1,11 @@
 import{describe,expect,it}from'vitest'
-import{customerDeliveryStageIndex,customerDeliveryStages,deliveryDispatchPhase,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,orderExceptions,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint}from'./fulfillmentLifecycle'
+import{customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,deliveryDispatchPhase,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,orderExceptions,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint}from'./fulfillmentLifecycle'
 import{developmentRestaurantConfig}from'./data'
 import type{OrderEvent,OrderStatus}from'./domain'
-describe('fulfillment timeline',()=>{it('contains exactly five pickup-only stages',()=>{const stages=fulfillmentTimeline('PICKUP');expect(stages.map(x=>x.label)).toEqual(['Buyurtma qabul qilindi','Tasdiqlandi','Tayyorlanmoqda','Olib ketishga tayyor','Olib ketildi']);expect(stages.map(x=>x.status)).not.toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED']))});it('retains delivery stages',()=>expect(fulfillmentTimeline('DELIVERY').map(x=>x.status)).toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED'])));it('provides physical-payment guidance',()=>{expect(pickupPaymentGuidance('CARD_AT_PICKUP')).toContain('restoranda karta');expect(pickupPaymentGuidance('CASH')).toContain('naqd pulda')})})
+describe('fulfillment timeline',()=>{it('contains exactly five pickup-only stages',()=>{const stages=fulfillmentTimeline('PICKUP');expect(stages.map(x=>x.label)).toEqual(['Buyurtma qabul qilindi','Tasdiqlandi','Tayyorlanmoqda','Olib ketishga tayyor','Olib ketildi']);expect(stages.map(x=>x.status)).not.toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED']))});it('retains delivery stages',()=>expect(fulfillmentTimeline('DELIVERY').map(x=>x.status)).toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED'])));it('provides physical-payment guidance',()=>{expect(pickupPaymentGuidance('TERMINAL')).toContain('terminal');expect(pickupPaymentGuidance('CASH')).toContain('naqd pulda')})})
 describe('fulfillment payments',()=>{
   it('offers restaurant card only for pickup, and Click/Payme only for delivery',()=>{
-    expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'PICKUP')).toEqual(['CASH','CARD_AT_PICKUP'])
+    expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'PICKUP')).toEqual(['CASH','TERMINAL'])
     expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'DELIVERY')).toEqual(['CASH','CLICK','PAYME'])
   })
   it('renders customer-friendly labels for Click/Payme, distinct from the existing methods',()=>{
@@ -23,19 +23,24 @@ describe('fulfillment payments',()=>{
   })
   it('never tells the customer to transfer money or exposes payment-account details',()=>{
     expect(remotePaymentCustomerNotice).not.toMatch(/karta|hisob|raqam|o‘tkazing/i)
-    expect(remotePaymentCustomerNotice).toContain('Restoran buyurtmangizni tasdiqlagach')
-    expect(remotePaymentStaffHint).toContain('bog‘laning')
+    expect(remotePaymentCustomerNotice).toContain('tekshirib tasdiqlaydi')
+    expect(remotePaymentStaffHint).toContain('qo‘ng‘iroq')
   })
 })
 
 // --- Phase D: customer-facing 7-stage delivery timeline ---
 let seq=0
 const ev=(previousStatus:OrderStatus|null,newStatus:OrderStatus,notes?:string):OrderEvent=>({id:`e${++seq}`,orderId:'o1',actorType:'SYSTEM',actorId:'system',previousStatus,newStatus,timestamp:`2026-08-09T00:${String(seq).padStart(2,'0')}:00.000Z`,notes})
-const STAGE_LABELS=['Buyurtma qabul qilindi','Manzil tasdiqlandi','Tayyorlanmoqda','Haydovchiga berildi','Yo‘lda','Yetib keldi','Yetkazildi']
+const STAGE_LABELS=['Buyurtma qabul qilindi','Manzil tasdiqlandi','Tayyorlanmoqda','Haydovchi restoranga keldi','Haydovchiga berildi','Yo‘lda','Yetib keldi','Yetkazildi']
 
-describe('customer delivery timeline: exactly the approved 7 stages',()=>{
-  it('has exactly these seven labels in this order',()=>{
+describe('customer delivery timeline: event-driven restaurant arrival',()=>{
+  it('has the eight approved labels in order',()=>{
     expect(customerDeliveryStages.map(s=>s.label)).toEqual(STAGE_LABELS)
+  })
+  it('credits restaurant arrival only from its immutable event',()=>{
+    const arrivalIndex=customerDeliveryStages.findIndex(s=>s.label==='Haydovchi restoranga keldi')
+    expect(customerDeliveryStageEventMatchers[arrivalIndex](ev('PREPARING','PREPARING','DRIVER_ARRIVED_RESTAURANT'))).toBe(true)
+    expect(customerDeliveryStageEventMatchers[arrivalIndex](ev('DRIVER_ASSIGNED','PICKED_UP'))).toBe(false)
   })
 })
 
@@ -69,9 +74,9 @@ describe('customer delivery timeline: Haydovchiga berildi begins at PICKED_UP, n
     expect(customerDeliveryStages[index].label).not.toBe('Haydovchiga berildi')
     expect(customerDeliveryStages[index].label).toBe('Tayyorlanmoqda')
   })
-  it('PICKED_UP is exactly Haydovchiga berildi (stage 4)',()=>{
+  it('PICKED_UP is exactly Haydovchiga berildi',()=>{
     const index=customerDeliveryStageIndex({...base,status:'PICKED_UP'})
-    expect(index).toBe(3)
+    expect(index).toBe(4)
     expect(customerDeliveryStages[index].label).toBe('Haydovchiga berildi')
   })
 })
@@ -82,7 +87,7 @@ describe('customer delivery timeline: remaining driver states',()=>{
   it('ARRIVED is stage 6 (Yetib keldi)',()=>expect(customerDeliveryStages[customerDeliveryStageIndex({...base,status:'ARRIVED'})].label).toBe('Yetib keldi'))
   it('DELIVERED is stage 7 (Yetkazildi), the terminal success stage',()=>{
     const index=customerDeliveryStageIndex({...base,status:'DELIVERED'})
-    expect(index).toBe(6)
+    expect(index).toBe(7)
     expect(customerDeliveryStages[index].label).toBe('Yetkazildi')
   })
 })
@@ -173,9 +178,9 @@ describe('Smart Dispatch Phase 5: orderExceptions surfaces what needs staff atte
     expect(orderExceptions({...base,deliveryReviewStatus:'REVIEW_REQUIRED'})).toContain('ADDRESS_REVIEW')
     expect(orderExceptions({...base,deliveryReviewStatus:'CLARIFICATION_REQUESTED'})).toContain('ADDRESS_CLARIFICATION')
   })
-  it('flags CLICK/PAYME only while payment has not been marked collected',()=>{
+  it('flags CLICK/PAYME only while manual payment has not been confirmed',()=>{
     expect(orderExceptions({...base,paymentMethod:'CLICK',paymentStatus:'PENDING'})).toContain('REMOTE_PAYMENT_PENDING')
-    expect(orderExceptions({...base,paymentMethod:'CLICK',paymentStatus:'COLLECTED'})).not.toContain('REMOTE_PAYMENT_PENDING')
+    expect(orderExceptions({...base,paymentMethod:'CLICK',paymentStatus:'CONFIRMED'})).not.toContain('REMOTE_PAYMENT_PENDING')
     expect(orderExceptions({...base,paymentMethod:'CASH'})).not.toContain('REMOTE_PAYMENT_PENDING')
   })
   it('flags a READY delivery order with no assigned driver as COURIER_WAITING, never for PICKUP',()=>{

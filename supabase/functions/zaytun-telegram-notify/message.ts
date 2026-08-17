@@ -32,6 +32,7 @@ const paymentLabels: Record<string, string> = {
   CLICK: "Click",
   PAYME: "Payme",
   CARD_AT_PICKUP: "Karta (restoranda)",
+  TERMINAL: "Terminal (restoranda)",
   CARD_ON_DELIVERY: "Karta",
 };
 

@@ -1,6 +1,8 @@
 begin;
 select plan(19);
 
+update public.delivery_settings set delivery_payment_methods=array['CASH','CLICK','PAYME']::public.payment_method[] where id=true;
+
 -- H1: Order History. list_restaurant_order_history()/
 -- get_restaurant_order_history_summary() filter strictly by created_at
 -- (so a still-active order shows up in the day it was created), resolve

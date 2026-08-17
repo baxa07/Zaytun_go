@@ -344,7 +344,7 @@ export const seedDrivers: Driver[] = [
 // Phase 6: local-only bookkeeping beyond the shared DriverAssignment shape
 // -- see the field comment on LocalStore.assignments below.
 type LocalAssignment = DriverAssignment & { outcome?: "DECLINED" | "SUPERSEDED"; endedAt?: string; declineReason?: AssignmentDeclineReason; arrivedAtRestaurantAt?: string };
-export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Kafe — LOCAL PILOT',restaurantAddress:'Guliston mavzesi 649, Navoiy shahri',restaurantPhone:'+998507440005',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'10:00–00:00'},deliveryEnabled:true,deliveryPolicyMode:'MANUAL_CITY_REVIEW',deliveryReviewMessage:'Navoiy shahri bo‘ylab yetkazib berish 150.000 so‘mdan oshiq xaridlarda bepul. Undan kam buyurtmalarga 10.000 so‘m yetkazib berish narxi qo‘shiladi. Manzil operator tomonidan tasdiqlanadi.',deliveryRadiusKm:null,deliveryAreaDescription:'Navoiy shahri',minimumDeliverySubtotal:0,baseDeliveryFee:10000,freeDeliveryThreshold:150000,maximumItemQuantity:50,supportedPaymentMethods:['CASH','CARD_AT_PICKUP'],pickupPaymentMethods:['CASH','CARD_AT_PICKUP'],deliveryPaymentMethods:['CASH','CLICK','PAYME'],estimatedPreparationMinutes:null,estimatedDeliveryMinutes:null,defaultMapZoom:17,customerAuthRequired:false}
+export const developmentRestaurantConfig:RestaurantConfig={restaurantName:'Zaytun Kafe — LOCAL PILOT',restaurantAddress:'Guliston mavzesi 649, Navoiy shahri',restaurantPhone:'+998507440005',restaurantLatitude:40.087274,restaurantLongitude:65.402551,operatingHours:{everyday:'10:00–00:00'},deliveryEnabled:true,deliveryPolicyMode:'MANUAL_CITY_REVIEW',deliveryReviewMessage:'Navoiy shahri bo‘ylab yetkazib berish 150.000 so‘mdan oshiq xaridlarda bepul. Undan kam buyurtmalarga 10.000 so‘m yetkazib berish narxi qo‘shiladi. Manzil operator tomonidan tasdiqlanadi.',deliveryRadiusKm:null,deliveryAreaDescription:'Navoiy shahri',minimumDeliverySubtotal:0,baseDeliveryFee:10000,freeDeliveryThreshold:150000,maximumItemQuantity:50,supportedPaymentMethods:['CASH','TERMINAL','CLICK','PAYME'],pickupPaymentMethods:['CASH','TERMINAL'],deliveryPaymentMethods:['CASH','CLICK','PAYME'],estimatedPreparationMinutes:null,estimatedDeliveryMinutes:null,defaultMapZoom:17,customerAuthRequired:false}
 class LocalStore
   implements
     MenuRepository,
@@ -572,10 +572,12 @@ class LocalStore
     const order = await this.get(id);
     if (!order) throw new Error("Order not found");
     if(order.type==="DELIVERY"&&order.deliveryReviewStatus!=="APPROVED"&&!['REJECTED','CANCELLED'].includes(to))throw new Error("Delivery review is required");
+    if(to==='PREPARING'&&['CLICK','PAYME'].includes(order.paymentMethod)&&order.paymentStatus!=='CONFIRMED')throw new Error("Avval Click/Payme to‘lovini tasdiqlang");
     await this.save(
       transitionOrder(order, to, actor, actor.toLowerCase(), reason),
     );
   }
+  async confirmManualPayment(id:string){const order=await this.get(id);if(!order)throw new Error('Order not found');if(!['CLICK','PAYME'].includes(order.paymentMethod))throw new Error('Bu buyurtma Click/Payme emas');if(order.paymentStatus==='CONFIRMED')return;await this.save({...order,paymentStatus:'CONFIRMED',events:[...order.events,createEvent(id,order.status,order.status,'RESTAURANT','restaurant',undefined,'MANUAL_PAYMENT_CONFIRMED')]})}
   async acceptAssignment(id: string) {
     const order = await this.get(id);
     if (!order) throw new Error("Order not found");
@@ -598,9 +600,10 @@ class LocalStore
     if (!order || !["CONFIRMED", "PREPARING", "READY", "DRIVER_ASSIGNED"].includes(order.status)) throw new Error("Faol topshiriq topilmadi");
     const activeIndex = this.assignments.findIndex((a) => a.orderId === id && a.acceptedAt && !a.endedAt);
     if (activeIndex < 0) throw new Error("Faol topshiriq topilmadi");
-    if (!this.assignments[activeIndex].arrivedAtRestaurantAt)
+    const firstArrival = !this.assignments[activeIndex].arrivedAtRestaurantAt;
+    if (firstArrival)
       this.assignments[activeIndex] = { ...this.assignments[activeIndex], arrivedAtRestaurantAt: new Date().toISOString() };
-    await this.save(order);
+    await this.save(firstArrival ? {...order,events:[...order.events,createEvent(id,order.status,order.status,"DRIVER","driver-1",undefined,"DRIVER_ARRIVED_RESTAURANT")]} : order);
   }
   async setEstimate(id: string, minutes: number) {
     const order = await this.get(id);

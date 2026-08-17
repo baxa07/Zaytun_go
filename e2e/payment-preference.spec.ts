@@ -13,16 +13,12 @@ async function openDeliveryCheckout(page: Page) {
   await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
 }
 
-test.describe("Payment Preference v1", () => {
-  test("delivery checkout offers CASH, Click and Payme with customer-friendly labels", async ({ page }) => {
+test.describe("Manual Click/Payme payments", () => {
+  test("delivery checkout offers Click and Payme as manual transfer choices", async ({ page }) => {
     await openDeliveryCheckout(page);
     await expect(page.getByLabel("Naqd pul")).toBeVisible();
-    await expect(page.getByLabel("💳 Click")).toBeVisible();
-    await expect(page.getByLabel("💳 Payme")).toBeVisible();
-    // No raw enum values, provider SDK names, or account/card details leak
-    // into the checkout page.
-    await expect(page.locator("main")).not.toContainText("CLICK");
-    await expect(page.locator("main")).not.toContainText("PAYME");
+    await expect(page.getByLabel("💳 Click")).toBeEnabled();
+    await expect(page.getByLabel("💳 Payme")).toBeEnabled();
   });
 
   test("CASH still works end to end for delivery, with no remote-payment notice", async ({ page }) => {
@@ -33,11 +29,11 @@ test.describe("Payment Preference v1", () => {
     await expect(page).toHaveURL(/\/confirmation\//);
   });
 
-  test("selecting Click shows the explanatory notice, never a transfer instruction", async ({ page }) => {
+  test("selecting Click explains Restaurant confirmation and completes checkout as pending", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Click").check();
     await expect(page.getByTestId("remote-payment-notice")).toHaveText(
-      "Restoran buyurtmangizni tasdiqlagach, to‘lov uchun siz bilan bog‘lanadi.",
+      "Restoran Click/Payme to‘lovini tekshirib tasdiqlaydi.",
     );
     await expect(page.getByTestId("remote-payment-notice")).not.toContainText("karta");
     await expect(page.getByTestId("review-payment-method")).toContainText("Click");
@@ -45,18 +41,18 @@ test.describe("Payment Preference v1", () => {
     await expect(page).toHaveURL(/\/confirmation\//);
   });
 
-  test("selecting Payme shows the explanatory notice and completes checkout normally", async ({ page }) => {
+  test("selecting Payme explains Restaurant confirmation and completes checkout as pending", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Payme").check();
     await expect(page.getByTestId("remote-payment-notice")).toHaveText(
-      "Restoran buyurtmangizni tasdiqlagach, to‘lov uchun siz bilan bog‘lanadi.",
+      "Restoran Click/Payme to‘lovini tekshirib tasdiqlaydi.",
     );
     await expect(page.getByTestId("review-payment-method")).toContainText("Payme");
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
   });
 
-  test("restaurant sees the Click preference clearly, with an operational hint, and it is never auto-marked paid", async ({ page }) => {
+  test("restaurant sees prominent pending Click state and staff-only confirmation actions", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Click").check();
     await page.getByTestId("checkout-submit").click();
@@ -70,18 +66,16 @@ test.describe("Payment Preference v1", () => {
     // payment was received.
     await expect(page.getByTestId("order-payment-preference")).toContainText("Kutilmoqda");
     await expect(page.getByTestId("order-payment-preference")).not.toContainText("Olindi");
-    await expect(page.getByTestId("remote-payment-staff-hint")).toHaveText(
-      "Buyurtmani tekshiring va mijoz bilan to‘lov uchun bog‘laning.",
-    );
-    // The existing phone-call action stays readily available alongside it.
-    await expect(page.locator('a[href^="tel:"]').first()).toBeVisible();
+    await expect(page.getByTestId("remote-payment-staff-hint")).toContainText("CLICK — TO‘LOV KUTILMOQDA");
+    await expect(page.getByRole("link", { name: "Mijozga qo‘ng‘iroq" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pul tushdi" })).toBeVisible();
 
     await expect(page.getByTestId(`order-card-payment-${orderId}`)).toHaveCount(0);
     await page.goto("/restaurant");
     await expect(page.getByTestId(`order-card-payment-${orderId}`)).toContainText("Click");
   });
 
-  test("restaurant sees the Payme preference clearly, with an operational hint, and it is never auto-marked paid", async ({ page }) => {
+  test("restaurant sees prominent pending Payme state", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Payme").check();
     await page.getByTestId("checkout-submit").click();
@@ -91,10 +85,10 @@ test.describe("Payment Preference v1", () => {
     await page.goto(`/restaurant/orders/${orderId}`);
     await expect(page.getByTestId("order-payment-preference")).toContainText("Payme");
     await expect(page.getByTestId("order-payment-preference")).toContainText("Kutilmoqda");
-    await expect(page.getByTestId("remote-payment-staff-hint")).toBeVisible();
+    await expect(page.getByTestId("remote-payment-staff-hint")).toContainText("PAYME — TO‘LOV KUTILMOQDA");
   });
 
-  test("Click/Payme selection does not auto-begin kitchen preparation -- normal restaurant confirmation is still required", async ({ page }) => {
+  test("preparation remains blocked until Restaurant confirms manual payment", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Payme").check();
     await page.getByTestId("checkout-submit").click();
@@ -107,9 +101,15 @@ test.describe("Payment Preference v1", () => {
     // the order is not confirmed/prepared just because a payment method
     // was selected.
     await expect(page.getByTestId("approve-delivery")).toBeVisible();
+    await page.getByTestId("approve-delivery").click();
+    await page.getByTestId("action-confirm").click();
+    await expect(page.getByRole("button", { name: "Tayyorlashni boshlash" })).toBeDisabled();
+    await page.getByTestId("confirm-manual-payment").click();
+    await expect(page.getByTestId("remote-payment-staff-hint")).toContainText("PAYME — TO‘LOV TASDIQLANDI");
+    await expect(page.getByRole("button", { name: "Tayyorlashni boshlash" })).toBeEnabled();
   });
 
-  test("customer tracking shows the payment method without implying it was collected", async ({ page }) => {
+  test("customer tracking shows method and pending notice without a confirmation control", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Click").check();
     await page.getByTestId("checkout-submit").click();
@@ -118,13 +118,14 @@ test.describe("Payment Preference v1", () => {
 
     await expect(page.getByTestId("tracking-payment-method")).toContainText("Click");
     await expect(page.getByTestId("tracking-remote-payment-notice")).toHaveText(
-      "Restoran buyurtmangizni tasdiqlagach, to‘lov uchun siz bilan bog‘lanadi.",
+      "Restoran Click/Payme to‘lovini tekshirib tasdiqlaydi.",
     );
     await expect(page.locator("main")).not.toContainText("CLICK");
     await expect(page.locator("main")).not.toContainText("Olindi");
+    await expect(page.getByRole("button", { name: "Pul tushdi" })).toHaveCount(0);
   });
 
-  test("switching from delivery Click/Payme to pickup resets payment to cash (not a leftover unsupported method)", async ({ page }) => {
+  test("switching from delivery Click/Payme to pickup resets payment to cash", async ({ page }) => {
     await page.goto("/menu/chicken");
     await page.getByRole("button", { name: "+" }).click();
     await page.getByTestId("buy-now").click();

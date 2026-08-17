@@ -81,12 +81,12 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
   });
 });
 
-test('local Supabase pickup card lifecycle is restaurant-only',async({page})=>{
+test('local Supabase pickup terminal lifecycle is restaurant-only',async({page})=>{
   await page.goto('/menu')
   await page.getByRole('link',{name:/Zaytun tovuq grili tanlash/}).click()
   await page.getByTestId('buy-now').click()
   await page.getByTestId('type-pickup').click()
-  await page.getByLabel('Restoranda karta orqali').check()
+  await page.getByLabel('Terminal — restoranda').check()
   await page.getByLabel('Ism *').fill('Supabase Pickup Mijoz')
   await page.getByLabel('Telefon *').fill('+998901234568')
   await page.getByTestId('checkout-submit').click()
@@ -94,7 +94,7 @@ test('local Supabase pickup card lifecycle is restaurant-only',async({page})=>{
   const orderId=page.url().split('/confirmation/')[1]
   await page.getByTestId('track-link').click()
   const trackingUrl=page.url()
-  await expect(page.getByTestId('pickup-tracking-details')).toContainText('restoranda karta')
+  await expect(page.getByTestId('pickup-tracking-details')).toContainText('restorandagi terminal')
 
   await page.goto(`/restaurant/orders/${orderId}`)
   await signIn(page,'restaurant@zaytun.local')

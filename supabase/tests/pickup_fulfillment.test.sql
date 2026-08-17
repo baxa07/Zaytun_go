@@ -1,14 +1,15 @@
 begin;
-select plan(20);
+select plan(21);
 
-select enum_has_labels('public','payment_method',array['CASH','CARD_ON_DELIVERY','CARD_AT_PICKUP','CLICK','PAYME'],'pickup card and Payment Preference v1 methods added without removing legacy enum values');
+select enum_has_labels('public','payment_method',array['CASH','CARD_ON_DELIVERY','CARD_AT_PICKUP','CLICK','PAYME','TERMINAL'],'explicit terminal added without removing historical payment values');
 select enum_has_labels('public','order_status',array['NEW','CONFIRMED','PREPARING','READY','DRIVER_ASSIGNED','PICKED_UP','ON_THE_WAY','ARRIVED','DELIVERED','REJECTED','CANCELLED','DELIVERY_FAILED','RETURNED','COLLECTED'],'collected terminal status added');
-select is((public.get_public_restaurant_config()->'pickupPaymentMethods')::text,'["CASH", "CARD_AT_PICKUP"]','public config exposes pickup methods');
-select is((public.get_public_restaurant_config()->'deliveryPaymentMethods')::text,'["CASH", "CLICK", "PAYME"]','public config exposes delivery methods (local dev config -- production stays CASH-only until separately opted in)');
+select is((public.get_public_restaurant_config()->'pickupPaymentMethods')::text,'["CASH", "TERMINAL"]','public config exposes cash and physical terminal for pickup');
+select is((public.get_public_restaurant_config()->'deliveryPaymentMethods')::text,'["CASH", "CLICK", "PAYME"]','delivery exposes cash and manual Click/Payme transfers');
 
 select lives_ok($$select public.create_public_order('{"id":"80000000-0000-4000-8000-000000000001","customer":{"name":"Cash Pickup","primaryPhone":"+998900000001"},"type":"PICKUP","paymentMethod":"CASH","items":[{"menuItemId":"ayran","quantity":1,"modifierIds":[]}]}'::jsonb)$$,'pickup cash accepted');
-select lives_ok($$select public.create_public_order('{"id":"80000000-0000-4000-8000-000000000002","customer":{"name":"Card Pickup","primaryPhone":"+998900000002"},"type":"PICKUP","paymentMethod":"CARD_AT_PICKUP","cardNumber":"never-store","items":[{"menuItemId":"plov","quantity":1,"modifierIds":[]}]}'::jsonb)$$,'pickup card at restaurant accepted');
-select is((select payment_method::text from public.orders where id='80000000-0000-4000-8000-000000000002'),'CARD_AT_PICKUP','selected pickup method stored authoritatively');
+select lives_ok($$select public.create_public_order('{"id":"80000000-0000-4000-8000-000000000002","customer":{"name":"Terminal Pickup","primaryPhone":"+998900000002"},"type":"PICKUP","paymentMethod":"TERMINAL","cardNumber":"never-store","items":[{"menuItemId":"plov","quantity":1,"modifierIds":[]}]}'::jsonb)$$,'pickup terminal accepted');
+select is((select payment_method::text from public.orders where id='80000000-0000-4000-8000-000000000002'),'TERMINAL','terminal selection stored authoritatively');
+select is((select payment_status::text from public.orders where id='80000000-0000-4000-8000-000000000002'),'PENDING','selecting terminal alone does not mark payment collected');
 select ok(not exists(select 1 from information_schema.columns where table_schema='public' and table_name='orders' and column_name in('card_number','cvv','expiry','pin','cardholder')),'no card-sensitive columns exist');
 
 select lives_ok($$select public.create_public_order('{"id":"80000000-0000-4000-8000-000000000003","customer":{"name":"Cash Delivery","primaryPhone":"+998900000003"},"type":"DELIVERY","paymentMethod":"CASH","address":{"district":"Navoiy","street":"Test","house":"1","landmark":"Kirish","deliveryNotes":"Darvoza","latitude":40.09,"longitude":65.40,"pinConfirmedAt":"2026-08-06T10:00:00Z","locationProvider":"mock"},"items":[{"menuItemId":"plov","quantity":3,"modifierIds":[]}]}'::jsonb)$$,'delivery cash remains accepted');

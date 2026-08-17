@@ -605,6 +605,7 @@ export class SupabaseStore {
     const { error } = await supabase!.rpc("mark_driver_at_restaurant", { p_order_id: id });
     fail(error);
   }
+  async confirmManualPayment(id:string){const{error}=await supabase!.rpc("confirm_manual_payment",{p_order_id:id});fail(error)}
   // Driver UI Final Operational UX: the "wait briefly for the second
   // order" / "leave now" decision is authoritative batch state, not
   // something the driver UI computes on its own -- this is the narrow,

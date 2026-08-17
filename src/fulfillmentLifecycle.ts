@@ -33,6 +33,7 @@ export const customerDeliveryStages:CustomerDeliveryStage[]=[
   {label:'Buyurtma qabul qilindi'},
   {label:'Manzil tasdiqlandi'},
   {label:'Tayyorlanmoqda'},
+  {label:'Haydovchi restoranga keldi'},
   {label:'Haydovchiga berildi'},
   {label:'Yo‘lda'},
   {label:'Yetib keldi'},
@@ -55,7 +56,7 @@ const lastNormalDeliveryStatus=(order:Pick<Order,'status'|'events'>):OrderStatus
 // "Haydovchiga berildi": assignment only selects a driver, pickup proves the
 // food left the restaurant. CONFIRMED/PREPARING/READY/DRIVER_ASSIGNED all
 // collapse into "Tayyorlanmoqda" (index 2).
-const kitchenStatusStageIndex:Partial<Record<OrderStatus,number>>={NEW:0,CONFIRMED:2,PREPARING:2,READY:2,DRIVER_ASSIGNED:2,PICKED_UP:3,ON_THE_WAY:4,ARRIVED:5,DELIVERED:6}
+const kitchenStatusStageIndex:Partial<Record<OrderStatus,number>>={NEW:0,CONFIRMED:2,PREPARING:2,READY:2,DRIVER_ASSIGNED:2,PICKED_UP:4,ON_THE_WAY:5,ARRIVED:6,DELIVERED:7}
 // Stage 1 ("Manzil tasdiqlandi") is driven by delivery_review_status, not by
 // order status, and can be reached while status is still NEW; Math.max lets
 // either signal (kitchen progress or address approval) advance the index.
@@ -68,13 +69,14 @@ export const customerDeliveryStageEventMatchers:((e:OrderEvent)=>boolean)[]=[
   e=>e.previousStatus===null&&e.newStatus==='NEW',
   e=>e.notes==='DELIVERY_REVIEW_APPROVED',
   e=>(['CONFIRMED','PREPARING','READY','DRIVER_ASSIGNED']as OrderStatus[]).includes(e.newStatus),
+  e=>e.notes==='DRIVER_ARRIVED_RESTAURANT',
   e=>e.newStatus==='PICKED_UP',
   e=>e.newStatus==='ON_THE_WAY',
   e=>e.newStatus==='ARRIVED',
   e=>e.newStatus==='DELIVERED',
 ]
-export const paymentLabel=(payment:PaymentMethod,staff=false)=>payment==='CASH'?'Naqd pul':payment==='CARD_AT_PICKUP'?(staff?'Karta — restoranda':'Restoranda karta orqali'):payment==='CLICK'?'Click':payment==='PAYME'?'Payme':'Yetkazilganda karta'
-export const pickupPaymentGuidance=(payment:PaymentMethod)=>payment==='CARD_AT_PICKUP'?'To‘lov restoranda karta orqali amalga oshiriladi.':'To‘lov buyurtmani olayotganda naqd pulda amalga oshiriladi.'
+export const paymentLabel=(payment:PaymentMethod,staff=false)=>payment==='CASH'?'Naqd pul':payment==='TERMINAL'?'Terminal':payment==='CARD_AT_PICKUP'?(staff?'Karta — restoranda (eski)':'Restoranda karta orqali'):payment==='CLICK'?'Click':payment==='PAYME'?'Payme':'Yetkazilganda karta'
+export const pickupPaymentGuidance=(payment:PaymentMethod)=>payment==='TERMINAL'||payment==='CARD_AT_PICKUP'?'To‘lov restorandagi terminal orqali olinadi. Tanlash buyurtmani to‘langan deb belgilamaydi.':'To‘lov buyurtmani olayotganda naqd pulda amalga oshiriladi.'
 export const paymentMethodsForFulfillment=(config:RestaurantConfig,type:Order['type'])=>type==='PICKUP'?(config.pickupPaymentMethods||config.supportedPaymentMethods):(config.deliveryPaymentMethods||config.supportedPaymentMethods)
 
 // Payment Preference v1: CLICK/PAYME record only the customer's stated
@@ -82,8 +84,8 @@ export const paymentMethodsForFulfillment=(config:RestaurantConfig,type:Order['t
 // restaurant calls the customer and verifies receipt operationally after
 // confirming the order; nothing here marks an order paid automatically.
 export const isRemotePaymentMethod=(payment:PaymentMethod)=>payment==='CLICK'||payment==='PAYME'
-export const remotePaymentCustomerNotice='Restoran buyurtmangizni tasdiqlagach, to‘lov uchun siz bilan bog‘lanadi.'
-export const remotePaymentStaffHint='Buyurtmani tekshiring va mijoz bilan to‘lov uchun bog‘laning.'
+export const remotePaymentCustomerNotice='Restoran Click/Payme to‘lovini tekshirib tasdiqlaydi.'
+export const remotePaymentStaffHint='Mijozga qo‘ng‘iroq qiling va pul tushganini tekshiring. Tasdiqlanmaguncha tayyorlash boshlanmaydi.'
 
 // Smart Dispatch Phase 5: the restaurant renders canonical backend state
 // only -- no frontend dispatch logic. A DELIVERY order's own status (plus
@@ -129,7 +131,7 @@ export const orderExceptions=(order:Pick<Order,'type'|'status'|'deliveryReviewSt
   if(order.type==='DELIVERY'&&order.deliveryReviewStatus==='CLARIFICATION_REQUESTED')flags.push('ADDRESS_CLARIFICATION')
   if(order.status==='DELIVERY_FAILED')flags.push('DELIVERY_FAILED')
   if(order.status==='RETURNED')flags.push('RETURNED')
-  if(isRemotePaymentMethod(order.paymentMethod)&&order.paymentStatus!=='COLLECTED')flags.push('REMOTE_PAYMENT_PENDING')
+  if(isRemotePaymentMethod(order.paymentMethod)&&order.paymentStatus!=='CONFIRMED')flags.push('REMOTE_PAYMENT_PENDING')
   if(order.type==='DELIVERY'&&order.status==='READY'&&!order.assignedDriverId)flags.push('COURIER_WAITING')
   return flags
 }

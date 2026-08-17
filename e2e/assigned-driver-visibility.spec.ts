@@ -100,7 +100,7 @@ test.describe("assigned driver visibility for restaurant staff (Phase 5B, launch
     await page.getByTestId("buy-now").click();
     await page.waitForURL("**/checkout");
     await page.getByTestId("type-pickup").click();
-    await page.getByLabel("Restoranda karta orqali").check();
+    await page.getByLabel("Terminal — restoranda").check();
     await page.getByLabel("Ism *").fill("Olib Ketish Mijoz");
     await page.getByLabel("Telefon *").fill("+998907778822");
     await page.getByTestId("checkout-submit").click();

@@ -41,6 +41,7 @@ Deno.test("every supported payment method maps to a customer-friendly label", ()
   assertStringIncludes(formatNewOrderMessage({ ...base, paymentMethod: "CASH" }), "To‘lov: Naqd pul");
   assertStringIncludes(formatNewOrderMessage({ ...base, paymentMethod: "PAYME" }), "To‘lov: Payme");
   assertStringIncludes(formatNewOrderMessage({ ...base, paymentMethod: "CARD_AT_PICKUP" }), "To‘lov: Karta (restoranda)");
+  assertStringIncludes(formatNewOrderMessage({ ...base, paymentMethod: "TERMINAL" }), "To‘lov: Terminal (restoranda)");
 });
 
 Deno.test("never includes exact coordinates, an internal UUID, or OTP text -- phone and a short address summary are the deliberate exception (Restaurant UI Phase 1)", () => {

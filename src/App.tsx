@@ -74,6 +74,7 @@ import type { AddressSuggestion, MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
 import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
 import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,declineReasonLabels,deliveryDispatchPhase,deliveryDispatchPhaseLabels,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,orderExceptions,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint,type OrderExceptionKind} from './fulfillmentLifecycle'
+import {formatOperationalDateTime,formatOperationalTime} from './operationalTime'
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
@@ -83,22 +84,12 @@ const customerCompletedStatuses: OrderStatus[] = ["DELIVERED", "COLLECTED", "DEL
 // are the actual enforcement; this just avoids firing requests the server
 // would reject anyway.
 const DRIVER_OTP_RESEND_COOLDOWN_SECONDS = 30;
-const time = (s: string) =>
-  new Intl.DateTimeFormat("uz-UZ", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(s));
+const time = formatOperationalTime;
 // H1: Order History spans multiple days, so its rows need a date alongside
 // the time -- rendered in the viewing staff member's own browser, same as
 // every other on-screen timestamp in this app (only the History RPC's date
 // *range* boundaries are computed server-side, in business time).
-const historyDateTime = (s: string) =>
-  new Intl.DateTimeFormat("uz-UZ", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(s));
+const historyDateTime = formatOperationalDateTime;
 // Checkout idempotency persistence: sessionStorage (not localStorage) so a
 // genuinely new tab/session never inherits a stale pending id, but the SAME
 // tab surviving a reload does. Read/write live only here; the fingerprint
@@ -183,6 +174,7 @@ const deliveryZoneLabels: Record<NonNullable<CustomerAddress["deliveryZoneResult
 const paymentStatusLabels: Record<PaymentCollectionStatus, string> = {
   NOT_REQUIRED: "Talab qilinmaydi",
   PENDING: "Kutilmoqda",
+  CONFIRMED: "Tasdiqlandi",
   COLLECTED: "Olindi",
   FAILED: "Muvaffaqiyatsiz",
 };
@@ -1029,16 +1021,16 @@ function Checkout() {
               />
               Naqd pul
             </label>}
-            {type==='PICKUP'&&allowedPayments.includes('CARD_AT_PICKUP')&&<label className="radio">
+            {type==='PICKUP'&&allowedPayments.includes('TERMINAL')&&<label className="radio">
               <input
                 type="radio"
-                checked={payment === "CARD_AT_PICKUP"}
+                checked={payment === "TERMINAL"}
                 onChange={() => {
-                  setPayment("CARD_AT_PICKUP");
+                  setPayment("TERMINAL");
                   clearError("paymentMethod");
                 }}
               />
-              Restoranda karta orqali
+              Terminal — restoranda
             </label>}
             {type==='DELIVERY'&&allowedPayments.includes('CLICK')&&<label className="radio">
               <input
@@ -1061,6 +1053,14 @@ function Checkout() {
                 }}
               />
               💳 Payme
+            </label>}
+            {type==='DELIVERY'&&!allowedPayments.includes('CLICK')&&<label className="radio disabled" data-testid="click-disabled">
+              <input type="radio" disabled />
+              💳 Click — Tez orada
+            </label>}
+            {type==='DELIVERY'&&!allowedPayments.includes('PAYME')&&<label className="radio disabled" data-testid="payme-disabled">
+              <input type="radio" disabled />
+              💳 Payme — Tez orada
             </label>}
             {isRemotePaymentMethod(payment) && (
               <p className="pilot-notice" data-testid="remote-payment-notice">
@@ -1454,8 +1454,8 @@ function Track() {
           {displayStages.map((stage, i) => {
             const reachedAt = order.events.filter(stage.matchesEvent).sort((a, b) => a.timestamp.localeCompare(b.timestamp))[0];
             return (
-              <div className={i <= current ? "done" : ""} key={stage.label}>
-                <i>{i < current ? "✓" : i + 1}</i>
+              <div className={(order.type === "DELIVERY" ? Boolean(reachedAt) : i <= current) ? "done" : ""} key={stage.label}>
+                <i>{(order.type === "DELIVERY" ? Boolean(reachedAt) : i < current) ? "✓" : i + 1}</i>
                 <span>
                   <b>{stage.label}</b>
                   {reachedAt && <small>{time(reachedAt.timestamp)}</small>}
@@ -1606,7 +1606,7 @@ function MyOrders() {
       <div className="order-list">
         {sorted.map((order) => <article className="form-card my-order-card" key={order.id} data-testid="my-order-card">
           <div><h2>{order.number}</h2><OrderBadge order={order}/></div>
-          <p>{order.type === "DELIVERY" ? "Yetkazib berish" : "Olib ketish"} · {new Date(order.createdAt).toLocaleString("uz-UZ")}</p>
+          <p>{order.type === "DELIVERY" ? "Yetkazib berish" : "Olib ketish"} · {formatOperationalDateTime(order.createdAt)}</p>
           <b>{money(order.total)}</b>
           <div className="actions"><Link className="button secondary" to={`/track/${order.id}`}>{customerCompletedStatuses.includes(order.status) ? "Tafsilotlar" : "Kuzatish"}</Link></div>
           {order.type === "DELIVERY" && !customerCompletedStatuses.includes(order.status) && (
@@ -2743,6 +2743,7 @@ function History() {
               <option value="CASH">Naqd</option>
               <option value="CARD_ON_DELIVERY">Karta (yetkazishda)</option>
               <option value="CARD_AT_PICKUP">Karta (restoranda)</option>
+              <option value="TERMINAL">Terminal</option>
               <option value="CLICK">Click</option>
               <option value="PAYME">Payme</option>
             </select>
@@ -2889,6 +2890,7 @@ function OrderDetail() {
     resolveIssue,
     reviewDelivery,
     requestClarification,
+    confirmManualPayment,
     transitionPending,
     getOrder,
   } = useApp();
@@ -2984,9 +2986,12 @@ function OrderDetail() {
                 · {paymentStatusLabels[order.paymentStatus]}
               </p>
               {isRemotePaymentMethod(order.paymentMethod) && (
-                <p className="warning" data-testid="remote-payment-staff-hint">
-                  {remotePaymentStaffHint}
-                </p>
+                <div className="warning" data-testid="remote-payment-staff-hint">
+                  <b>{order.paymentMethod} — {order.paymentStatus==='CONFIRMED'?"TO‘LOV TASDIQLANDI":"TO‘LOV KUTILMOQDA"}</b>
+                  <p>{remotePaymentStaffHint}</p>
+                  <a className="button secondary" href={`tel:${order.customer.primaryPhone}`} data-testid="manual-payment-call">Mijozga qo‘ng‘iroq</a>
+                  {order.paymentStatus==='PENDING'&&<button className="button primary" type="button" data-testid="confirm-manual-payment" disabled={transitionPending(order.id)} onClick={()=>void confirmManualPayment(order.id)}>Pul tushdi</button>}
+                </div>
               )}
               <p>
                 <b>Izoh:</b> {order.specialInstructions || "Yo‘q"}
@@ -3133,7 +3138,7 @@ function OrderDetail() {
                         Still excluded once PICKED_UP or later, where it
                         would read as stale ("still at the restaurant"). */}
                     {["CONFIRMED", "PREPARING", "READY", "DRIVER_ASSIGNED"].includes(order.status) && order.assignmentHistory.find((a) => !a.endedAt)?.arrivedAtRestaurantAt && (
-                      <p className="success-notice" data-testid="driver-at-restaurant-notice">📍 Haydovchi restoranda</p>
+                      <p className="success-notice" data-testid="driver-at-restaurant-notice">📍 Haydovchi restoranda · {time(order.assignmentHistory.find((a) => !a.endedAt)!.arrivedAtRestaurantAt!)}</p>
                     )}
                   </>
                 ) : (
@@ -3243,7 +3248,7 @@ function OrderDetail() {
               <button
                 className="button primary"
                 data-testid="action-start-prep"
-                disabled={transitionPending(order.id)}
+                disabled={transitionPending(order.id) || (isRemotePaymentMethod(order.paymentMethod)&&order.paymentStatus!=='CONFIRMED')}
                 onClick={() => void action("PREPARING")}
               >
                 Tayyorlashni boshlash
