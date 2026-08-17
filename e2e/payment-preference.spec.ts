@@ -13,10 +13,29 @@ async function openDeliveryCheckout(page: Page) {
   await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
 }
 
+async function openPickupCheckout(page: Page) {
+  await page.goto("/menu/chicken");
+  await page.getByRole("button", { name: "+" }).click();
+  await page.getByTestId("buy-now").click();
+  await page.waitForURL("**/checkout");
+  await page.getByTestId("type-pickup").click();
+  await page.getByLabel("Ism *").fill("Pickup To‘lov Mijoz");
+  await page.getByLabel("Telefon *").fill("+998901112234");
+}
+
 test.describe("Manual Click/Payme payments", () => {
   test("delivery checkout offers Click and Payme as manual transfer choices", async ({ page }) => {
     await openDeliveryCheckout(page);
     await expect(page.getByLabel("Naqd pul")).toBeVisible();
+    await expect(page.getByLabel("💳 Click")).toBeEnabled();
+    await expect(page.getByLabel("💳 Payme")).toBeEnabled();
+    await expect(page.getByLabel("Terminal — restoranda")).toHaveCount(0);
+  });
+
+  test("pickup checkout offers cash, terminal, Click, and Payme", async ({ page }) => {
+    await openPickupCheckout(page);
+    await expect(page.getByLabel("Naqd pul")).toBeEnabled();
+    await expect(page.getByLabel("Terminal — restoranda")).toBeEnabled();
     await expect(page.getByLabel("💳 Click")).toBeEnabled();
     await expect(page.getByLabel("💳 Payme")).toBeEnabled();
   });
@@ -125,15 +144,31 @@ test.describe("Manual Click/Payme payments", () => {
     await expect(page.getByRole("button", { name: "Pul tushdi" })).toHaveCount(0);
   });
 
-  test("switching from delivery Click/Payme to pickup resets payment to cash", async ({ page }) => {
+  test("pickup Click remains pending and preparation unlocks only after Restaurant confirmation", async ({ page }) => {
+    await openPickupCheckout(page);
+    await page.getByLabel("💳 Click").check();
+    await page.getByTestId("checkout-submit").click();
+    await page.waitForURL("**/confirmation/**");
+    const orderId = page.url().split("/confirmation/")[1];
+
+    await page.goto(`/restaurant/orders/${orderId}`);
+    await expect(page.getByTestId("remote-payment-staff-hint")).toContainText("CLICK — TO‘LOV KUTILMOQDA");
+    await page.getByTestId("action-confirm").click();
+    await expect(page.getByTestId("action-start-prep")).toBeDisabled();
+    await page.getByTestId("confirm-manual-payment").click();
+    await expect(page.getByTestId("remote-payment-staff-hint")).toContainText("CLICK — TO‘LOV TASDIQLANDI");
+    await expect(page.getByTestId("action-start-prep")).toBeEnabled();
+  });
+
+  test("switching delivery Click to pickup preserves the now-valid manual method", async ({ page }) => {
     await page.goto("/menu/chicken");
     await page.getByRole("button", { name: "+" }).click();
     await page.getByTestId("buy-now").click();
     await page.waitForURL("**/checkout");
     await page.getByLabel("💳 Click").check();
     await page.getByTestId("type-pickup").click();
-    await expect(page.getByLabel("💳 Click")).toHaveCount(0);
-    await expect(page.getByLabel("💳 Payme")).toHaveCount(0);
-    await expect(page.getByLabel("Naqd pul")).toBeChecked();
+    await expect(page.getByLabel("💳 Click")).toBeChecked();
+    await expect(page.getByLabel("💳 Payme")).toBeEnabled();
+    await expect(page.getByLabel("Terminal — restoranda")).toBeEnabled();
   });
 });

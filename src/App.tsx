@@ -1032,7 +1032,7 @@ function Checkout() {
               />
               Terminal — restoranda
             </label>}
-            {type==='DELIVERY'&&allowedPayments.includes('CLICK')&&<label className="radio">
+            {allowedPayments.includes('CLICK')&&<label className="radio">
               <input
                 type="radio"
                 checked={payment === "CLICK"}
@@ -1043,7 +1043,7 @@ function Checkout() {
               />
               💳 Click
             </label>}
-            {type==='DELIVERY'&&allowedPayments.includes('PAYME')&&<label className="radio">
+            {allowedPayments.includes('PAYME')&&<label className="radio">
               <input
                 type="radio"
                 checked={payment === "PAYME"}
@@ -1054,11 +1054,11 @@ function Checkout() {
               />
               💳 Payme
             </label>}
-            {type==='DELIVERY'&&!allowedPayments.includes('CLICK')&&<label className="radio disabled" data-testid="click-disabled">
+            {!allowedPayments.includes('CLICK')&&<label className="radio disabled" data-testid="click-disabled">
               <input type="radio" disabled />
               💳 Click — Tez orada
             </label>}
-            {type==='DELIVERY'&&!allowedPayments.includes('PAYME')&&<label className="radio disabled" data-testid="payme-disabled">
+            {!allowedPayments.includes('PAYME')&&<label className="radio disabled" data-testid="payme-disabled">
               <input type="radio" disabled />
               💳 Payme — Tez orada
             </label>}

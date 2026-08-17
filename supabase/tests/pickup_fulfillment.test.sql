@@ -3,7 +3,7 @@ select plan(21);
 
 select enum_has_labels('public','payment_method',array['CASH','CARD_ON_DELIVERY','CARD_AT_PICKUP','CLICK','PAYME','TERMINAL'],'explicit terminal added without removing historical payment values');
 select enum_has_labels('public','order_status',array['NEW','CONFIRMED','PREPARING','READY','DRIVER_ASSIGNED','PICKED_UP','ON_THE_WAY','ARRIVED','DELIVERED','REJECTED','CANCELLED','DELIVERY_FAILED','RETURNED','COLLECTED'],'collected terminal status added');
-select is((public.get_public_restaurant_config()->'pickupPaymentMethods')::text,'["CASH", "TERMINAL"]','public config exposes cash and physical terminal for pickup');
+select is((public.get_public_restaurant_config()->'pickupPaymentMethods')::text,'["CASH", "TERMINAL", "CLICK", "PAYME"]','pickup exposes cash, terminal, and manual Click/Payme transfers');
 select is((public.get_public_restaurant_config()->'deliveryPaymentMethods')::text,'["CASH", "CLICK", "PAYME"]','delivery exposes cash and manual Click/Payme transfers');
 
 select lives_ok($$select public.create_public_order('{"id":"80000000-0000-4000-8000-000000000001","customer":{"name":"Cash Pickup","primaryPhone":"+998900000001"},"type":"PICKUP","paymentMethod":"CASH","items":[{"menuItemId":"ayran","quantity":1,"modifierIds":[]}]}'::jsonb)$$,'pickup cash accepted');

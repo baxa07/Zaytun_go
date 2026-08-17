@@ -5,7 +5,7 @@ import type{OrderEvent,OrderStatus}from'./domain'
 describe('fulfillment timeline',()=>{it('contains exactly five pickup-only stages',()=>{const stages=fulfillmentTimeline('PICKUP');expect(stages.map(x=>x.label)).toEqual(['Buyurtma qabul qilindi','Tasdiqlandi','Tayyorlanmoqda','Olib ketishga tayyor','Olib ketildi']);expect(stages.map(x=>x.status)).not.toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED']))});it('retains delivery stages',()=>expect(fulfillmentTimeline('DELIVERY').map(x=>x.status)).toEqual(expect.arrayContaining(['DRIVER_ASSIGNED','ON_THE_WAY','ARRIVED','DELIVERED'])));it('provides physical-payment guidance',()=>{expect(pickupPaymentGuidance('TERMINAL')).toContain('terminal');expect(pickupPaymentGuidance('CASH')).toContain('naqd pulda')})})
 describe('fulfillment payments',()=>{
   it('offers restaurant card only for pickup, and Click/Payme only for delivery',()=>{
-    expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'PICKUP')).toEqual(['CASH','TERMINAL'])
+    expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'PICKUP')).toEqual(['CASH','TERMINAL','CLICK','PAYME'])
     expect(paymentMethodsForFulfillment(developmentRestaurantConfig,'DELIVERY')).toEqual(['CASH','CLICK','PAYME'])
   })
   it('renders customer-friendly labels for Click/Payme, distinct from the existing methods',()=>{
