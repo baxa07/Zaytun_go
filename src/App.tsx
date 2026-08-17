@@ -234,6 +234,14 @@ const Badge = ({ status }: { status: OrderStatus }) => (
 );
 const OrderBadge=({order}:{order:Order})=><span className={`badge s-${order.status.toLowerCase()}`}>{fulfillmentStatusLabel(order)||statusLabels[order.status]}</span>
 function UpdateNotice(){const[ready,setReady]=useState(false);useEffect(()=>{const show=()=>setReady(true);window.addEventListener(UPDATE_EVENT,show);return()=>window.removeEventListener(UPDATE_EVENT,show)},[]);return ready?<div className="update-notice" role="status"><span>Ilovaning yangi xavfsiz versiyasi tayyor.</span><button type="button" onClick={requestApplicationUpdate}>Yangilash</button></div>:null}
+function CustomerNavIcon({ kind }: { kind: "menu" | "cart" | "orders" }) {
+  const path = kind === "menu"
+    ? <><path d="M4 6h16M4 12h16M4 18h16"/></>
+    : kind === "cart"
+      ? <><path d="M3 4h2l2.1 10.2a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.6L20 8H6"/><circle cx="10" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></>
+      : <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h4"/></>;
+  return <svg className="customer-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{path}</svg>;
+}
 function Shell({
   children,
   surface = "customer",
@@ -252,12 +260,12 @@ function Shell({
             ZAYTUN <b>GO</b>
           </span>
         </Link>
-        <nav>
+        <nav className={surface === "customer" ? "customer-nav" : "operational-nav"} data-testid={surface === "customer" ? "customer-bottom-nav" : undefined}>
           {surface === "customer" ? (
             <>
-              <NavLink to="/menu">Menyu</NavLink>
-              <NavLink to="/cart">Savat{cartCount > 0 ? ` · ${cartCount}` : ""}</NavLink>
-              <NavLink to="/orders">Buyurtmalarim</NavLink>
+              <NavLink to="/menu"><CustomerNavIcon kind="menu"/><span>Menyu</span></NavLink>
+              <NavLink to="/cart"><CustomerNavIcon kind="cart"/><span>Savat{cartCount > 0 ? ` · ${cartCount}` : ""}</span></NavLink>
+              <NavLink to="/orders"><CustomerNavIcon kind="orders"/><span>Buyurtmalarim</span></NavLink>
             </>
           ) : (
             <>

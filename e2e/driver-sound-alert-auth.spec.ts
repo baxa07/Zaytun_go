@@ -116,6 +116,11 @@ test("driver clean and legacy-only storage default ON; an explicit V2 mute alone
   await page.screenshot({ path: "qa/screenshots/26-driver-sound-default-on-390x844.png", fullPage: true });
   await page.reload();
   await expect(page.getByTestId("driver-sound-status")).toContainText("Ovoz birinchi bosishda faollashadi");
+  // Any ordinary operational interaction unlocks/resumes audio. The
+  // dedicated sound control is not required, and unlocking stays silent.
+  await page.getByRole("heading", { name: "Bugungi yetkazish" }).click();
+  await expect(page.getByTestId("driver-sound-status")).toContainText("Ovoz yoqilgan");
+  expect(await soundStarts(page)).toBe(0);
   await page.getByTestId("driver-sound-toggle").click();
   await expect(page.getByTestId("driver-sound-status")).toContainText("Ovoz o‘chirilgan");
   expect(await page.evaluate(() => localStorage.getItem("zaytun-go:sound-preference-v2"))).toBe("explicit-muted");
