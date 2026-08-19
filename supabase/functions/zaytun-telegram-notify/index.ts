@@ -255,16 +255,21 @@ if (import.meta.main) {
         };
       },
       markSent: async (outboxId) => {
-        await admin
+        const { error } = await admin
           .from("notification_outbox")
           .update({ status: "SENT", sent_at: new Date().toISOString() })
           .eq("id", outboxId);
+        if (error) throw error;
       },
       markFailed: async (outboxId, error) => {
-        await admin
-          .from("notification_outbox")
-          .update({ status: "FAILED", last_error: error, attempts: 1 })
-          .eq("id", outboxId);
+        // Atomically increments attempts and schedules bounded exponential
+        // retry in Postgres. The browser is never involved in either the
+        // first send or a retry.
+        const { error: bookkeepingError } = await admin.rpc("mark_notification_delivery_failed", {
+          p_outbox_id: outboxId,
+          p_error: error,
+        });
+        if (bookkeepingError) throw bookkeepingError;
       },
     });
   });

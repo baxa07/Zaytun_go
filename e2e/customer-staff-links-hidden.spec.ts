@@ -30,6 +30,22 @@ test.describe("customer surfaces never expose staff entry", () => {
     await expect(nav.getByRole("link")).toHaveCount(3);
   });
 
+  test("hero tracking action and bottom Buyurtmalarim independently reach the existing orders experience", async ({ page }) => {
+    await page.goto("/");
+    const heroAction = page.getByTestId("hero-track-order");
+    await expect(heroAction).toHaveAttribute("href", "/orders");
+    await heroAction.click();
+    await expect(page).toHaveURL(/\/orders$/);
+
+    // Exercise the separate, already-working bottom-nav control too: the
+    // hero fix must not replace, hide, or intercept it.
+    await page.goto("/menu");
+    const bottomOrders = page.getByTestId("customer-bottom-nav").getByRole("link", { name: "Buyurtmalarim" });
+    await expect(bottomOrders).toHaveAttribute("href", "/orders");
+    await bottomOrders.click();
+    await expect(page).toHaveURL(/\/orders$/);
+  });
+
   // Shell renders exactly one <nav>, styled differently at mobile widths via
   // CSS rather than a second DOM tree -- but pilot sign-off wants this
   // proven explicitly at a real mobile viewport, not only inferred from the

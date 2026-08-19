@@ -122,6 +122,10 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
   test.afterAll(() => setCustomerAuthRequired(false));
 
   test("checkout is intercepted by inline OTP, preserves state, verifies, and submits an authenticated order", async ({ page }) => {
+    let otpRequests = 0;
+    page.on("request", (request) => {
+      if (request.url().endsWith("/auth/v1/otp") && request.method() === "POST") otpRequests += 1;
+    });
     await page.setViewportSize({ width: 390, height: 844 });
     await addItemToCartAndReachCheckout(page);
     await page.getByLabel("Ism *").fill("OTP Mijoz");
@@ -166,6 +170,25 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     expect(order.primary_phone).toBe("+998000000001");
     expect(order.actor_type).toBe("CUSTOMER");
     expect(order.actor_id).not.toBe("guest");
+
+    // A full document reload restores the persisted GoTrue session before
+    // checkout can decide whether verification is needed. A second order
+    // on this same browser therefore submits as the same authenticated
+    // owner, without another SMS request or inline OTP interruption.
+    await page.reload();
+    await addItemToCartAndReachCheckout(page);
+    await page.getByLabel("Ism *").fill("OTP Mijoz Again");
+    // Authenticated checkout derives and locks the verified session phone;
+    // an arbitrary typed phone cannot replace customer identity.
+    await expect(page.getByLabel("Telefon *")).toHaveAttribute("readonly", "");
+    await expect(page.getByLabel("Telefon *")).toHaveValue("+998 00 *** ** 01");
+    await page.getByTestId("checkout-submit").click();
+    await expect(page).toHaveURL(/\/confirmation\//, { timeout: 15000 });
+    await expect(page.getByTestId("customer-otp-step")).toHaveCount(0);
+    expect(otpRequests).toBe(2); // initial send + explicit resend after the deliberately wrong OTP
+    const repeatedOrder = queryOrder(page.url().split("/confirmation/")[1]);
+    expect(repeatedOrder.customer_id).toBe(order.customer_id);
+    expect(repeatedOrder.primary_phone).toBe("+998000000001");
   });
 
   test("a canonical customer-resolution failure after successful OTP verification leaves no half-authenticated state and submits no order", async ({ page, request }) => {

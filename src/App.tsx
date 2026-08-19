@@ -287,7 +287,7 @@ function Home() {
             <Link className="button primary" to="/menu">
               Menyuni ochish
             </Link>
-            <Link className="button secondary" to="/track/ord-new">
+            <Link className="button secondary" to="/orders" data-testid="hero-track-order">
               Buyurtmani kuzatish
             </Link>
           </div>
@@ -680,7 +680,7 @@ function DeliveryAddressFields({
   );
 }
 function Checkout() {
-  const { cart, submitOrder, clearCart, publicConfig, session, isCustomerAuthenticated, sendCustomerOtp, verifyCustomerOtp, signOut } = useApp();
+  const { cart, submitOrder, clearCart, publicConfig, authReady, session, isCustomerAuthenticated, sendCustomerOtp, verifyCustomerOtp, signOut } = useApp();
   const nav = useNavigate();
   const [type, setType] = useState<"DELIVERY" | "PICKUP">("DELIVERY");
   const [address, setAddress] = useState(blankAddress);
@@ -777,6 +777,12 @@ function Checkout() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (submittingRef.current) return;
+    // A persisted Supabase session (including an expired access token with
+    // a still-valid refresh token) is restored asynchronously on a cold
+    // page load. Never decide that OTP is required while that restoration
+    // is still in progress: the typed phone is not an identity signal, but
+    // the restored authenticated session is.
+    if (!authReady) return;
     const found = validateOrderInput(type, address, payment);
     if(!cart.length)found.cart='Savat bo‘sh. Avval taom tanlang.';
     if(!allowedPayments.includes(payment))found.paymentMethod='Bu buyurtma turi uchun to‘lov usulini qayta tanlang.';
@@ -1097,9 +1103,9 @@ function Checkout() {
               className="button primary wide"
               type="submit"
               data-testid="checkout-submit"
-              disabled={submitting}
+              disabled={submitting || !authReady}
             >
-              {submitting ? "Yuborilmoqda…" : "Buyurtmani yuborish"}
+              {submitting ? "Yuborilmoqda…" : !authReady ? "Sessiya tekshirilmoqda…" : "Buyurtmani yuborish"}
             </button>
           )}
           {errors.submit && <p className="error" role="alert">{errors.submit}</p>}
