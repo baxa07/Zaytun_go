@@ -21,8 +21,16 @@ describe('delivery rules and totals',()=>{it('requires a delivery issue descript
 describe('product packaging totals',()=>{
   const normal=(quantity:number)=>({quantity,packagingRequired:false,packagingUnitPrice:0,packagingCapacity:null})
   const olot=(quantity:number)=>({quantity,packagingRequired:true,packagingUnitPrice:3000,packagingCapacity:15})
+  const portion=(quantity:number)=>({quantity,packagingRequired:true,packagingUnitPrice:3000,packagingCapacity:1})
   it.each([[1,0],[20,0]])('normal somsa x%s has no packaging', (quantity,total)=>expect(packagingForItem(normal(quantity)).total).toBe(total))
+  it.each([[1,0],[10,0]])('drink x%s has no packaging', (quantity,total)=>expect(packagingForItem(normal(quantity)).total).toBe(total))
   it.each([[1,1,3000],[15,1,3000],[16,2,6000],[30,2,6000],[31,3,9000]])('Olot somsa x%s uses %s boxes and costs %s', (quantity,boxCount,total)=>expect(packagingForItem(olot(quantity))).toEqual({boxCount,total}))
+  it.each([[1,1,3000],[2,2,6000]])('default food x%s uses %s boxes and costs %s', (quantity,boxCount,total)=>expect(packagingForItem(portion(quantity))).toEqual({boxCount,total}))
+  it('calculates the approved normal somsa, Olot, and Jiz example',()=>{
+    const items=[{unitPrice:12000,...normal(1)},{unitPrice:10000,...olot(2)},{unitPrice:260000,...portion(1)}]
+    expect(calculatePackagingTotal(items)).toBe(6000)
+    expect(calculateOrderTotal(items,0)).toBe(298000)
+  })
   it('adds packaged and non-packaged lines without changing food or delivery arithmetic',()=>{
     const items=[{unitPrice:10000,...olot(16)},{unitPrice:12000,...normal(20)}]
     expect(calculatePackagingTotal(items)).toBe(6000)
