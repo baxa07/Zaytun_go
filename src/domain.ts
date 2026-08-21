@@ -20,9 +20,10 @@ export type OrderSubmissionMode='PUBLIC'|'CUSTOMER'|'REQUIRES_CUSTOMER_AUTH'
 export const resolveOrderSubmissionMode=(customerAuthRequired:boolean,hasCustomerSession:boolean):OrderSubmissionMode=>hasCustomerSession?'CUSTOMER':customerAuthRequired?'REQUIRES_CUSTOMER_AUTH':'PUBLIC'
 
 export interface MenuModifier {id:string;name:string;price:number}
-export interface MenuItem {id:string;categoryId:string;name:string;description:string;price:number;image:string;modifiers?:MenuModifier[];available:boolean}
+export interface PackagingConfig {packagingRequired:boolean;packagingUnitPrice:number;packagingCapacity:number|null}
+export interface MenuItem extends PackagingConfig {id:string;categoryId:string;name:string;description:string;price:number;image:string;modifiers?:MenuModifier[];available:boolean}
 export interface MenuCategory {id:string;name:string;description:string}
-export interface CartItem {id:string;menuItemId:string;name:string;unitPrice:number;quantity:number;modifierIds:string[];modifierNames:string[];instructions:string}
+export interface CartItem {id:string;menuItemId:string;name:string;unitPrice:number;quantity:number;modifierIds:string[];modifierNames:string[];instructions:string;packagingRequired?:boolean;packagingUnitPrice?:number;packagingCapacity?:number|null;packagingBoxCount?:number;packagingTotal?:number}
 export interface Cart {items:CartItem[]}
 export const cartLineMatches=(left:CartItem,right:CartItem)=>left.menuItemId===right.menuItemId&&left.modifierIds.slice().sort().join()===right.modifierIds.slice().sort().join()&&left.instructions.trim()===right.instructions.trim()
 export function addCartLine(items:CartItem[],incoming:CartItem,maximumQuantity:number){const existing=items.find(item=>cartLineMatches(item,incoming));if(!existing)return[...items,{...incoming,quantity:Math.min(incoming.quantity,maximumQuantity)}];return items.map(item=>item.id===existing.id?{...item,quantity:Math.min(item.quantity+incoming.quantity,maximumQuantity)}:item)}
@@ -113,7 +114,7 @@ export interface DriverStandbyNotice {orderId:string;orderNumber:string;branchId
 // driver only ever sees the resulting timestamp, never the raw config).
 export type PickupBatchStatus='OPEN'|'READY_TO_DEPART'|'IN_TRANSIT'|'COMPLETED'|'CANCELLED'
 export interface PickupBatchContext {batchId:string;status:PickupBatchStatus;maxMembers:number;firstMemberReadyAt?:string;waitDeadlineAt?:string}
-export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback;assignmentHistory:AssignmentHistoryEntry[];
+export interface Order {id:string;number:string;customer:Customer;type:'DELIVERY'|'PICKUP';address?:CustomerAddress;items:OrderItem[];subtotal:number;packagingTotal?:number;deliveryFee:number;total:number;paymentMethod:PaymentMethod;paymentStatus:PaymentCollectionStatus;specialInstructions:string;status:OrderStatus;createdAt:string;estimatedMinutes?:number;assignedDriverId?:string;assignmentAcceptedAt?:string;deliveryReviewStatus?:DeliveryReviewStatus;deliveryReviewReason?:string;events:OrderEvent[];issues:DeliveryIssue[];rejectionReason?:string;cancellationReason?:string;feedback?:OrderFeedback;assignmentHistory:AssignmentHistoryEntry[];
   // Multi-Order Dispatch: a driver may now be assigned as early as
   // ACCEPT (NEW->CONFIRMED), well before the order is READY -- these
   // fields expose that decoupled state without changing `status` at all.
@@ -134,7 +135,17 @@ const deliveryReviewMarkerNotes=['DELIVERY_CLARIFICATION_REQUESTED','DELIVERY_AD
 export const deliveryAddressWasResubmitted=(order:Pick<Order,'events'>)=>{const marker=order.events.filter(e=>e.notes&&deliveryReviewMarkerNotes.includes(e.notes)).sort((a,b)=>a.timestamp.localeCompare(b.timestamp)).at(-1);return marker?.notes==='DELIVERY_ADDRESS_REVISED'}
 export function createEvent(orderId:string,previousStatus:OrderStatus|null,newStatus:OrderStatus,actorType:ActorType,actorId:string,reason?:string,notes?:string):OrderEvent{return{id:createUuid(),orderId,previousStatus,newStatus,actorType,actorId,timestamp:new Date().toISOString(),reason,notes}}
 export function transitionOrder(order:Order,to:OrderStatus,actorType:ActorType,actorId:string,reason?:string,notes?:string):Order{if(!canTransitionOrder(order,to))throw new Error(`Illegal transition: ${order.status} → ${to}`);const event=createEvent(order.id,order.status,to,actorType,actorId,reason,notes);return{...order,status:to,events:[...order.events,event],rejectionReason:to==='REJECTED'?reason:order.rejectionReason,cancellationReason:to==='CANCELLED'?reason:order.cancellationReason}}
-export function calculateOrderTotal(items:Pick<CartItem,'unitPrice'|'quantity'>[],deliveryFee=0){return items.reduce((sum,item)=>sum+item.unitPrice*item.quantity,0)+deliveryFee}
+export function calculateFoodSubtotal(items:Pick<CartItem,'unitPrice'|'quantity'>[]){return items.reduce((sum,item)=>sum+item.unitPrice*item.quantity,0)}
+export function packagingForItem(item:Pick<CartItem,'quantity'|'packagingRequired'|'packagingUnitPrice'|'packagingCapacity'>){
+  if(!item.packagingRequired)return{boxCount:0,total:0}
+  const capacity=item.packagingCapacity??0
+  const unitPrice=item.packagingUnitPrice??0
+  if(capacity<=0||unitPrice<0)return{boxCount:0,total:0}
+  const boxCount=Math.ceil(item.quantity/capacity)
+  return{boxCount,total:boxCount*unitPrice}
+}
+export function calculatePackagingTotal(items:Pick<CartItem,'quantity'|'packagingRequired'|'packagingUnitPrice'|'packagingCapacity'>[]){return items.reduce((sum,item)=>sum+packagingForItem(item).total,0)}
+export function calculateOrderTotal(items:Pick<CartItem,'unitPrice'|'quantity'|'packagingRequired'|'packagingUnitPrice'|'packagingCapacity'>[],deliveryFee=0){return calculateFoodSubtotal(items)+calculatePackagingTotal(items)+deliveryFee}
 // Minimum delivery-address contract: the confirmed map pin is the primary
 // geographic source. Written fields only need enough human-readable
 // context for the courier -- district/street -- everything else (house,

@@ -12,6 +12,9 @@ const item = {
   price: 25000,
   image: "",
   available: true,
+  packagingRequired: false,
+  packagingUnitPrice: 0,
+  packagingCapacity: null,
 };
 
 describe("ProductImage", () => {

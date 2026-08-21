@@ -13,6 +13,9 @@ import {
 } from "react-router-dom";
 import {
   calculateOrderTotal,
+  calculateFoodSubtotal,
+  calculatePackagingTotal,
+  packagingForItem,
   canTransition,
   checkoutFingerprint,
   createEvent,
@@ -388,7 +391,7 @@ function Product() {
     if (addingRef.current) return;
     addingRef.current = true;
     setAdding(true);
-    flushSync(() => addToCart({id:createUuid(),menuItemId:item.id,name:item.name,unitPrice:unit,quantity:q,modifierIds:mods,modifierNames:(item.modifiers||[]).filter(m=>mods.includes(m.id)).map(m=>m.name),instructions:note}));
+    flushSync(() => addToCart({id:createUuid(),menuItemId:item.id,name:item.name,unitPrice:unit,quantity:q,modifierIds:mods,modifierNames:(item.modifiers||[]).filter(m=>mods.includes(m.id)).map(m=>m.name),instructions:note,packagingRequired:item.packagingRequired,packagingUnitPrice:item.packagingUnitPrice,packagingCapacity:item.packagingCapacity}));
     nav(destination,destination==="/menu"?{state:{categoryId:item.categoryId,cartNotice:"Savatga qo‘shildi."}}:undefined);
   };
   return (
@@ -431,7 +434,7 @@ function Product() {
           </div>
           <div className="product-action-buttons">
             <button className="button secondary" type="button" data-testid="add-to-cart" disabled={adding} onClick={() => addConfiguredItem("/menu")}>Savatga qo‘shish</button>
-            <button className="button primary" type="button" data-testid="buy-now" disabled={adding} onClick={() => addConfiguredItem("/checkout")}>Hozir buyurtma berish · {money(unit*q)}</button>
+            <button className="button primary" type="button" data-testid="buy-now" disabled={adding} onClick={() => addConfiguredItem("/checkout")}>Hozir buyurtma berish · {money(unit*q+packagingForItem({...item,quantity:q}).total)}</button>
           </div>
         </div>
       </main>
@@ -440,7 +443,8 @@ function Product() {
 }
 function Cart() {
   const { cart, updateQuantity, publicConfig } = useApp();
-  const subtotal = calculateOrderTotal(cart);
+  const subtotal = calculateFoodSubtotal(cart);
+  const packagingTotal = calculatePackagingTotal(cart);
   const fulfillment = fulfillmentSummary(publicConfig?.deliveryEnabled === true ? "DELIVERY" : "PICKUP");
   return (
     <Shell>
@@ -478,6 +482,7 @@ function Cart() {
             <div className="summary">
               <span>Taomlar</span>
               <b>{money(subtotal)}</b>
+              {packagingTotal > 0 && <><span>Qadoqlash</span><b data-testid="cart-packaging-total">{money(packagingTotal)}</b></>}
               <span>{fulfillment.label}</span>
               <b>{fulfillment.value}</b>
             </div>
@@ -744,7 +749,8 @@ function Checkout() {
   const allowedPayments=useMemo(()=>publicConfig?paymentMethodsForFulfillment(publicConfig,type):['CASH'] as PaymentMethod[],[publicConfig,type]);
   useEffect(()=>{if(!allowedPayments.includes(payment))setPayment(allowedPayments[0]||'CASH');if(publicConfig?.deliveryEnabled===false)setType('PICKUP')},[allowedPayments,payment,publicConfig]);
   const submittingRef = useRef(false);
-  const subtotal = calculateOrderTotal(cart);
+  const subtotal = calculateFoodSubtotal(cart);
+  const packagingTotal = calculatePackagingTotal(cart);
   const estimatedFee = type === "DELIVERY" && publicConfig && (publicConfig.freeDeliveryThreshold == null || subtotal < publicConfig.freeDeliveryThreshold) ? publicConfig.baseDeliveryFee : 0;
   const total = calculateOrderTotal(cart, estimatedFee);
   const fulfillment = fulfillmentSummary(type);
@@ -820,8 +826,12 @@ function Checkout() {
       },
       type,
       address: type === "DELIVERY" ? address : undefined,
-      items: cart.map((x) => ({ ...x, total: x.unitPrice * x.quantity })),
-      subtotal: calculateOrderTotal(cart),
+      items: cart.map((x) => {
+        const packaging=packagingForItem(x);
+        return { ...x, total: x.unitPrice * x.quantity, packagingBoxCount:packaging.boxCount, packagingTotal:packaging.total };
+      }),
+      subtotal,
+      packagingTotal,
       deliveryFee: estimatedFee,
       total,
       paymentMethod: payment,
@@ -1085,6 +1095,7 @@ function Checkout() {
                 <b>{money(i.quantity * i.unitPrice)}</b>
               </div>
             ))}
+            {packagingTotal > 0 && <div data-testid="checkout-packaging-total"><span>Qadoqlash</span><b>{money(packagingTotal)}</b></div>}
             <div>
               <span>{fulfillment.label}</span>
               <b>{type === "DELIVERY" ? money(estimatedFee) : fulfillment.value}</b>
@@ -1476,8 +1487,10 @@ function Track() {
           {order.items.map((i) => (
             <p key={i.id}>
               {i.quantity} × {i.name}
+              {(i.packagingBoxCount||0)>0 && <small> · {i.packagingBoxCount} quti</small>}
             </p>
           ))}
+          {(order.packagingTotal||0)>0&&<p><span>Qadoqlash</span> <b>{money(order.packagingTotal||0)}</b></p>}
           <b>{money(order.total)}</b>
           {order.type === "DELIVERY" && (
             <p data-testid="tracking-payment-method">
@@ -2983,11 +2996,13 @@ function OrderDetail() {
                     {i.quantity} × {i.name}
                     <small>
                       {i.modifierNames.join(", ")} {i.instructions}
+                      {(i.packagingBoxCount||0)>0&&` · ${i.packagingBoxCount} quti`}
                     </small>
                   </span>
                   <b>{money(i.total)}</b>
                 </div>
               ))}
+              {(order.packagingTotal||0)>0&&<div className="row"><span>Qadoqlash</span><b>{money(order.packagingTotal||0)}</b></div>}
               <div className="row total">
                 <span>Jami</span>
                 <b>{money(order.total)}</b>

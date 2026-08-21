@@ -29,9 +29,15 @@ const order = {
     modifierIds: ["sauce"],
     modifierNames: ["Tampered modifier"],
     instructions: "Separate sauce",
+    packagingRequired: true,
+    packagingUnitPrice: 1,
+    packagingCapacity: 1,
+    packagingBoxCount: 2,
+    packagingTotal: 2,
     total: 2,
   }],
   subtotal: 2,
+  packagingTotal: 2,
   deliveryFee: 0,
   total: 2,
   number: "CLIENT-NUMBER",
@@ -60,6 +66,9 @@ describe("public order payload", () => {
     expect(payload).not.toHaveProperty("total");
     expect(payload.items[0]).not.toHaveProperty("unitPrice");
     expect(payload.items[0]).not.toHaveProperty("total");
+    expect(payload).not.toHaveProperty("packagingTotal");
+    expect(payload.items[0]).not.toHaveProperty("packagingUnitPrice");
+    expect(payload.items[0]).not.toHaveProperty("packagingTotal");
     expect(payload.address).not.toHaveProperty("deliveryDistanceKm");
     expect(payload.address).not.toHaveProperty("deliveryZoneResult");
   });

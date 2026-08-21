@@ -82,6 +82,9 @@ export const menuItems: MenuItem[] = [
     price: 68000,
     image: "🔥",
     available: true,
+    packagingRequired: false,
+    packagingUnitPrice: 0,
+    packagingCapacity: null,
     modifiers: [
       { id: "spicy", name: "Achchiq", price: 0 },
       { id: "sauce", name: "Qo‘shimcha sous", price: 5000 },
@@ -95,6 +98,9 @@ export const menuItems: MenuItem[] = [
     price: 42000,
     image: "🥩",
     available: true,
+    packagingRequired: false,
+    packagingUnitPrice: 0,
+    packagingCapacity: null,
   },
   {
     id: "plov",
@@ -104,6 +110,9 @@ export const menuItems: MenuItem[] = [
     price: 48000,
     image: "🍚",
     available: true,
+    packagingRequired: false,
+    packagingUnitPrice: 0,
+    packagingCapacity: null,
   },
   {
     id: "salad",
@@ -113,6 +122,9 @@ export const menuItems: MenuItem[] = [
     price: 32000,
     image: "🥗",
     available: true,
+    packagingRequired: false,
+    packagingUnitPrice: 0,
+    packagingCapacity: null,
   },
   {
     id: "ayran",
@@ -122,6 +134,9 @@ export const menuItems: MenuItem[] = [
     price: 12000,
     image: "🥛",
     available: true,
+    packagingRequired: false,
+    packagingUnitPrice: 0,
+    packagingCapacity: null,
   },
 ];
 const ago = (minutes: number) =>
