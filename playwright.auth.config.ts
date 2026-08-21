@@ -54,7 +54,7 @@ assertLocalSupabaseHost(webServerEnv.VITE_SUPABASE_URL);
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["auth-local.spec.ts", "customer-otp.spec.ts", "checkout-idempotency.spec.ts", "live-restaurant-board.spec.ts", "order-history.spec.ts", "driver-ledger.spec.ts", "driver-lifecycle-auth.spec.ts", "restaurant-dispatch-auth.spec.ts", "decline-reassignment-auth.spec.ts", "customer-realtime-tracking.spec.ts", "restaurant-realtime.spec.ts", "driver-standby-and-arrival-auth.spec.ts", "multi-order-batching-auth.spec.ts", "driver-operational-ux-auth.spec.ts", "full-operational-validation-auth.spec.ts", "restaurant-sound-alert-auth.spec.ts", "driver-sound-alert-auth.spec.ts", "packaging-pricing-auth.spec.ts"],
+  testMatch: ["auth-local.spec.ts", "customer-otp.spec.ts", "checkout-idempotency.spec.ts", "live-restaurant-board.spec.ts", "order-history.spec.ts", "driver-ledger.spec.ts", "driver-lifecycle-auth.spec.ts", "restaurant-dispatch-auth.spec.ts", "decline-reassignment-auth.spec.ts", "customer-realtime-tracking.spec.ts", "restaurant-realtime.spec.ts", "driver-standby-and-arrival-auth.spec.ts", "multi-order-batching-auth.spec.ts", "driver-operational-ux-auth.spec.ts", "full-operational-validation-auth.spec.ts", "restaurant-sound-alert-auth.spec.ts", "driver-sound-alert-auth.spec.ts", "packaging-pricing-auth.spec.ts", "owner-menu-manager-auth.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,

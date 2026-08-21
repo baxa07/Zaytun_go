@@ -7,7 +7,7 @@ select lives_ok($$select public.assert_transition('NEW','CONFIRMED')$$,'legal tr
 select throws_ok($$select public.assert_transition('NEW','DELIVERED')$$,'23514',null,'illegal transition rejected');
 select throws_ok($$select public.create_order('{"customer":{"name":"A","primaryPhone":"+998901234567"},"type":"DELIVERY","paymentMethod":"CASH","items":[{"menuItemId":"plov","quantity":1,"modifierIds":[]}]}'::jsonb)$$,'22023',null,'incomplete delivery rejected');
 select lives_ok($$select public.create_order('{"customer":{"name":"A","primaryPhone":"+998901234567"},"type":"PICKUP","paymentMethod":"CASH","items":[{"menuItemId":"plov","quantity":2,"modifierIds":[]}]}'::jsonb)$$,'pickup without address accepted');
-select is((select total from orders order by created_at desc limit 1),96000,'total calculated from menu in database');
+select is((select total from orders order by created_at desc limit 1),102000,'total and packaging calculated from menu in database');
 select is((select count(*)::integer from order_events where order_id=(select id from orders order by created_at desc limit 1)),1,'creation event added');
 select is((select count(*)::integer from pg_policies where schemaname='public' and tablename='orders' and policyname='order_read'),1,'staff/driver orders RLS policy exists');
 select is((select count(*)::integer from pg_policies where schemaname='public' and tablename='orders' and policyname='customer_own_order_read'),1,'additive customer-own orders RLS policy exists');

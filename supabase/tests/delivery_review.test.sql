@@ -92,7 +92,7 @@ select is((select count(*)::integer from public.customer_addresses where order_i
 
 -- integrity: items, pricing, payment, driver untouched by address revision
 select is((select subtotal from public.orders where id='70000000-0000-4000-8000-000000000004'),144000,'subtotal unchanged by address revision');
-select is((select total from public.orders where id='70000000-0000-4000-8000-000000000004'),154000,'total reflects the recalculated delivery fee (subtotal below the free-delivery threshold)');
+select is((select total from public.orders where id='70000000-0000-4000-8000-000000000004'),163000,'total reflects authoritative packaging and recalculated delivery fee');
 select is((select count(*)::integer from public.order_items where order_id='70000000-0000-4000-8000-000000000004'),1,'item count unchanged by address revision');
 select is((select payment_method::text from public.orders where id='70000000-0000-4000-8000-000000000004'),'CASH','payment method unchanged by address revision');
 select is((select assigned_driver_id from public.orders where id='70000000-0000-4000-8000-000000000004'),null,'no driver assigned by address revision');

@@ -5,7 +5,9 @@ import type {
   Driver,
   DriverAssignment,
   MenuCategory,
+  MenuAuditEntry,
   MenuItem,
+  MenuItemDraft,
   Order,
   OrderEvent,
   DriverLedgerEntry,
@@ -26,6 +28,9 @@ import { createUuid } from "./uuid";
 export interface MenuRepository {
   getCategories(): Promise<MenuCategory[]>;
   getItems(): Promise<MenuItem[]>;
+  ownerUpdateMenuItem(id:string,expectedUpdatedAt:string,patch:Partial<MenuItemDraft>):Promise<MenuItem>;
+  ownerCreateMenuItem(item:MenuItemDraft):Promise<MenuItem>;
+  ownerListMenuAudit(limit?:number):Promise<MenuAuditEntry[]>;
 }
 export interface ConfigurationRepository { getRestaurantConfig():Promise<RestaurantConfig> }
 export interface OrderRepository {
@@ -380,6 +385,7 @@ class LocalStore
   // COMPLETED/FAILED/RETURNED/CANCELLED terminal outcomes -- that gap
   // predates this phase and is unrelated to decline/reassignment.
   private assignments: LocalAssignment[];
+  private menuAudit: MenuAuditEntry[]=[];
   constructor() {
     try {
       this.orders =
@@ -412,6 +418,23 @@ class LocalStore
   async getItems() {
     return menuItems;
   }
+  async ownerUpdateMenuItem(id:string,_expectedUpdatedAt:string,patch:Partial<MenuItemDraft>){
+    const index=menuItems.findIndex(item=>item.id===id);
+    if(index<0)throw new Error('Mahsulot topilmadi');
+    const before=structuredClone(menuItems[index]);
+    const updated={...menuItems[index],...patch,updatedAt:new Date().toISOString()};
+    if(!updated.packagingRequired){updated.packagingUnitPrice=0;updated.packagingCapacity=null}
+    menuItems[index]=updated;
+    this.menuAudit.unshift({id:createUuid(),productId:id,actorUserId:'local-owner',action:before.price!==updated.price?'PRICE_CHANGED':before.available!==updated.available?'AVAILABILITY_CHANGED':before.packagingRequired!==updated.packagingRequired||before.packagingUnitPrice!==updated.packagingUnitPrice||before.packagingCapacity!==updated.packagingCapacity?'PACKAGING_CHANGED':'PRODUCT_UPDATED',beforeState:before as unknown as Record<string,unknown>,afterState:updated as unknown as Record<string,unknown>,occurredAt:new Date().toISOString()});
+    return structuredClone(updated);
+  }
+  async ownerCreateMenuItem(item:MenuItemDraft){
+    const created:MenuItem={...item,id:`${item.categoryId}-${createUuid().replaceAll('-','').slice(0,12)}`,updatedAt:new Date().toISOString()};
+    menuItems.push(created);
+    this.menuAudit.unshift({id:createUuid(),productId:created.id,actorUserId:'local-owner',action:'PRODUCT_CREATED',afterState:created as unknown as Record<string,unknown>,occurredAt:new Date().toISOString()});
+    return structuredClone(created);
+  }
+  async ownerListMenuAudit(limit=30){return structuredClone(this.menuAudit.slice(0,limit))}
   async getRestaurantConfig(){return structuredClone(developmentRestaurantConfig)}
   async list() {
     return structuredClone(this.orders.map((o) => ({ ...o, assignmentHistory: this.assignmentHistoryFor(o.id) })));

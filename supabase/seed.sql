@@ -2,12 +2,14 @@
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data,is_super_admin,confirmation_token,recovery_token,email_change_token_new,email_change,phone_change_token,email_change_token_current,reauthentication_token) values
 ('00000000-0000-0000-0000-000000000000','10000000-0000-0000-0000-000000000001','authenticated','authenticated','restaurant@zaytun.local',crypt('zaytun-local-2026',gen_salt('bf')),now(),now(),now(),'{"provider":"email","providers":["email"]}','{}',false,'','','','','','',''),
 ('00000000-0000-0000-0000-000000000000','10000000-0000-0000-0000-000000000002','authenticated','authenticated','dispatcher@zaytun.local',crypt('zaytun-local-2026',gen_salt('bf')),now(),now(),now(),'{"provider":"email","providers":["email"]}','{}',false,'','','','','','',''),
-('00000000-0000-0000-0000-000000000000','10000000-0000-0000-0000-000000000003','authenticated','authenticated','driver@zaytun.local',crypt('zaytun-local-2026',gen_salt('bf')),now(),now(),now(),'{"provider":"email","providers":["email"]}','{}',false,'','','','','','','');
+('00000000-0000-0000-0000-000000000000','10000000-0000-0000-0000-000000000003','authenticated','authenticated','driver@zaytun.local',crypt('zaytun-local-2026',gen_salt('bf')),now(),now(),now(),'{"provider":"email","providers":["email"]}','{}',false,'','','','','','',''),
+('00000000-0000-0000-0000-000000000000','10000000-0000-0000-0000-000000000005','authenticated','authenticated','owner@zaytun.local',crypt('zaytun-local-2026',gen_salt('bf')),now(),now(),now(),'{"provider":"email","providers":["email"]}','{}',false,'','','','','','','');
 insert into auth.identities(id,user_id,identity_data,provider,provider_id,last_sign_in_at,created_at,updated_at) select id,id,jsonb_build_object('sub',id::text,'email',email),'email',id::text,now(),now(),now() from auth.users where email like '%@zaytun.local';
 insert into public.profiles(id,role,display_name,phone) values
 ('10000000-0000-0000-0000-000000000001','RESTAURANT','Zaytun oshxonasi','+998 79 000 00 01'),
 ('10000000-0000-0000-0000-000000000002','DISPATCHER','Zaytun dispatcher','+998 79 000 00 02'),
-('10000000-0000-0000-0000-000000000003','DRIVER','Aziz Bekov','+998 93 555 12 12');
+('10000000-0000-0000-0000-000000000003','DRIVER','Aziz Bekov','+998 93 555 12 12'),
+('10000000-0000-0000-0000-000000000005','OWNER','Mahalliy Owner',null);
 insert into public.drivers(id,phone,vehicle,availability,shift_status,dispatch_status) values('10000000-0000-0000-0000-000000000003','+998 93 555 12 12','Chevrolet Spark · 01 A 777 AA','AVAILABLE','ON_SHIFT','ACTIVE');
 insert into public.driver_branches(driver_id,branch_id) select '10000000-0000-0000-0000-000000000003',id from public.branches where slug='zaytun-kafe';
 -- LOCAL-ONLY phone+password auth fixture for driver-login testing. Not a real

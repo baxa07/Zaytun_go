@@ -11,7 +11,9 @@ import type {
   DriverStandbyNotice,
   PickupBatchContext,
   MenuCategory,
+  MenuAuditEntry,
   MenuItem,
+  MenuItemDraft,
   RestaurantConfig,
   Order,
   OrderEvent,
@@ -61,6 +63,14 @@ const fail = (error: { message: string; code?: string } | null) => {
   throw new Error(structured ? customerMessage.trim() : "Xizmat bilan bog‘lanib bo‘lmadi. Internetni tekshirib, qayta urinib ko‘ring.");
 };
 type Row = Record<string, unknown>;
+const mapMenuItem=(r:Row):MenuItem=>({
+  id:String(r.id),categoryId:String(r.category_id),name:String(r.name),description:String(r.description||''),
+  price:Number(r.price),image:String(r.image||''),available:Boolean(r.available),
+  packagingRequired:Boolean(r.packaging_required),packagingUnitPrice:Number(r.packaging_unit_price||0),
+  packagingCapacity:r.packaging_capacity==null?null:Number(r.packaging_capacity),
+  updatedAt:r.updated_at?String(r.updated_at):undefined,
+  modifiers:Array.isArray(r.menu_modifiers)?(r.menu_modifiers as Row[]).map(m=>({id:String(m.id),name:String(m.name),price:Number(m.price)})):undefined,
+});
 const mapOrder = (r: Row): Order => {
   const address = Array.isArray(r.customer_addresses)
     ? (r.customer_addresses[0] as Row | undefined)
@@ -294,23 +304,15 @@ export class SupabaseStore {
       .select("*,menu_modifiers(*)")
       .order("sort_order");
     fail(error);
-    return (data || []).map((r) => ({
-      id: r.id,
-      categoryId: r.category_id,
-      name: r.name,
-      description: r.description,
-      price: r.price,
-      image: r.image,
-      available: r.available,
-      packagingRequired: Boolean(r.packaging_required),
-      packagingUnitPrice: Number(r.packaging_unit_price || 0),
-      packagingCapacity: r.packaging_capacity == null ? null : Number(r.packaging_capacity),
-      modifiers: r.menu_modifiers?.map((m: Row) => ({
-        id: String(m.id),
-        name: String(m.name),
-        price: Number(m.price),
-      })),
-    })) as MenuItem[];
+    return (data || []).map((r) => mapMenuItem(r as Row));
+  }
+  async ownerUpdateMenuItem(id:string,expectedUpdatedAt:string,patch:Partial<MenuItemDraft>){
+    const{data,error}=await supabase!.rpc('owner_update_menu_item',{p_product_id:id,p_expected_updated_at:expectedUpdatedAt,p_patch:patch});fail(error);return mapMenuItem(data as Row)
+  }
+  async ownerCreateMenuItem(item:MenuItemDraft){const{data,error}=await supabase!.rpc('owner_create_menu_item',{p_item:item});fail(error);return mapMenuItem(data as Row)}
+  async ownerListMenuAudit(limit=30){
+    const{data,error}=await supabase!.from('menu_audit_log').select('*,profiles:actor_user_id(display_name)').order('occurred_at',{ascending:false}).limit(limit);fail(error);
+    return(data||[]).map((r:Row)=>({id:String(r.id),productId:String(r.product_id),actorUserId:String(r.actor_user_id),actorName:(r.profiles as Row|undefined)?.display_name?String((r.profiles as Row).display_name):undefined,action:r.action as MenuAuditEntry['action'],beforeState:(r.before_state as Record<string,unknown>|null)||undefined,afterState:r.after_state as Record<string,unknown>,occurredAt:String(r.occurred_at)}));
   }
   async list(surface?: "restaurant" | "driver") {
     // H0: the live restaurant board is an operational workspace, not an

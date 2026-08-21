@@ -25,7 +25,9 @@ import type {
   DriverStandbyNotice,
   PickupBatchContext,
   MenuCategory,
+  MenuAuditEntry,
   MenuItem,
+  MenuItemDraft,
   Order,
   OrderFeedbackSubmission,
   OrderHistoryFilters,
@@ -37,7 +39,7 @@ import type {
 import { supabase, supabaseConfigured } from "./supabase";
 import { normalizeUzbekPhone } from "./phone";
 
-export type AppRole = "RESTAURANT" | "DISPATCHER" | "DRIVER";
+export type AppRole = "OWNER" | "RESTAURANT" | "DISPATCHER" | "DRIVER";
 export type OperationalSurface = "restaurant" | "driver";
 
 export const operationalSurfaceForPath = (pathname: string): OperationalSurface | null =>
@@ -49,7 +51,7 @@ export const operationalSurfaceForPath = (pathname: string): OperationalSurface 
 
 export const roleCanAccess = (role: AppRole | null, surface: OperationalSurface) =>
   surface === "restaurant"
-    ? role === "RESTAURANT" || role === "DISPATCHER"
+    ? role === "OWNER" || role === "RESTAURANT" || role === "DISPATCHER"
     : role === "DRIVER";
 
 // A profile-less authenticated Supabase session must NOT automatically
@@ -191,6 +193,10 @@ type State = {
   addToCart: (item: CartItem) => void;
   updateQuantity: (id: string, delta: number) => void;
   clearCart: () => void;
+  refreshMenu:()=>Promise<void>;
+  ownerUpdateMenuItem:(id:string,expectedUpdatedAt:string,patch:Partial<MenuItemDraft>)=>Promise<MenuItem>;
+  ownerCreateMenuItem:(item:MenuItemDraft)=>Promise<MenuItem>;
+  ownerListMenuAudit:(limit?:number)=>Promise<MenuAuditEntry[]>;
   submitOrder: (order: Order) => Promise<Order>;
   transition: (id: string, to: OrderStatus, actor: ActorType, reason?: string) => Promise<void>;
   transitionPending: (id: string) => boolean;
@@ -411,6 +417,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshInFlight.current = null;
     }
   }, [fetchOnce]);
+  const refreshMenu=useCallback(async()=>{
+    const[nextCategories,nextItems]=await Promise.all([store.getCategories(),store.getItems()]);
+    setCategories(nextCategories);setMenuItems(nextItems);
+  },[]);
 
   useEffect(() => {
     if (!supabaseConfigured) {
@@ -652,6 +662,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addToCart: (item) => setCart((current) => addCartLine(current,item,publicConfig?.maximumItemQuantity||50)),
     updateQuantity: (id, delta) => setCart((current) => current.map((entry) => entry.id === id ? { ...entry, quantity: Math.min(entry.quantity + delta,publicConfig?.maximumItemQuantity||50) } : entry).filter((entry) => entry.quantity > 0)),
     clearCart: () => setCart([]),
+    refreshMenu,
+    ownerUpdateMenuItem:async(id,expectedUpdatedAt,patch)=>{const updated=await store.ownerUpdateMenuItem(id,expectedUpdatedAt,patch);await refreshMenu();return updated},
+    ownerCreateMenuItem:async(item)=>{const created=await store.ownerCreateMenuItem(item);await refreshMenu();return created},
+    ownerListMenuAudit:(limit)=>store.ownerListMenuAudit(limit),
     submitOrder: async (order) => {
       const mode = resolveOrderSubmissionMode(Boolean(publicConfig?.customerAuthRequired), isCustomerAuthenticated);
       if (mode === "REQUIRES_CUSTOMER_AUTH") throw new CustomerAuthRequiredError();
@@ -705,7 +719,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // "not in store, empty" fallback listMyStandbyNotices/listMyBranchIds
     // already use.
     listMyPickupBatchContext: async () => ("listMyPickupBatchContext" in store ? store.listMyPickupBatchContext() : []),
-  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadMyOrders, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, requestTelegramLink, role, runOperation, session, submitOrderFeedback, withOrderLock]);
+  }), [applySession, authError, authReady, cart, categories, drivers, isCustomerAuthenticated, loadMyOrders, loadTrackedOrder, loaded, menuItems, operationalError, orders, pendingTransitionState, profileDisplayName, publicConfig, publicDataError, publicDataReady, refresh, refreshMenu, requestTelegramLink, role, runOperation, session, submitOrderFeedback, withOrderLock]);
 
   return <C.Provider value={value}>{children}</C.Provider>;
 }
