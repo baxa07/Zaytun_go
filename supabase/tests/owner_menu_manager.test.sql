@@ -6,6 +6,9 @@ select ok(not has_function_privilege('anon','public.owner_update_menu_item(text,
 select ok(not has_table_privilege('authenticated','public.menu_items','UPDATE'),'browser roles have no direct menu update privilege');
 select ok(not has_table_privilege('authenticated','public.menu_items','INSERT'),'browser roles have no direct menu insert privilege');
 select ok(not has_table_privilege('authenticated','public.menu_audit_log','INSERT'),'browser cannot forge audit rows');
+select ok(not has_table_privilege('authenticated','public.menu_audit_log','TRUNCATE'),'browser cannot truncate immutable audit rows');
+select ok(not has_table_privilege('anon','public.menu_audit_log','SELECT'),'anonymous cannot read menu audit rows');
+select ok(has_table_privilege('authenticated','public.menu_audit_log','SELECT'),'authenticated OWNER may read audit rows through RLS');
 
 -- A pre-change order proves snapshots are not rewritten by later menu edits.
 select public.create_public_order('{"id":"8b100000-0000-4000-8000-000000000001","customer":{"name":"Snapshot","primaryPhone":"+998900000099"},"type":"PICKUP","paymentMethod":"CASH","items":[{"menuItemId":"chicken","quantity":1,"modifierIds":[]}]}'::jsonb);
