@@ -246,7 +246,7 @@ function Shell({
   children: React.ReactNode;
   surface?: "customer" | "staff" | "driver";
 }) {
-  const { cart } = useApp();
+  const { cart, role } = useApp();
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   return (
     <div className={`app ${surface}`}>
@@ -257,7 +257,7 @@ function Shell({
             ZAYTUN <b>GO</b>
           </span>
         </Link>
-        <nav className={surface === "customer" ? "customer-nav" : "operational-nav"} data-testid={surface === "customer" ? "customer-bottom-nav" : undefined}>
+        <nav className={surface === "customer" ? "customer-nav" : `operational-nav${role === "OWNER" ? " owner-navigation" : ""}`} data-testid={surface === "customer" ? "customer-bottom-nav" : "operational-navigation"}>
           {surface === "customer" ? (
             <>
               <NavLink to="/menu"><CustomerNavIcon kind="menu"/><span>Menyu</span></NavLink>
@@ -269,6 +269,7 @@ function Shell({
               <NavLink to="/menu">Buyurtma</NavLink>
               <NavLink to="/restaurant">Restoran</NavLink>
               <NavLink to="/driver">Haydovchi</NavLink>
+              {role === "OWNER" && <NavLink to="/owner/menu">Menu boshqaruvi</NavLink>}
             </>
           )}
         </nav>

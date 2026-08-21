@@ -162,6 +162,7 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     await page.getByTestId("otp-verify").click();
 
     await expect(page).toHaveURL(/\/confirmation\//, { timeout: 15000 });
+    await expect(page.getByRole("link", { name: "Menu boshqaruvi" })).toHaveCount(0);
     await page.screenshot({ path: "qa/screenshots/22-verified-auto-submit-390x844.png", fullPage: true });
     const orderId = page.url().split("/confirmation/")[1];
     const order = queryOrder(orderId);

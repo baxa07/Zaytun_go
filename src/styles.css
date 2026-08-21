@@ -1862,6 +1862,16 @@ h2 {
     display: block;
     flex: 0 0 auto;
   }
+  .operational-nav.owner-navigation {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .operational-nav.owner-navigation a {
+    min-width: 0;
+    line-height: 1.15;
+  }
+  .auth-signout {
+    bottom: calc(82px + env(safe-area-inset-bottom));
+  }
   .home {
     min-height: auto;
     display: flex;

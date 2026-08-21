@@ -2,7 +2,22 @@ import{execFileSync}from'node:child_process';
 import{expect,test,type Page}from'@playwright/test';
 const password='zaytun-local-2026';
 const psql=(sql:string)=>execFileSync('psql',['postgresql://postgres:postgres@127.0.0.1:54322/postgres','-v','ON_ERROR_STOP=1','-Atc',sql],{encoding:'utf8'}).trim();
-async function signIn(page:Page,email:string){await page.getByLabel('Telefon yoki email').fill(email);await page.getByLabel('Parol').fill(password);const submit=page.getByRole('button',{name:'Kirish'});await expect(submit).toBeEnabled();await submit.click()}
+async function signIn(page:Page,email:string){await page.getByLabel('Telefon yoki email').fill(email);await page.getByLabel('Parol').fill(password);const submit=page.getByRole('button',{name:'Kirish'});await expect(submit).toBeEnabled({timeout:15000});await submit.click()}
+
+test('OWNER navigation reaches Menu boshqaruvi on desktop and mobile, while other roles never see it',async({browser})=>{
+  test.setTimeout(60000);
+  const anonymousContext=await browser.newContext();const anonymous=await anonymousContext.newPage();await anonymous.goto('/');await expect(anonymous.getByRole('link',{name:'Menu boshqaruvi'})).toHaveCount(0);await anonymousContext.close();
+
+  const restaurantContext=await browser.newContext();const restaurant=await restaurantContext.newPage();await restaurant.goto('/restaurant');await signIn(restaurant,'restaurant@zaytun.local');await expect(restaurant.getByRole('button',{name:'Chiqish'})).toBeVisible();await expect(restaurant.getByRole('link',{name:'Menu boshqaruvi'})).toHaveCount(0);await restaurantContext.close();
+
+  const dispatcherContext=await browser.newContext();const dispatcher=await dispatcherContext.newPage();await dispatcher.goto('/restaurant');await signIn(dispatcher,'dispatcher@zaytun.local');await expect(dispatcher.getByRole('button',{name:'Chiqish'})).toBeVisible();await expect(dispatcher.getByRole('link',{name:'Menu boshqaruvi'})).toHaveCount(0);await dispatcherContext.close();
+
+  const driverContext=await browser.newContext();const driver=await driverContext.newPage();await driver.goto('/driver');await signIn(driver,'driver@zaytun.local');await expect(driver.getByRole('button',{name:'Chiqish'})).toBeVisible();await expect(driver.getByRole('link',{name:'Menu boshqaruvi'})).toHaveCount(0);await driverContext.close();
+
+  const desktopContext=await browser.newContext({viewport:{width:1280,height:800}});const desktop=await desktopContext.newPage();await desktop.goto('/restaurant');await signIn(desktop,'owner@zaytun.local');const desktopNav=desktop.getByTestId('operational-navigation');const desktopOwnerLink=desktopNav.getByRole('link',{name:'Menu boshqaruvi'});await expect(desktopOwnerLink).toBeVisible();expect(await desktop.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await desktopOwnerLink.click();await expect(desktop).toHaveURL(/\/owner\/menu$/);await expect(desktopOwnerLink).toHaveClass(/active/);await expect(desktop.getByRole('link',{name:'Restoran'})).toBeVisible();await desktopContext.close();
+
+  const mobileContext=await browser.newContext({viewport:{width:390,height:844}});const mobile=await mobileContext.newPage();await mobile.goto('/restaurant');await signIn(mobile,'owner@zaytun.local');const mobileNav=mobile.getByTestId('operational-navigation');await expect(mobileNav.getByRole('link')).toHaveCount(4);const mobileOwnerLink=mobileNav.getByRole('link',{name:'Menu boshqaruvi'});await expect(mobileOwnerLink).toBeVisible();expect(await mobile.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);const box=await mobileNav.boundingBox();expect(box).not.toBeNull();expect(box!.x).toBeGreaterThanOrEqual(0);expect(box!.x+box!.width).toBeLessThanOrEqual(390);expect(box!.y+box!.height).toBeLessThanOrEqual(844);await mobileOwnerLink.click();await expect(mobile).toHaveURL(/\/owner\/menu$/);await expect(mobileOwnerLink).toHaveClass(/active/);await mobileContext.close();
+});
 
 test('OWNER manages menu quickly on mobile while non-owner staff is denied',async({browser})=>{
   const deniedContext=await browser.newContext();const denied=await deniedContext.newPage();
