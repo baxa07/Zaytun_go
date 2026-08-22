@@ -28,6 +28,7 @@ import type {
   MenuAuditEntry,
   MenuItem,
   MenuItemDraft,
+  MenuImageUpload,
   Order,
   OrderFeedbackSubmission,
   OrderHistoryFilters,
@@ -197,6 +198,8 @@ type State = {
   ownerUpdateMenuItem:(id:string,expectedUpdatedAt:string,patch:Partial<MenuItemDraft>)=>Promise<MenuItem>;
   ownerCreateMenuItem:(item:MenuItemDraft)=>Promise<MenuItem>;
   ownerListMenuAudit:(limit?:number)=>Promise<MenuAuditEntry[]>;
+  ownerUploadMenuImage:(file:File)=>Promise<MenuImageUpload>;
+  ownerRemoveMenuImage:(path:string)=>Promise<void>;
   submitOrder: (order: Order) => Promise<Order>;
   transition: (id: string, to: OrderStatus, actor: ActorType, reason?: string) => Promise<void>;
   transitionPending: (id: string) => boolean;
@@ -666,6 +669,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ownerUpdateMenuItem:async(id,expectedUpdatedAt,patch)=>{const updated=await store.ownerUpdateMenuItem(id,expectedUpdatedAt,patch);await refreshMenu();return updated},
     ownerCreateMenuItem:async(item)=>{const created=await store.ownerCreateMenuItem(item);await refreshMenu();return created},
     ownerListMenuAudit:(limit)=>store.ownerListMenuAudit(limit),
+    ownerUploadMenuImage:(file)=>store.ownerUploadMenuImage(file),
+    ownerRemoveMenuImage:(path)=>store.ownerRemoveMenuImage(path),
     submitOrder: async (order) => {
       const mode = resolveOrderSubmissionMode(Boolean(publicConfig?.customerAuthRequired), isCustomerAuthenticated);
       if (mode === "REQUIRES_CUSTOMER_AUTH") throw new CustomerAuthRequiredError();

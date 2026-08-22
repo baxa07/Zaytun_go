@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 export function isHttpsImageUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password;
+    const localDevelopmentImage=url.protocol==='http:'&&(url.hostname==='127.0.0.1'||url.hostname==='localhost');
+    return (url.protocol === "https:"||localDevelopmentImage) && !url.username && !url.password;
   } catch {
     return false;
   }

@@ -14,6 +14,7 @@ import type {
   MenuAuditEntry,
   MenuItem,
   MenuItemDraft,
+  MenuImageUpload,
   RestaurantConfig,
   Order,
   OrderEvent,
@@ -29,6 +30,7 @@ import type {
   DriverLedgerEntry,
   OrderFeedbackSubmission,
 } from "./domain";
+import {MENU_IMAGE_MIME_EXTENSIONS,validateMenuImageFile} from "./domain";
 
 // Shared with the Track page (App.tsx): the realtime broadcast topic and
 // the ?token= deep-link upgrade path both need direct read/write access
@@ -310,6 +312,16 @@ export class SupabaseStore {
     const{data,error}=await supabase!.rpc('owner_update_menu_item',{p_product_id:id,p_expected_updated_at:expectedUpdatedAt,p_patch:patch});fail(error);return mapMenuItem(data as Row)
   }
   async ownerCreateMenuItem(item:MenuItemDraft){const{data,error}=await supabase!.rpc('owner_create_menu_item',{p_item:item});fail(error);return mapMenuItem(data as Row)}
+  async ownerUploadMenuImage(file:File):Promise<MenuImageUpload>{
+    const validationError=validateMenuImageFile(file);if(validationError)throw new Error(validationError);
+    const{data:{user},error:userError}=await supabase!.auth.getUser();fail(userError);if(!user)throw new Error('Rasm yuklash uchun qayta kiring.');
+    const extension=MENU_IMAGE_MIME_EXTENSIONS[file.type];
+    const path=`${user.id}/${crypto.randomUUID()}.${extension}`;
+    const{error}=await supabase!.storage.from('menu-images').upload(path,file,{contentType:file.type,cacheControl:'31536000',upsert:false});fail(error);
+    const{data}=supabase!.storage.from('menu-images').getPublicUrl(path);
+    return{url:data.publicUrl,path};
+  }
+  async ownerRemoveMenuImage(path:string){const{error}=await supabase!.storage.from('menu-images').remove([path]);fail(error)}
   async ownerListMenuAudit(limit=30){
     const{data,error}=await supabase!.from('menu_audit_log').select('*,profiles:actor_user_id(display_name)').order('occurred_at',{ascending:false}).limit(limit);fail(error);
     return(data||[]).map((r:Row)=>({id:String(r.id),productId:String(r.product_id),actorUserId:String(r.actor_user_id),actorName:(r.profiles as Row|undefined)?.display_name?String((r.profiles as Row).display_name):undefined,action:r.action as MenuAuditEntry['action'],beforeState:(r.before_state as Record<string,unknown>|null)||undefined,afterState:r.after_state as Record<string,unknown>,occurredAt:String(r.occurred_at)}));

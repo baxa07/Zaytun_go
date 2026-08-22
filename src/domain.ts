@@ -26,6 +26,17 @@ export interface MenuCategory {id:string;name:string;description:string}
 export interface MenuItemDraft extends PackagingConfig {categoryId:string;name:string;description:string;price:number;image:string;available:boolean}
 export type MenuAuditAction='PRODUCT_CREATED'|'PRODUCT_UPDATED'|'PRICE_CHANGED'|'AVAILABILITY_CHANGED'|'PACKAGING_CHANGED'
 export interface MenuAuditEntry {id:string;productId:string;actorUserId:string;actorName?:string;action:MenuAuditAction;beforeState?:Record<string,unknown>;afterState:Record<string,unknown>;occurredAt:string}
+export interface MenuImageUpload {url:string;path:string}
+export const MENU_IMAGE_MAX_BYTES=8*1024*1024
+export const MENU_IMAGE_MIME_EXTENSIONS:Readonly<Record<string,string>>={
+  'image/jpeg':'jpg','image/png':'png','image/webp':'webp',
+}
+export function validateMenuImageFile(file:Pick<File,'type'|'size'>):string|null{
+  if(!MENU_IMAGE_MIME_EXTENSIONS[file.type])return 'Faqat JPG, PNG yoki WebP rasm tanlang.'
+  if(file.size<=0)return 'Rasm fayli bo\u2018sh.'
+  if(file.size>MENU_IMAGE_MAX_BYTES)return 'Rasm hajmi 8 MB dan oshmasligi kerak.'
+  return null
+}
 export interface CartItem {id:string;menuItemId:string;name:string;unitPrice:number;quantity:number;modifierIds:string[];modifierNames:string[];instructions:string;packagingRequired?:boolean;packagingUnitPrice?:number;packagingCapacity?:number|null;packagingBoxCount?:number;packagingTotal?:number}
 export interface Cart {items:CartItem[]}
 export const cartLineMatches=(left:CartItem,right:CartItem)=>left.menuItemId===right.menuItemId&&left.modifierIds.slice().sort().join()===right.modifierIds.slice().sort().join()&&left.instructions.trim()===right.instructions.trim()

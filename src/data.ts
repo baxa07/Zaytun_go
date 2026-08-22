@@ -8,6 +8,7 @@ import type {
   MenuAuditEntry,
   MenuItem,
   MenuItemDraft,
+  MenuImageUpload,
   Order,
   OrderEvent,
   DriverLedgerEntry,
@@ -31,6 +32,8 @@ export interface MenuRepository {
   ownerUpdateMenuItem(id:string,expectedUpdatedAt:string,patch:Partial<MenuItemDraft>):Promise<MenuItem>;
   ownerCreateMenuItem(item:MenuItemDraft):Promise<MenuItem>;
   ownerListMenuAudit(limit?:number):Promise<MenuAuditEntry[]>;
+  ownerUploadMenuImage(file:File):Promise<MenuImageUpload>;
+  ownerRemoveMenuImage(path:string):Promise<void>;
 }
 export interface ConfigurationRepository { getRestaurantConfig():Promise<RestaurantConfig> }
 export interface OrderRepository {
@@ -435,6 +438,8 @@ class LocalStore
     return structuredClone(created);
   }
   async ownerListMenuAudit(limit=30){return structuredClone(this.menuAudit.slice(0,limit))}
+  async ownerUploadMenuImage(file:File){return{url:URL.createObjectURL(file),path:`local/${createUuid()}`}}
+  async ownerRemoveMenuImage(){return}
   async getRestaurantConfig(){return structuredClone(developmentRestaurantConfig)}
   async list() {
     return structuredClone(this.orders.map((o) => ({ ...o, assignmentHistory: this.assignmentHistoryFor(o.id) })));

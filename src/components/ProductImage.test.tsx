@@ -47,6 +47,7 @@ describe("ProductImage", () => {
     expect(screen.queryByText("http://example.test/raw.jpg")).toBeNull();
     expect(screen.getByLabelText(`${item.name} rasmi mavjud emas`)).toBeTruthy();
     expect(isHttpsImageUrl("https://example.test/image.jpg")).toBe(true);
+    expect(isHttpsImageUrl("http://127.0.0.1:54321/storage/v1/object/public/menu-images/test.jpg")).toBe(true);
     expect(isHttpsImageUrl("javascript:alert(1)")).toBe(false);
   });
 });
