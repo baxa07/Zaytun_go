@@ -9,6 +9,7 @@ import { expect, test } from "@playwright/test";
 const customerRoutes = ["/", "/menu", "/menu/chicken", "/cart", "/checkout", "/track/ord-new"];
 
 test.describe("customer surfaces never expose staff entry", () => {
+  test("zero curated products hides the Bestseller section",async({page})=>{await page.goto("/menu");await expect(page.getByTestId("bestseller-section")).toHaveCount(0)});
   for (const route of customerRoutes) {
     test(`no staff/driver link on ${route}`, async ({ page }) => {
       await page.goto(route);

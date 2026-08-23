@@ -74,3 +74,15 @@ test('OWNER securely uploads, previews and replaces menu images without corrupti
   await context.close();
   psql(`update menu_items set image='${original.replaceAll("'","''")}',description='${originalDescription.replaceAll("'","''")}'; delete from menu_audit_log where product_id='nacional-zhiz-file';`);
 });
+
+test('OWNER curates Bestseller and customer uses the premium card through the existing cart',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844}});const page=await context.newPage();
+  await page.goto('/owner/menu');await signIn(page,'owner@zaytun.local');await page.getByLabel('Mahsulot qidirish').fill('Жиз (филе)');
+  const ownerCard=page.getByTestId('owner-product-nacional-zhiz-file');await ownerCard.getByRole('button',{name:/Bestseller ON/}).click();await expect(page.getByRole('status')).toContainText('Bestseller yoqildi');await expect(ownerCard).toContainText('🔥 Bestseller');
+  await ownerCard.getByRole('button',{name:'Tahrirlash'}).click();await expect(page.getByTestId('owner-product-form').getByLabel('🔥 Bestseller')).toBeChecked();await page.getByRole('button',{name:'Yopish'}).click();await expect(page.locator('.owner-audit')).toContainText('Bestseller yoqildi');
+  await page.getByRole('button',{name:'Chiqish'}).click();await page.goto('/menu');const section=page.getByTestId('bestseller-section');await expect(section).toBeVisible();const featured=page.getByTestId('bestseller-nacional-zhiz-file');await expect(featured).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await featured.getByRole('button',{name:'Savatga qo‘shish'}).click();await expect(page.getByTestId('cart-pill')).toContainText('1');await featured.getByRole('button',{name:'Savatga qo‘shish'}).click();await expect(page.getByTestId('cart-pill')).toContainText('2');
+  await page.getByRole('button',{name:'Национальные блюда'}).click();await expect(page.locator('.menu-card').filter({hasText:'Жиз (филе)'})).toBeVisible();
+  await page.setViewportSize({width:1280,height:800});await page.reload();await expect(page.getByTestId('bestseller-section')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await context.close();psql("update menu_items set is_bestseller=false where id='nacional-zhiz-file'; delete from menu_audit_log where product_id='nacional-zhiz-file' and action='BESTSELLER_CHANGED'");
+});

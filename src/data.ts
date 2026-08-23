@@ -428,7 +428,7 @@ class LocalStore
     const updated={...menuItems[index],...patch,updatedAt:new Date().toISOString()};
     if(!updated.packagingRequired){updated.packagingUnitPrice=0;updated.packagingCapacity=null}
     menuItems[index]=updated;
-    this.menuAudit.unshift({id:createUuid(),productId:id,actorUserId:'local-owner',action:before.price!==updated.price?'PRICE_CHANGED':before.available!==updated.available?'AVAILABILITY_CHANGED':before.packagingRequired!==updated.packagingRequired||before.packagingUnitPrice!==updated.packagingUnitPrice||before.packagingCapacity!==updated.packagingCapacity?'PACKAGING_CHANGED':'PRODUCT_UPDATED',beforeState:before as unknown as Record<string,unknown>,afterState:updated as unknown as Record<string,unknown>,occurredAt:new Date().toISOString()});
+    this.menuAudit.unshift({id:createUuid(),productId:id,actorUserId:'local-owner',action:before.price!==updated.price?'PRICE_CHANGED':before.available!==updated.available?'AVAILABILITY_CHANGED':before.isBestseller!==updated.isBestseller?'BESTSELLER_CHANGED':before.packagingRequired!==updated.packagingRequired||before.packagingUnitPrice!==updated.packagingUnitPrice||before.packagingCapacity!==updated.packagingCapacity?'PACKAGING_CHANGED':'PRODUCT_UPDATED',beforeState:before as unknown as Record<string,unknown>,afterState:updated as unknown as Record<string,unknown>,occurredAt:new Date().toISOString()});
     return structuredClone(updated);
   }
   async ownerCreateMenuItem(item:MenuItemDraft){

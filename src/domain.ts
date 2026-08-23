@@ -21,10 +21,10 @@ export const resolveOrderSubmissionMode=(customerAuthRequired:boolean,hasCustome
 
 export interface MenuModifier {id:string;name:string;price:number}
 export interface PackagingConfig {packagingRequired:boolean;packagingUnitPrice:number;packagingCapacity:number|null}
-export interface MenuItem extends PackagingConfig {id:string;categoryId:string;name:string;description:string;price:number;image:string;modifiers?:MenuModifier[];available:boolean;updatedAt?:string}
+export interface MenuItem extends PackagingConfig {id:string;categoryId:string;name:string;description:string;price:number;image:string;modifiers?:MenuModifier[];available:boolean;isBestseller?:boolean;updatedAt?:string}
 export interface MenuCategory {id:string;name:string;description:string}
-export interface MenuItemDraft extends PackagingConfig {categoryId:string;name:string;description:string;price:number;image:string;available:boolean}
-export type MenuAuditAction='PRODUCT_CREATED'|'PRODUCT_UPDATED'|'PRICE_CHANGED'|'AVAILABILITY_CHANGED'|'PACKAGING_CHANGED'
+export interface MenuItemDraft extends PackagingConfig {categoryId:string;name:string;description:string;price:number;image:string;available:boolean;isBestseller:boolean}
+export type MenuAuditAction='PRODUCT_CREATED'|'PRODUCT_UPDATED'|'PRICE_CHANGED'|'AVAILABILITY_CHANGED'|'PACKAGING_CHANGED'|'BESTSELLER_CHANGED'
 export interface MenuAuditEntry {id:string;productId:string;actorUserId:string;actorName?:string;action:MenuAuditAction;beforeState?:Record<string,unknown>;afterState:Record<string,unknown>;occurredAt:string}
 export interface MenuImageUpload {url:string;path:string}
 export const MENU_IMAGE_MAX_BYTES=8*1024*1024
@@ -37,6 +37,8 @@ export function validateMenuImageFile(file:Pick<File,'type'|'size'>):string|null
   if(file.size>MENU_IMAGE_MAX_BYTES)return 'Rasm hajmi 8 MB dan oshmasligi kerak.'
   return null
 }
+export const BESTSELLER_FEATURE_LIMIT=4
+export const featuredMenuItems=(items:MenuItem[])=>items.filter(item=>item.available&&item.isBestseller).slice(0,BESTSELLER_FEATURE_LIMIT)
 export interface CartItem {id:string;menuItemId:string;name:string;unitPrice:number;quantity:number;modifierIds:string[];modifierNames:string[];instructions:string;packagingRequired?:boolean;packagingUnitPrice?:number;packagingCapacity?:number|null;packagingBoxCount?:number;packagingTotal?:number}
 export interface Cart {items:CartItem[]}
 export const cartLineMatches=(left:CartItem,right:CartItem)=>left.menuItemId===right.menuItemId&&left.modifierIds.slice().sort().join()===right.modifierIds.slice().sort().join()&&left.instructions.trim()===right.instructions.trim()

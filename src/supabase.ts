@@ -67,7 +67,7 @@ const fail = (error: { message: string; code?: string } | null) => {
 type Row = Record<string, unknown>;
 const mapMenuItem=(r:Row):MenuItem=>({
   id:String(r.id),categoryId:String(r.category_id),name:String(r.name),description:String(r.description||''),
-  price:Number(r.price),image:String(r.image||''),available:Boolean(r.available),
+  price:Number(r.price),image:String(r.image||''),available:Boolean(r.available),isBestseller:Boolean(r.is_bestseller),
   packagingRequired:Boolean(r.packaging_required),packagingUnitPrice:Number(r.packaging_unit_price||0),
   packagingCapacity:r.packaging_capacity==null?null:Number(r.packaging_capacity),
   updatedAt:r.updated_at?String(r.updated_at):undefined,
