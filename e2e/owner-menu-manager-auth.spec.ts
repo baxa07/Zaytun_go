@@ -21,6 +21,8 @@ test('OWNER navigation reaches Menu boshqaruvi on desktop and mobile, while othe
 });
 
 test('OWNER manages menu quickly on mobile while non-owner staff is denied',async({browser})=>{
+  const originalJizImage=psql("select image from menu_items where id='nacional-zhiz-file'");
+  psql("update menu_items set image='' where id='nacional-zhiz-file'");
   const deniedContext=await browser.newContext();const denied=await deniedContext.newPage();
   await denied.goto('/owner/menu');await signIn(denied,'restaurant@zaytun.local');
   await expect(denied.getByRole('heading',{name:'Ruxsat yo‘q'})).toBeVisible();await deniedContext.close();
@@ -31,6 +33,18 @@ test('OWNER manages menu quickly on mobile while non-owner staff is denied',asyn
   await expect(page.getByRole('heading',{name:'Menu boshqaruvi'})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 
+  await expect(page.getByRole('region',{name:'Rasm holati'})).toContainText('Rasm kerak');
+  await page.getByRole('button',{name:'Rasmsizlarni ko‘rish'}).click();
+  const photoFilter=page.locator('.owner-filters label').filter({hasText:'Rasm'}).locator('select');
+  await expect(photoFilter).toHaveValue('missing');
+  const missingCards=page.locator('.owner-product-card.missing-photo');
+  expect(await missingCards.count()).toBeGreaterThan(0);
+  await expect(missingCards.first()).toContainText('Rasm kerak');
+  await missingCards.first().getByRole('button',{name:'Rasm qo‘shish'}).click();
+  await expect(page.getByTestId('owner-product-form')).toBeVisible();
+  await page.getByTestId('owner-product-form').getByRole('button',{name:'Yopish'}).click();
+  await photoFilter.selectOption('all');
+
   await page.getByLabel('Mahsulot qidirish').fill('Жиз (филе)');
   const jiz=page.getByTestId('owner-product-nacional-zhiz-file');await expect(jiz).toBeVisible();
   await jiz.getByRole('button',{name:'Narx'}).click();await jiz.getByLabel('Жиз (филе) yangi narxi').fill('275000');await jiz.getByRole('button',{name:'Saqlash'}).click();
@@ -38,7 +52,7 @@ test('OWNER manages menu quickly on mobile while non-owner staff is denied',asyn
   expect(psql("select price from menu_items where id='nacional-zhiz-file'" )).toBe('275000');
 
   await page.getByLabel('Mahsulot qidirish').fill('');await page.getByLabel('Kategoriya').selectOption('napitki');await expect(page.locator('.owner-product-card')).toHaveCount(19);
-  await page.getByLabel('Kategoriya').selectOption('all');await page.getByLabel('Holati').selectOption('unavailable');
+  await page.getByLabel('Kategoriya').selectOption('all');await page.locator('.owner-filters label').filter({hasText:'Holati'}).locator('select').selectOption('unavailable');
   await expect(page.locator('.owner-product-card')).toHaveCount(0);
 
   await page.getByRole('button',{name:/Yangi taom/}).click();
@@ -47,7 +61,7 @@ test('OWNER manages menu quickly on mobile while non-owner staff is denied',asyn
   expect(psql("select count(*) from menu_items where name='E2E Owner taom' and available=false and packaging_required=true and packaging_unit_price=3000 and packaging_capacity=1 and image like '%/storage/v1/object/public/menu-images/%'")).toBe('1');
 
   await context.close();
-  psql("update menu_items set price=260000 where id='nacional-zhiz-file'; delete from menu_audit_log where product_id in(select id from menu_items where name='E2E Owner taom') or product_id='nacional-zhiz-file'; delete from menu_items where name='E2E Owner taom';");
+  psql(`update menu_items set price=260000,image='${originalJizImage.replaceAll("'","''")}' where id='nacional-zhiz-file'; delete from menu_audit_log where product_id in(select id from menu_items where name='E2E Owner taom') or product_id='nacional-zhiz-file'; delete from menu_items where name='E2E Owner taom';`);
 });
 
 test('OWNER securely uploads, previews and replaces menu images without corrupting failed saves',async({browser})=>{
