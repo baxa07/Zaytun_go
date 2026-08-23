@@ -60,4 +60,9 @@ describe("MenuCard without an image", () => {
     expect(screen.getByText(/25.*000 so‘m/)).toBeTruthy();
     expect(screen.getByRole("button", { name: `${item.name} savatga qo‘shish` })).toBeTruthy();
   });
+  it("keeps an unavailable product visible but removes its add action", () => {
+    render(<MemoryRouter><MenuCard item={{...item,available:false}} /></MemoryRouter>);
+    expect(screen.getByText("Sotuvda emas")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: `${item.name} savatga qo‘shish` })).toBeNull();
+  });
 });

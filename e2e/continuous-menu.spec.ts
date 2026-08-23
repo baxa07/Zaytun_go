@@ -17,6 +17,8 @@ test.describe('continuous customer menu',()=>{
     await sections.first().evaluate(element=>{(element as HTMLElement).dataset.mountProof='original'})
     await page.getByTestId('menu-section-mains').evaluate(element=>window.scrollTo({top:(element as HTMLElement).offsetTop-80}))
     await expect(page.getByTestId('menu-category-rail').getByRole('button',{name:'Issiq taomlar'})).toHaveClass(/active/)
+    const stickyGeometry=await page.evaluate(()=>{const header=document.querySelector('header')!.getBoundingClientRect(),rail=document.querySelector('[data-testid="menu-category-rail"]')!.getBoundingClientRect();return{headerBottom:header.bottom,railTop:rail.top}})
+    expect(stickyGeometry.railTop).toBeGreaterThanOrEqual(stickyGeometry.headerBottom-1)
     await page.getByTestId('menu-category-rail').getByRole('button',{name:'Ichimliklar'}).click()
     await expect(page.getByTestId('menu-section-drinks')).toBeInViewport()
     await expect(page.getByTestId('menu-category-rail').getByRole('button',{name:'Ichimliklar'})).toHaveClass(/active/)
@@ -24,6 +26,8 @@ test.describe('continuous customer menu',()=>{
     await expect(sections.first()).toHaveAttribute('data-mount-proof','original')
     const activeButton=page.getByTestId('menu-category-rail').getByRole('button',{name:'Ichimliklar'})
     expect(await activeButton.evaluate(element=>{const button=element.getBoundingClientRect(),rail=element.parentElement!.getBoundingClientRect();return button.left>=rail.left&&button.right<=rail.right})).toBe(true)
+    expect(await page.getByTestId('menu-category-rail').evaluate(element=>getComputedStyle(element).overflowX)).toMatch(/auto|scroll/)
+    await expect(page.getByTestId('customer-bottom-nav').getByRole('link',{name:/Savat/})).toBeVisible()
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)
   })
 
@@ -41,6 +45,7 @@ for(const viewport of [{width:320,height:700},{width:360,height:800},{width:430,
     await page.goto('/menu')
     const grids=page.getByTestId('continuous-menu').locator('.menu-grid')
     for(let index=0;index<await grids.count();index++)expect(await grids.nth(index).evaluate(element=>getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(viewport.width<=760?2:3)
+    if(viewport.width<=760){const firstCard=page.locator('.menu-category-section .menu-card').first();await expect(firstCard.locator('h3')).toBeVisible();await expect(firstCard.locator('footer b')).toBeVisible();expect(await firstCard.locator('p').evaluate(element=>getComputedStyle(element).display)).toBe('none');expect(await firstCard.locator('h3').evaluate(element=>getComputedStyle(element).webkitLineClamp)).toBe('2');expect(await firstCard.locator('.round').evaluate(element=>Math.min(element.getBoundingClientRect().width,element.getBoundingClientRect().height))).toBeGreaterThanOrEqual(38)}
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)
   })
 }
