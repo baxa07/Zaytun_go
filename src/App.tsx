@@ -254,7 +254,7 @@ function Shell({
     <div className={`app ${surface}`}>
       <header>
         <Link className="brand" to="/">
-          <img src="/icon.svg" />{" "}
+          <img src="/zaytun-go-medallion.jpg" alt="" />{" "}
           <span>
             ZAYTUN <b>GO</b>
           </span>
@@ -286,22 +286,29 @@ function Home() {
   return (
     <Shell>
       <main className="home">
-        <section>
+        <section className="home-copy">
           <p className="eyebrow">{copy.eyebrow}</p>
-          <h1>Sevimli taomlaringiz, aniq va tez.</h1>
-          <p>{copy.supporting}</p>
-          {publicConfig?.operatingHours.everyday && <p className="muted">Har kuni: {publicConfig.operatingHours.everyday}</p>}
+          <h1>Sevimli taomlar.<br/><em>Tez va bexato.</em></h1>
+          <p className="home-lead">{copy.supporting}</p>
+          <div className="home-meta" aria-label="Xizmat haqida">
+            {publicConfig?.operatingHours.everyday && <span><b>Har kuni</b>{publicConfig.operatingHours.everyday}</span>}
+            <span><b>Buyurtma holati</b>Onlayn kuzatuv</span>
+          </div>
           <div className="actions">
             <Link className="button primary" to="/menu">
-              Menyuni ochish
+              Menyuni ko‘rish <span aria-hidden="true">→</span>
             </Link>
             <Link className="button secondary" to="/orders" data-testid="hero-track-order">
               Buyurtmani kuzatish
             </Link>
           </div>
         </section>
-        <div className="hero-food">
-          🫒<span>{publicConfig ? copy.timing : "Vaqt aniqlanmoqda"}</span>
+        <div className="home-visual" aria-label="Zaytun Go">
+          <div className="home-logo-halo">
+            <img src="/zaytun-go-medallion.jpg" alt="Zaytun Go" />
+          </div>
+          <span className="home-speed-note">Tezkor buyurtma <b>GO</b></span>
+          <span className="home-timing-note">{publicConfig ? copy.timing : "Vaqt aniqlanmoqda"}</span>
         </div>
       </main>
     </Shell>

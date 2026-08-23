@@ -47,16 +47,34 @@ header {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  gap: 11px;
 }
 .brand img {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgb(211 168 63 / 35%);
 }
 .brand b {
-  color: var(--gold);
+  display: inline-block;
+  margin-left: 3px;
+  color: #a51f22;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.08em;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  transform: skewX(-7deg);
+}
+.brand span {
+  color: #b78a2c;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 80%);
 }
 nav {
   display: flex;
@@ -100,46 +118,130 @@ nav a.active {
 .home {
   min-height: calc(100vh - 68px);
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
   align-items: center;
-  gap: 5vw;
-  padding: 7vw;
+  gap: clamp(42px, 7vw, 112px);
+  padding: clamp(56px, 7vw, 112px) max(7vw, calc((100vw - 1280px) / 2));
   overflow: hidden;
   background:
-    radial-gradient(circle at 80% 35%, #efe2b8 0 17%, transparent 17%),
-    var(--cream);
+    radial-gradient(circle at 86% 12%, rgb(12 113 116 / 9%), transparent 28%),
+    linear-gradient(135deg, #fbf8ee 0%, #f6f0df 55%, #f9f5e9 100%);
+  position: relative;
+}
+.home::before {
+  content: "";
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  left: -180px;
+  bottom: -150px;
+  border: 1px solid rgb(211 168 63 / 30%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 34px rgb(211 168 63 / 4%), 0 0 0 72px rgb(12 113 116 / 3%);
+}
+.home-copy {
+  position: relative;
+  z-index: 2;
 }
 .home h1 {
-  font:
-    700 clamp(42px, 6vw, 82px) / 1.02 "Fraunces",
-    serif;
+  font: 700 clamp(48px, 6.2vw, 88px) / 0.96 "Fraunces", serif;
+  letter-spacing: -0.045em;
   max-width: 800px;
-  margin: 10px 0;
+  margin: 15px 0 24px;
+  color: #173328;
 }
-.home p:not(.eyebrow) {
-  font-size: 19px;
+.home h1 em {
+  color: #08777b;
+  font-style: normal;
+}
+.home .home-lead {
+  font-size: clamp(17px, 1.5vw, 21px);
+  line-height: 1.55;
   color: var(--muted);
-  max-width: 580px;
+  max-width: 610px;
 }
-.hero-food {
+.home-meta {
+  display: flex;
+  gap: 30px;
+  margin-top: 32px;
+}
+.home-meta span {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.home-meta span + span {
+  padding-left: 30px;
+  border-left: 1px solid rgb(36 75 54 / 18%);
+}
+.home-meta b {
+  color: var(--green);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.home-visual {
   aspect-ratio: 1;
   display: grid;
   place-items: center;
-  font-size: clamp(100px, 18vw, 230px);
-  background: #fff7;
+  max-width: 610px;
+  justify-self: end;
   border-radius: 50%;
-  box-shadow: 0 35px 90px #513b1820;
   position: relative;
+  background: radial-gradient(circle, rgb(255 255 255 / 92%) 0 54%, rgb(211 168 63 / 10%) 54.2% 64%, transparent 64.2%);
 }
-.hero-food span {
+.home-visual::before,
+.home-visual::after {
+  content: "";
   position: absolute;
-  bottom: 12%;
-  right: 2%;
-  font-size: 15px;
+  border-radius: 50%;
+  border: 1px solid rgb(8 119 123 / 28%);
+}
+.home-visual::before { inset: 5%; }
+.home-visual::after { inset: 0; border-color: rgb(211 168 63 / 28%); }
+.home-logo-halo {
+  width: 76%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 28px 70px rgb(24 52 40 / 22%), 0 0 0 9px rgb(255 255 255 / 75%);
+  position: relative;
+  z-index: 1;
+}
+.home-logo-halo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.home-speed-note,
+.home-timing-note {
+  position: absolute;
+  z-index: 2;
+  font-size: 13px;
   font-weight: 700;
-  background: #fff;
-  padding: 14px 18px;
-  border-radius: 30px;
+  background: rgb(255 255 255 / 94%);
+  backdrop-filter: blur(12px);
+  padding: 13px 17px;
+  border: 1px solid rgb(36 75 54 / 10%);
+  border-radius: 999px;
+  box-shadow: 0 12px 28px rgb(24 52 40 / 13%);
+}
+.home-speed-note { top: 12%; left: -2%; }
+.home-speed-note b { color: #9f151b; }
+.home-timing-note { right: -3%; bottom: 13%; max-width: 210px; }
+.home .actions .button {
+  min-height: 56px;
+  border-radius: 999px;
+  padding-inline: 26px;
+}
+.home .actions .primary {
+  gap: 18px;
+  box-shadow: 0 14px 30px rgb(36 75 54 / 19%);
+}
+.home .actions .primary span {
+  font-size: 21px;
+  line-height: 1;
 }
 .eyebrow {
   letter-spacing: 0.13em;
@@ -1818,7 +1920,7 @@ h2 {
     padding: 0 14px;
   }
   .brand span {
-    font-size: 13px;
+    font-size: 15px;
   }
   nav {
     position: fixed;
@@ -1880,23 +1982,57 @@ h2 {
   }
   .home {
     min-height: auto;
-    display: flex;
-    flex-direction: column;
-    padding: 32px 20px 24px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 34px;
+    padding: 34px 20px calc(102px + env(safe-area-inset-bottom));
+    overflow: hidden;
   }
   .home h1 {
-    font-size: 34px;
+    font-size: clamp(39px, 12vw, 52px);
+    line-height: 0.98;
+    margin: 11px 0 18px;
   }
-  .hero-food {
-    width: 60%;
-    max-width: 220px;
-    font-size: 80px;
-    margin: 0 auto;
+  .home .home-lead {
+    font-size: 16px;
+    line-height: 1.48;
+  }
+  .home-meta {
+    gap: 18px;
+    margin-top: 24px;
+  }
+  .home-meta span {
+    font-size: 12px;
+  }
+  .home-meta span + span {
+    padding-left: 18px;
+  }
+  .home-visual {
+    width: min(92vw, 390px);
+    justify-self: center;
+    order: 2;
+  }
+  .home-logo-halo {
+    width: 72%;
+    box-shadow: 0 22px 54px rgb(24 52 40 / 20%), 0 0 0 7px rgb(255 255 255 / 75%);
+  }
+  .home-speed-note,
+  .home-timing-note {
+    font-size: 11px;
+    padding: 10px 13px;
+  }
+  .home-speed-note { left: 1%; }
+  .home-timing-note { right: 1%; max-width: 165px; }
+  .home .eyebrow {
+    font-size: 10px;
   }
   .actions {
     flex-direction: column;
     gap: 10px;
     margin-top: 20px;
+  }
+  .home .actions .button {
+    min-height: 54px;
   }
   .page,
   .narrow,
