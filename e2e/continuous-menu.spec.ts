@@ -5,13 +5,25 @@ test.describe('continuous customer menu',()=>{
 
   test('renders every category in one document and synchronizes the sticky rail',async({page})=>{
     await page.goto('/menu')
+    expect(await page.evaluate(()=>window.scrollY)).toBe(0)
     const menu=page.getByTestId('continuous-menu')
+    const sections=menu.locator('.menu-category-section')
+    const sectionCount=await sections.count()
+    expect(sectionCount).toBeGreaterThan(1)
     await expect(menu.getByRole('heading',{name:'Gril',exact:true})).toBeVisible()
     await expect(menu.getByRole('heading',{name:'Issiq taomlar',exact:true})).toBeAttached()
     await expect(menu.getByRole('heading',{name:'Ichimliklar',exact:true})).toBeAttached()
+    for(let index=0;index<sectionCount;index++)expect(await sections.nth(index).locator('.menu-grid').evaluate(element=>getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2)
+    await sections.first().evaluate(element=>{(element as HTMLElement).dataset.mountProof='original'})
+    await page.getByTestId('menu-section-mains').evaluate(element=>window.scrollTo({top:(element as HTMLElement).offsetTop-80}))
+    await expect(page.getByTestId('menu-category-rail').getByRole('button',{name:'Issiq taomlar'})).toHaveClass(/active/)
     await page.getByTestId('menu-category-rail').getByRole('button',{name:'Ichimliklar'}).click()
     await expect(page.getByTestId('menu-section-drinks')).toBeInViewport()
     await expect(page.getByTestId('menu-category-rail').getByRole('button',{name:'Ichimliklar'})).toHaveClass(/active/)
+    await expect(sections).toHaveCount(sectionCount)
+    await expect(sections.first()).toHaveAttribute('data-mount-proof','original')
+    const activeButton=page.getByTestId('menu-category-rail').getByRole('button',{name:'Ichimliklar'})
+    expect(await activeButton.evaluate(element=>{const button=element.getBoundingClientRect(),rail=element.parentElement!.getBoundingClientRect();return button.left>=rail.left&&button.right<=rail.right})).toBe(true)
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)
   })
 
@@ -27,8 +39,8 @@ for(const viewport of [{width:320,height:700},{width:360,height:800},{width:430,
   test(`continuous menu grid is stable at ${viewport.width}px`,async({page})=>{
     await page.setViewportSize(viewport)
     await page.goto('/menu')
-    const columns=await page.getByTestId('menu-section-grill').locator('.menu-grid').evaluate(element=>getComputedStyle(element).gridTemplateColumns.split(' ').length)
-    expect(columns).toBe(viewport.width<=760?2:3)
+    const grids=page.getByTestId('continuous-menu').locator('.menu-grid')
+    for(let index=0;index<await grids.count();index++)expect(await grids.nth(index).evaluate(element=>getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(viewport.width<=760?2:3)
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)
   })
 }
