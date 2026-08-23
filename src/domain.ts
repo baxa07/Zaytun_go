@@ -37,7 +37,7 @@ export function validateMenuImageFile(file:Pick<File,'type'|'size'>):string|null
   if(file.size>MENU_IMAGE_MAX_BYTES)return 'Rasm hajmi 8 MB dan oshmasligi kerak.'
   return null
 }
-export const BESTSELLER_FEATURE_LIMIT=4
+export const BESTSELLER_FEATURE_LIMIT=6
 export const featuredMenuItems=(items:MenuItem[])=>items.filter(item=>item.available&&item.isBestseller).slice(0,BESTSELLER_FEATURE_LIMIT)
 export interface CartItem {id:string;menuItemId:string;name:string;unitPrice:number;quantity:number;modifierIds:string[];modifierNames:string[];instructions:string;packagingRequired?:boolean;packagingUnitPrice?:number;packagingCapacity?:number|null;packagingBoxCount?:number;packagingTotal?:number}
 export interface Cart {items:CartItem[]}

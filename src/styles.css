@@ -2106,3 +2106,6 @@ h2 {
     grid-template-columns: 1.25fr 0.75fr;
   }
 }
+/* Compact featured-menu refinement: six products remain readable on phones. */
+@media (min-width:761px){.bestseller-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:760px){.bestseller-section{margin:16px 0 22px;padding:12px;border-radius:18px}.bestseller-heading h2{font-size:21px}.bestseller-heading>div>p:last-child{font-size:13px}.bestseller-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:13px}.bestseller-card{display:flex;min-height:0;flex-direction:column;border-radius:14px}.bestseller-image{height:118px;min-height:118px}.bestseller-image>.product-image-symbol,.bestseller-image>.product-image-placeholder{font-size:34px}.bestseller-badge{left:7px;top:7px;padding:5px 7px;font-size:10px}.bestseller-copy{display:flex;flex:1;gap:7px;padding:10px;flex-direction:column}.bestseller-copy h3{display:-webkit-box;margin:0;min-height:36px;overflow:hidden;font-size:15px;line-height:18px;-webkit-box-orient:vertical;-webkit-line-clamp:2}.bestseller-copy>p{display:none}.bestseller-footer{align-items:stretch;flex:1;flex-direction:column;justify-content:flex-end;gap:7px}.bestseller-footer>b{font-size:15px}.bestseller-action{width:100%;min-height:38px;padding:7px 8px;font-size:13px}}
