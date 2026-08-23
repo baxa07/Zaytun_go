@@ -58,6 +58,6 @@ describe("MenuCard without an image", () => {
     expect(screen.getByText(item.name)).toBeTruthy();
     expect(screen.getByText(item.description)).toBeTruthy();
     expect(screen.getByText(/25.*000 so‘m/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: `${item.name} tanlash` }).getAttribute("href")).toBe(`/menu/${item.id}`);
+    expect(screen.getByRole("button", { name: `${item.name} savatga qo‘shish` })).toBeTruthy();
   });
 });

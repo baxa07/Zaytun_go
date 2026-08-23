@@ -16,7 +16,7 @@ test.describe('product detail quick actions',()=>{
   test('buy now keeps existing items and navigates directly to checkout',async({page})=>{
     await page.goto('/menu/chicken')
     await page.getByTestId('add-to-cart').click()
-    await page.getByRole('link',{name:/Mol go‘shtli kabob tanlash/}).click()
+    await page.locator('.menu-card-name').filter({hasText:'Mol go‘shtli kabob'}).click()
     await page.getByTestId('buy-now').click()
     await expect(page).toHaveURL(/\/checkout$/)
     await expect(page.locator('.review').getByText(/Zaytun tovuq grili/)).toBeVisible()

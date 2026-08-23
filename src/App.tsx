@@ -310,13 +310,20 @@ function Home() {
 function Menu() {
   const location = useLocation();
   const menuNavigation = location.state as { categoryId?: string; cartNotice?: string } | null;
-  const [active, setActive] = useState(menuNavigation?.categoryId || "grill");
+  const [active, setActive] = useState(menuNavigation?.categoryId || "");
   const { cart, categories, menuItems, publicDataReady, publicDataError, addToCart } = useApp();
   const menuState=publicMenuState(publicDataReady,publicDataError,categories.length,menuItems.length);
   const featured=useMemo(()=>featuredMenuItems(menuItems),[menuItems]);
   const[featuredNotice,setFeaturedNotice]=useState('');
-  const addFeatured=(item:MenuItem)=>{if(item.modifiers?.length)return;addToCart({id:createUuid(),menuItemId:item.id,name:item.name,unitPrice:item.price,quantity:1,modifierIds:[],modifierNames:[],instructions:'',packagingRequired:item.packagingRequired,packagingUnitPrice:item.packagingUnitPrice,packagingCapacity:item.packagingCapacity});setFeaturedNotice(`${item.name} savatga qo‘shildi.`)};
+  const categoryRailRef=useRef<HTMLDivElement>(null);
+  const categorySectionsRef=useRef(new Map<string,HTMLElement>());
+  const initialCategoryAppliedRef=useRef(false);
+  const addSimpleItem=(item:MenuItem)=>{if(!item.available||item.modifiers?.length)return;addToCart({id:createUuid(),menuItemId:item.id,name:item.name,unitPrice:item.price,quantity:1,modifierIds:[],modifierNames:[],instructions:'',packagingRequired:item.packagingRequired,packagingUnitPrice:item.packagingUnitPrice,packagingCapacity:item.packagingCapacity});setFeaturedNotice(`${item.name} savatga qo‘shildi.`)};
   useEffect(()=>{if(categories.length&&!categories.some(category=>category.id===active))setActive(categories[0].id)},[active,categories]);
+  useEffect(()=>{if(!categories.length)return;let frame=0;const update=()=>{frame=0;if(window.scrollY+window.innerHeight>=document.documentElement.scrollHeight-2){setActive(categories.at(-1)!.id);return}let current=categories[0].id;for(const category of categories){const section=categorySectionsRef.current.get(category.id);if(section&&section.getBoundingClientRect().top<=128)current=category.id;else break}setActive(current)};const onScroll=()=>{if(!frame)frame=requestAnimationFrame(update)};update();window.addEventListener('scroll',onScroll,{passive:true});return()=>{window.removeEventListener('scroll',onScroll);if(frame)cancelAnimationFrame(frame)}},[categories,menuItems]);
+  useEffect(()=>{const target=menuNavigation?.categoryId;if(!target||initialCategoryAppliedRef.current||!categorySectionsRef.current.has(target))return;initialCategoryAppliedRef.current=true;requestAnimationFrame(()=>categorySectionsRef.current.get(target)?.scrollIntoView({block:'start'}))},[categories,menuItems,menuNavigation?.categoryId]);
+  useEffect(()=>{const button=Array.from(categoryRailRef.current?.querySelectorAll<HTMLButtonElement>('[data-category-target]')||[]).find(candidate=>candidate.dataset.categoryTarget===active);button?.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'})},[active]);
+  const scrollToCategory=(categoryId:string)=>{setActive(categoryId);categorySectionsRef.current.get(categoryId)?.scrollIntoView({behavior:'smooth',block:'start'})};
   return (
     <Shell>
       <main className="page">
@@ -329,12 +336,13 @@ function Menu() {
             Savat · {cart.reduce((s, x) => s + x.quantity, 0)}
           </Link>
         </div>
-        {featured.length>0&&<section className="bestseller-section" data-testid="bestseller-section"><div className="bestseller-heading"><div><p className="eyebrow">ZAYTUN TANLOVI</p><h2>Eng ko‘p tanlanadigan 🔥</h2><p>Oshxonamiz alohida tavsiya qiladigan taomlar</p></div></div>{featuredNotice&&<p className="bestseller-notice" role="status">{featuredNotice}</p>}<div className="bestseller-grid">{featured.map((item,index)=><article className="bestseller-card" data-testid={`bestseller-${item.id}`} key={item.id}><Link to={`/menu/${item.id}`} className="bestseller-image"><ProductImage image={item.image} name={item.name}/>{index===0&&<span className="bestseller-badge">ZAYTUN TANLOVI</span>}</Link><div className="bestseller-copy"><Link className="bestseller-name" to={`/menu/${item.id}`}><h3>{item.name}</h3></Link>{item.description&&<p>{item.description}</p>}<div className="bestseller-footer"><b>{money(item.price)}</b>{item.modifiers?.length?<Link aria-label={`${item.name} tanlash`} className="button bestseller-action" to={`/menu/${item.id}`}>+</Link>:<button aria-label={`${item.name} savatga qo‘shish`} className="button bestseller-action" type="button" onClick={()=>addFeatured(item)}>+</button>}</div></div></article>)}</div></section>}
-        <div className="chips">
+        {featured.length>0&&<section className="bestseller-section" data-testid="bestseller-section"><div className="bestseller-heading"><div><p className="eyebrow">ZAYTUN TANLOVI</p><h2>Eng ko‘p tanlanadigan 🔥</h2><p>Oshxonamiz alohida tavsiya qiladigan taomlar</p></div></div>{featuredNotice&&<p className="bestseller-notice" role="status">{featuredNotice}</p>}<div className="bestseller-grid">{featured.map((item,index)=><article className="bestseller-card" data-testid={`bestseller-${item.id}`} key={item.id}><Link to={`/menu/${item.id}`} className="bestseller-image"><ProductImage image={item.image} name={item.name}/>{index===0&&<span className="bestseller-badge">ZAYTUN TANLOVI</span>}</Link><div className="bestseller-copy"><Link className="bestseller-name" to={`/menu/${item.id}`}><h3>{item.name}</h3></Link>{item.description&&<p>{item.description}</p>}<div className="bestseller-footer"><b>{money(item.price)}</b>{item.modifiers?.length?<Link aria-label={`${item.name} tanlash`} className="button bestseller-action" to={`/menu/${item.id}`}>+</Link>:<button aria-label={`${item.name} savatga qo‘shish`} className="button bestseller-action" type="button" onClick={()=>addSimpleItem(item)}>+</button>}</div></div></article>)}</div></section>}
+        <div className="chips menu-category-rail" ref={categoryRailRef} data-testid="menu-category-rail">
           {categories.map((c) => (
             <button
               className={active === c.id ? "active" : ""}
-              onClick={() => setActive(c.id)}
+              data-category-target={c.id}
+              onClick={() => scrollToCategory(c.id)}
               key={c.id}
             >
               {c.name}
@@ -345,35 +353,25 @@ function Menu() {
         {menuState==='LOADING' && <div className="empty" role="status">Menyu yuklanmoqda…</div>}
         {menuState==='UNPUBLISHED' && <div className="empty" role="status" data-testid="menu-unpublished"><b>Menyu hali e’lon qilinmagan.</b><span>Taomlar tayyor bo‘lgach shu yerda ko‘rinadi.</span></div>}
         {menuState==='ERROR' && <div className="map-error" role="alert"><b>Menyuni yuklab bo‘lmadi</b><span>{publicDataError}</span><button type="button" onClick={()=>window.location.reload()}>Qayta yuklash</button></div>}
-        <div className="menu-grid">
-          {menuItems
-            .filter((i) => i.categoryId === active)
-            .map((i) => (
-              <MenuCard key={i.id} item={i} />
-            ))}
+        <div className="continuous-menu" data-testid="continuous-menu">
+          {categories.map(category=><section className="menu-category-section" data-category-id={category.id} data-testid={`menu-section-${category.id}`} key={category.id} ref={node=>{if(node)categorySectionsRef.current.set(category.id,node);else categorySectionsRef.current.delete(category.id)}}><div className="menu-section-heading"><div><p className="eyebrow">ZAYTUN MENYUSI</p><h2>{category.name}</h2></div>{category.description&&<p>{category.description}</p>}</div><div className="menu-grid">{menuItems.filter(item=>item.categoryId===category.id).map(item=><MenuCard key={item.id} item={item} onQuickAdd={addSimpleItem}/>)}</div></section>)}
         </div>
       </main>
     </Shell>
   );
 }
-export function MenuCard({ item }: { item: MenuItem }) {
+export function MenuCard({ item,onQuickAdd }: { item: MenuItem;onQuickAdd?:(item:MenuItem)=>void }) {
   return (
     <article className="menu-card">
       <Link to={`/menu/${item.id}`} className="food-img">
         <ProductImage image={item.image} name={item.name} />
       </Link>
       <div>
-        <h3>{item.name}</h3>
+        <Link className="menu-card-name" to={`/menu/${item.id}`}><h3>{item.name}</h3></Link>
         <p>{item.description}</p>
         <footer>
           <b>{money(item.price)}</b>
-          <Link
-            aria-label={`${item.name} tanlash`}
-            to={`/menu/${item.id}`}
-            className="round"
-          >
-            +
-          </Link>
+          {!item.available?<span className="menu-unavailable">Sotuvda emas</span>:item.modifiers?.length?<Link aria-label={`${item.name} tanlash`} to={`/menu/${item.id}`} className="round">+</Link>:<button aria-label={`${item.name} savatga qo‘shish`} type="button" className="round" onClick={()=>onQuickAdd?.(item)}>+</button>}
         </footer>
       </div>
     </article>
