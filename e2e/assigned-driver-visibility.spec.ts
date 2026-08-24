@@ -22,11 +22,18 @@ async function placeDeliveryOrder(customer: import("@playwright/test").Page) {
   await customer.waitForURL("**/checkout");
   await customer.getByLabel("Ism *").fill("Haydovchi Ko‘rinishi Mijoz");
   await customer.getByLabel("Telefon *").fill("+998907778811");
+  await customer.getByTestId("checkout-continue").click(); // Step 1 -> Step 2 (map)
+  await customer.getByTestId("map-picker-set").click();
+  await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+  await customer.getByTestId("checkout-continue").click(); // Step 2 -> Step 3 (address)
   await customer.getByLabel("Mahalla yoki tuman *").fill("Karmana tumani");
   await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Bunyodkor ko‘chasi");
   await customer.getByLabel("Uy / bino (ixtiyoriy)").fill("5A");
-  await customer.getByTestId("map-picker-set").click();
+  // Editing district/street/house is a material change that invalidates
+  // the Step 2 pin confirmation -- reconfirm before Continue.
   await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+  await customer.getByTestId("checkout-continue").click(); // Step 3 -> Step 4 (payment)
+  await customer.getByTestId("checkout-continue").click(); // Step 4 -> Step 5 (review)
   await customer.getByTestId("checkout-submit").click();
   await customer.waitForURL("**/confirmation/**");
   return customer.url().split("/confirmation/")[1];
@@ -100,9 +107,11 @@ test.describe("assigned driver visibility for restaurant staff (Phase 5B, launch
     await page.getByTestId("buy-now").click();
     await page.waitForURL("**/checkout");
     await page.getByTestId("type-pickup").click();
-    await page.getByLabel("Terminal — restoranda").check();
     await page.getByLabel("Ism *").fill("Olib Ketish Mijoz");
     await page.getByLabel("Telefon *").fill("+998907778822");
+    await page.getByTestId("checkout-continue").click(); // Step 1 -> Step 4 (payment; pickup skips 2/3)
+    await page.getByLabel("Terminal — restoranda").check();
+    await page.getByTestId("checkout-continue").click(); // Step 4 -> Step 5 (review)
     await page.getByTestId("checkout-submit").click();
     await page.waitForURL("**/confirmation/**");
     const orderId = page.url().split("/confirmation/")[1];

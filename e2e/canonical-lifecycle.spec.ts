@@ -32,10 +32,11 @@ test.describe('canonical order lifecycle', () => {
       await customer.getByRole('button', {name: '+'}).click() // quantity -> 2
       await customer.getByTestId('add-to-cart').click()
       await customer.waitForURL('**/menu')
-      await customer.getByRole('link', {name: /Mol go‘shtli kabob tanlash/}).click()
-      await customer.waitForURL('**/menu/kebab')
-      await customer.getByTestId('add-to-cart').click()
-      await customer.waitForURL('**/menu')
+      // "Mol go'shtli kabob" has no modifiers -- its real menu-card action
+      // is the accessible simple-product quick-add button, not a link to
+      // a selection page (that path only exists for products with
+      // modifiers, e.g. "Zaytun tovuq grili" above).
+      await customer.getByRole('button', {name: 'Mol go‘shtli kabob savatga qo‘shish'}).click()
       await customer.getByTestId('cart-pill').click()
 
       await expect(customer.locator('.line-item')).toHaveCount(2)
@@ -48,11 +49,17 @@ test.describe('canonical order lifecycle', () => {
     await test.step('customer completes the delivery address, coordinates and payment, then submits', async () => {
       await customer.getByLabel('Ism *').fill('Test Mijoz')
       await customer.getByLabel('Telefon *').fill('+998901112233')
+      await customer.getByTestId('checkout-continue').click() // Step 1 -> Step 2 (map)
+      await customer.getByTestId('map-picker-set').click()
+      await customer.getByLabel('Kirish joyi xaritada to‘g‘ri belgilangan').check()
+      await customer.getByTestId('checkout-continue').click() // Step 2 -> Step 3 (address)
       await customer.getByLabel('Mahalla yoki tuman *').fill('Karmana tumani')
       await customer.getByLabel('Ko‘cha yoki joylashuv *').fill('Bunyodkor ko‘chasi')
       await customer.getByLabel('Uy / bino (ixtiyoriy)').fill('5A')
-      await customer.getByTestId('map-picker-set').click()
+      // District/street/house edits invalidate the Step 2 pin confirmation.
       await customer.getByLabel('Kirish joyi xaritada to‘g‘ri belgilangan').check()
+      await customer.getByTestId('checkout-continue').click() // Step 3 -> Step 4 (payment)
+      await customer.getByTestId('checkout-continue').click() // Step 4 -> Step 5 (review)
       await customer.getByTestId('checkout-submit').click()
       await customer.waitForURL('**/confirmation/**')
       orderId = customer.url().split('/confirmation/')[1]

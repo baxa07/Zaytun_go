@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest'
-import {addCartLine,calculateOrderTotal,calculatePackagingTotal,canTransition,checkoutFingerprint,createEvent,createIssue,deliveryAddressWasResubmitted,deriveDriverAvailabilityState,deriveDriverOperationalState,driverGreetingName,isDeliveryAddressRevisable,packagingForItem,publicMenuState,resolveOrderSubmissionMode,resolvePendingCheckoutId,transitionOrder,validateAddress,validateDeliveryLocation,validateOrderInput,type CartItem,type CustomerAddress,type Order} from './domain'
+import {addCartLine,calculateOrderTotal,calculatePackagingTotal,cartQuantityForItem,canTransition,checkoutFingerprint,createEvent,createIssue,deliveryAddressWasResubmitted,deriveDriverAvailabilityState,deriveDriverOperationalState,driverGreetingName,isDeliveryAddressRevisable,packagingForItem,publicMenuState,resolveOrderSubmissionMode,resolvePendingCheckoutId,resolveProductCartLines,simpleCartLine,transitionOrder,validateAddress,validateContact,validateDeliveryLocation,validateMapPin,validateOrderInput,validateWrittenAddress,type CartItem,type CustomerAddress,type Order} from './domain'
 
 const address:CustomerAddress={customerName:'Ali',primaryPhone:'+998901234567',district:'Navoiy sh.',street:'Navoiy ko‘chasi',house:'12',landmark:'Bozor yonida',deliveryNotes:'',latitude:40.1,longitude:65.3,confidence:'COMPLETE',pinConfirmedAt:'2026-08-04T08:00:00Z',locationProvider:'mock',deliveryZoneResult:'ELIGIBLE'}
 const order:Order={id:'o1',number:'ZG-1',customer:{id:'c1',name:'Ali',primaryPhone:'+998901234567'},type:'DELIVERY',address,items:[],subtotal:0,deliveryFee:0,total:0,paymentMethod:'CASH',paymentStatus:'PENDING',specialInstructions:'',status:'NEW',createdAt:'2026-08-03T10:00:00Z',events:[],issues:[],assignmentHistory:[]}
@@ -15,6 +15,22 @@ describe('validation',()=>{
     expect(validateDeliveryLocation({...base,deliveryNotes:'Ko‘k darvoza'})).toEqual({});
     expect(validateDeliveryLocation({...base,landmark:'Bozor yonida',deliveryNotes:'Ko‘k darvoza'})).toEqual({});
     expect(validateDeliveryLocation({...base,house:'24B'})).toEqual({});
+  });
+  it('validateMapPin + validateWrittenAddress compose to exactly validateDeliveryLocation -- the 5-step checkout gates Step 2 (map) and Step 3 (written address) with these two independently',()=>{
+    const cases=[address,{...address,district:'',street:''},{...address,pinConfirmedAt:undefined},{...address,latitude:undefined,longitude:undefined},{...address,deliveryZoneResult:'OUTSIDE_ZONE' as const},{...address,district:'',pinConfirmedAt:undefined}];
+    for(const c of cases)expect({...validateWrittenAddress(c),...validateMapPin(c)}).toEqual(validateDeliveryLocation(c));
+  });
+  it('validateMapPin only ever reports coordinate/pin/zone keys, never district/street -- Step 2 has no address inputs to blame',()=>{
+    const errors=validateMapPin({...address,latitude:undefined,longitude:undefined,pinConfirmedAt:undefined});
+    expect(Object.keys(errors).sort()).toEqual(['coordinates','pinConfirmation']);
+  });
+  it('validateWrittenAddress only ever reports district/street, never coordinate/pin/zone keys -- Step 3 has no map to blame',()=>{
+    const errors=validateWrittenAddress({...address,district:'',street:''});
+    expect(Object.keys(errors)).toEqual(['district','street']);
+  });
+  it('validateContact + validateDeliveryLocation compose to exactly validateAddress',()=>{
+    const cases=[address,{...address,customerName:''},{...address,primaryPhone:'123'}];
+    for(const c of cases)expect({...validateContact(c),...validateDeliveryLocation(c)}).toEqual(validateAddress(c));
   });
 })
 describe('delivery rules and totals',()=>{it('requires a delivery issue description',()=>{expect(()=>createIssue('o1','ADDRESS_INCORRECT',' ','driver')).toThrow();expect(createIssue('o1','CUSTOMER_NOT_ANSWERING','No answer','driver')).toMatchObject({orderId:'o1',type:'CUSTOMER_NOT_ANSWERING'})});it('calculates item quantities plus delivery',()=>{expect(calculateOrderTotal([{unitPrice:20000,quantity:2},{unitPrice:5000,quantity:1}],10000)).toBe(55000)})})
@@ -40,6 +56,47 @@ describe('product packaging totals',()=>{
 describe('public menu availability',()=>{it('distinguishes an unpublished empty menu from loading and transport errors',()=>{expect(publicMenuState(false,'',0,0)).toBe('LOADING');expect(publicMenuState(true,'',0,0)).toBe('UNPUBLISHED');expect(publicMenuState(true,'network',0,0)).toBe('ERROR');expect(publicMenuState(true,'',1,1)).toBe('READY')})})
 describe('delivery location validation (address revision editor)',()=>{it('does not require customer contact fields, unlike full checkout validation',()=>{const location={district:'Navoiy',street:'Test ko‘chasi',house:'1',landmark:'Kirish',deliveryNotes:'',latitude:40.1,longitude:65.3,pinConfirmedAt:'2026-08-08T09:00:00Z',deliveryZoneResult:'ELIGIBLE' as const};expect(validateDeliveryLocation(location)).toEqual({})});it('still requires a freshly confirmed pin',()=>{const location={district:'Navoiy',street:'Test ko‘chasi',house:'1',landmark:'Kirish',deliveryNotes:'',latitude:40.1,longitude:65.3,pinConfirmedAt:undefined,deliveryZoneResult:'ELIGIBLE' as const};expect(validateDeliveryLocation(location)).toHaveProperty('pinConfirmation')});it('validateAddress still requires customer contact fields after the split',()=>{const invalid={...address,customerName:'',primaryPhone:''};expect(Object.keys(validateAddress(invalid))).toEqual(expect.arrayContaining(['customerName','primaryPhone']))})})
 describe('cart line identity',()=>{const line=(id:string,instructions:string,quantity=1):CartItem=>({id,menuItemId:'plov',name:'Osh',unitPrice:48000,quantity,modifierIds:[],modifierNames:[],instructions});it('merges matching lines while preserving existing items and enforcing the maximum',()=>{const result=addCartLine([line('first','piyozsiz',2),{...line('other',''),id:'other',menuItemId:'tea'}],line('new','piyozsiz',4),5);expect(result).toHaveLength(2);expect(result[0].quantity).toBe(5);expect(result[1].menuItemId).toBe('tea')});it('keeps differently instructed products as separate lines',()=>{expect(addCartLine([line('first','piyozsiz')],line('second','achchiq'),50)).toHaveLength(2)})})
+describe('product-card quantity stepper lookup',()=>{
+  const quick=(menuItemId:string,quantity:number):CartItem=>({id:`${menuItemId}-quick`,menuItemId,name:menuItemId,unitPrice:1000,quantity,modifierIds:[],modifierNames:[],instructions:''})
+  const noted=(menuItemId:string,quantity:number):CartItem=>({id:`${menuItemId}-noted`,menuItemId,name:menuItemId,unitPrice:1000,quantity,modifierIds:[],modifierNames:[],instructions:'piyozsiz'})
+  const withModifier=(menuItemId:string,quantity:number):CartItem=>({id:`${menuItemId}-mod`,menuItemId,name:menuItemId,unitPrice:1000,quantity,modifierIds:['extra-cheese'],modifierNames:['Qo‘shimcha pishloq'],instructions:''})
+  it('finds nothing for a product not yet in the cart',()=>{expect(simpleCartLine([],'osh')).toBeUndefined()})
+  it('finds the plain quick-add line for a simple product',()=>{const cart=[quick('osh',2)];expect(simpleCartLine(cart,'osh')?.quantity).toBe(2)})
+  it('never claims a noted line as the card’s own stepper target -- that is a distinct variant',()=>{const cart=[noted('osh',3)];expect(simpleCartLine(cart,'osh')).toBeUndefined()})
+  it('never claims a modifier line as the card’s own stepper target',()=>{const cart=[withModifier('osh',1)];expect(simpleCartLine(cart,'osh')).toBeUndefined()})
+  it('sums quantity across every variant of a product for the informational badge',()=>{const cart=[quick('osh',2),noted('osh',1),withModifier('osh',3),quick('tea',5)];expect(cartQuantityForItem(cart,'osh')).toBe(6);expect(cartQuantityForItem(cart,'tea')).toBe(5)})
+  it('is zero for a product not in the cart',()=>{expect(cartQuantityForItem([],'osh')).toBe(0)})
+})
+describe('resolveProductCartLines (Grill card stepper: zero / exactly-one / ambiguous)',()=>{
+  const variant=(id:string,modifierIds:string[],quantity:number,instructions=''):CartItem=>({id,menuItemId:'chicken',name:'Zaytun tovuq grili',unitPrice:68000,quantity,modifierIds,modifierNames:modifierIds.map(m=>m),instructions,packagingRequired:true,packagingUnitPrice:3000,packagingCapacity:1})
+  it('NONE for a product with zero cart lines',()=>{expect(resolveProductCartLines([],'chicken')).toEqual({kind:'NONE'})})
+  it('SINGLE for exactly one distinct configured line -- the card can safely expose a direct stepper on it',()=>{
+    const line=variant('a',['spicy'],2)
+    expect(resolveProductCartLines([line],'chicken')).toEqual({kind:'SINGLE',line})
+  })
+  it('SINGLE still resolves correctly alongside unrelated products in the same cart',()=>{
+    const line=variant('a',['spicy'],1)
+    const other:CartItem={id:'b',menuItemId:'kebab',name:'Mol go‘shtli kabob',unitPrice:42000,quantity:1,modifierIds:[],modifierNames:[],instructions:''}
+    expect(resolveProductCartLines([other,line],'chicken')).toEqual({kind:'SINGLE',line})
+  })
+  it('MULTIPLE for two lines that differ only by modifiers -- never treated as one decrementable line',()=>{
+    const a=variant('a',['spicy'],1)
+    const b=variant('b',['sauce'],2)
+    expect(resolveProductCartLines([a,b],'chicken')).toEqual({kind:'MULTIPLE',totalQuantity:3})
+  })
+  it('MULTIPLE for two lines with identical modifiers but different instructions -- a note makes it a distinct order',()=>{
+    const a=variant('a',['spicy'],1,'Sousni alohida soling')
+    const b=variant('b',['spicy'],1,'')
+    expect(resolveProductCartLines([a,b],'chicken')).toEqual({kind:'MULTIPLE',totalQuantity:2})
+  })
+  it('MULTIPLE keyed on distinct-line count, never aggregate quantity -- two lines of 1 each is never mistaken for one line of 2',()=>{
+    const a=variant('a',['spicy'],1)
+    const b=variant('b',['sauce'],1)
+    const resolution=resolveProductCartLines([a,b],'chicken')
+    expect(resolution.kind).toBe('MULTIPLE')
+    if(resolution.kind==='MULTIPLE')expect(resolution.totalQuantity).toBe(2)
+  })
+})
 describe('delivery address revision eligibility (stale-state gate)',()=>{
   it('requires DELIVERY + NEW + CLARIFICATION_REQUESTED all at once',()=>{
     expect(isDeliveryAddressRevisable({type:'DELIVERY',status:'NEW',deliveryReviewStatus:'CLARIFICATION_REQUESTED'})).toBe(true)

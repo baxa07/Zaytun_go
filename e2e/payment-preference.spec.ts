@@ -7,10 +7,20 @@ async function openDeliveryCheckout(page: Page) {
   await page.waitForURL("**/checkout");
   await page.getByLabel("Ism *").fill("To‘lov Test Mijoz");
   await page.getByLabel("Telefon *").fill("+998901112233");
-  await page.getByLabel("Mahalla yoki tuman *").fill("Karmana tumani");
-  await page.getByLabel("Ko‘cha yoki joylashuv *").fill("Bunyodkor ko‘chasi");
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-map")).toBeVisible();
   await page.getByTestId("map-picker-set").click();
   await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-address")).toBeVisible();
+  await page.getByLabel("Mahalla yoki tuman *").fill("Karmana tumani");
+  await page.getByLabel("Ko‘cha yoki joylashuv *").fill("Bunyodkor ko‘chasi");
+  // Editing district/street is itself a material change that invalidates
+  // the Step 2 pin confirmation (same set() rule as any other address
+  // field) -- reconfirm before Continue.
+  await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-4")).toBeVisible();
 }
 
 async function openPickupCheckout(page: Page) {
@@ -21,6 +31,15 @@ async function openPickupCheckout(page: Page) {
   await page.getByTestId("type-pickup").click();
   await page.getByLabel("Ism *").fill("Pickup To‘lov Mijoz");
   await page.getByLabel("Telefon *").fill("+998901112234");
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-4")).toBeVisible();
+}
+
+// Payment is Step 4; review (and the actual submit) is Step 5.
+async function continueToReviewAndSubmit(page: Page) {
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-5")).toBeVisible();
+  await page.getByTestId("checkout-submit").click();
 }
 
 test.describe("Manual Click/Payme payments", () => {
@@ -44,7 +63,7 @@ test.describe("Manual Click/Payme payments", () => {
     await openDeliveryCheckout(page);
     await expect(page.getByLabel("Naqd pul")).toBeChecked();
     await expect(page.getByTestId("remote-payment-notice")).toHaveCount(0);
-    await page.getByTestId("checkout-submit").click();
+    await continueToReviewAndSubmit(page);
     await expect(page).toHaveURL(/\/confirmation\//);
   });
 
@@ -55,6 +74,8 @@ test.describe("Manual Click/Payme payments", () => {
       "Restoran Click/Payme to‘lovini tekshirib tasdiqlaydi.",
     );
     await expect(page.getByTestId("remote-payment-notice")).not.toContainText("karta");
+    await page.getByTestId("checkout-continue").click();
+    await expect(page.getByTestId("checkout-step-5")).toBeVisible();
     await expect(page.getByTestId("review-payment-method")).toContainText("Click");
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
@@ -66,6 +87,8 @@ test.describe("Manual Click/Payme payments", () => {
     await expect(page.getByTestId("remote-payment-notice")).toHaveText(
       "Restoran Click/Payme to‘lovini tekshirib tasdiqlaydi.",
     );
+    await page.getByTestId("checkout-continue").click();
+    await expect(page.getByTestId("checkout-step-5")).toBeVisible();
     await expect(page.getByTestId("review-payment-method")).toContainText("Payme");
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
@@ -74,7 +97,7 @@ test.describe("Manual Click/Payme payments", () => {
   test("restaurant sees prominent pending Click state and staff-only confirmation actions", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Click").check();
-    await page.getByTestId("checkout-submit").click();
+    await continueToReviewAndSubmit(page);
     await page.waitForURL("**/confirmation/**");
     const orderId = page.url().split("/confirmation/")[1];
 
@@ -97,7 +120,7 @@ test.describe("Manual Click/Payme payments", () => {
   test("restaurant sees prominent pending Payme state", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Payme").check();
-    await page.getByTestId("checkout-submit").click();
+    await continueToReviewAndSubmit(page);
     await page.waitForURL("**/confirmation/**");
     const orderId = page.url().split("/confirmation/")[1];
 
@@ -110,7 +133,7 @@ test.describe("Manual Click/Payme payments", () => {
   test("preparation remains blocked until Restaurant confirms manual payment", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Payme").check();
-    await page.getByTestId("checkout-submit").click();
+    await continueToReviewAndSubmit(page);
     await page.waitForURL("**/confirmation/**");
     const orderId = page.url().split("/confirmation/")[1];
 
@@ -131,7 +154,7 @@ test.describe("Manual Click/Payme payments", () => {
   test("customer tracking shows method and pending notice without a confirmation control", async ({ page }) => {
     await openDeliveryCheckout(page);
     await page.getByLabel("💳 Click").check();
-    await page.getByTestId("checkout-submit").click();
+    await continueToReviewAndSubmit(page);
     await page.waitForURL("**/confirmation/**");
     await page.getByTestId("track-link").click();
 
@@ -147,7 +170,7 @@ test.describe("Manual Click/Payme payments", () => {
   test("pickup Click remains pending and preparation unlocks only after Restaurant confirmation", async ({ page }) => {
     await openPickupCheckout(page);
     await page.getByLabel("💳 Click").check();
-    await page.getByTestId("checkout-submit").click();
+    await continueToReviewAndSubmit(page);
     await page.waitForURL("**/confirmation/**");
     const orderId = page.url().split("/confirmation/")[1];
 
@@ -160,13 +183,24 @@ test.describe("Manual Click/Payme payments", () => {
     await expect(page.getByTestId("action-start-prep")).toBeEnabled();
   });
 
-  test("switching delivery Click to pickup preserves the now-valid manual method", async ({ page }) => {
-    await page.goto("/menu/chicken");
-    await page.getByRole("button", { name: "+" }).click();
-    await page.getByTestId("buy-now").click();
-    await page.waitForURL("**/checkout");
+  test("switching from delivery (Click selected) to pickup preserves the now-valid manual method -- exercised via Back to Step 1, matching how fulfillment type can only be changed from Step 1 in the 5-step wizard", async ({ page }) => {
+    await openDeliveryCheckout(page);
     await page.getByLabel("💳 Click").check();
+    await expect(page.getByLabel("💳 Click")).toBeChecked();
+
+    // Fulfillment type only lives on Step 1 -- back out to it, preserving
+    // the payment selection made on Step 4 (Back/Continue must never
+    // discard entered information).
+    await page.getByTestId("checkout-back").click();
+    await expect(page.getByTestId("checkout-step-address")).toBeVisible();
+    await page.getByTestId("checkout-back").click();
+    await expect(page.getByTestId("checkout-step-map")).toBeVisible();
+    await page.getByTestId("checkout-back").click();
+    await expect(page.getByTestId("checkout-step-1")).toBeVisible();
+
     await page.getByTestId("type-pickup").click();
+    await page.getByTestId("checkout-continue").click();
+    await expect(page.getByTestId("checkout-step-4")).toBeVisible();
     await expect(page.getByLabel("💳 Click")).toBeChecked();
     await expect(page.getByLabel("💳 Payme")).toBeEnabled();
     await expect(page.getByLabel("Terminal — restoranda")).toBeEnabled();

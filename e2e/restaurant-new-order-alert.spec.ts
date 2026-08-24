@@ -23,6 +23,8 @@ test.describe("restaurant new-order alert", () => {
     await customer.getByTestId("type-pickup").click();
     await customer.getByLabel("Ism *").fill("Alert Test Mijoz");
     await customer.getByLabel("Telefon *").fill("+998901112244");
+    await customer.getByTestId("checkout-continue").click(); // Step 1 -> Step 4 (payment; pickup skips 2/3)
+    await customer.getByTestId("checkout-continue").click(); // Step 4 -> Step 5 (review)
     await customer.getByTestId("checkout-submit").click();
     await customer.waitForURL("**/confirmation/**");
     const orderId = customer.url().split("/confirmation/")[1];
@@ -53,6 +55,8 @@ test.describe("restaurant new-order alert", () => {
     await customer.getByTestId("type-pickup").click();
     await customer.getByLabel("Ism *").fill("Ack All Mijoz");
     await customer.getByLabel("Telefon *").fill("+998901112255");
+    await customer.getByTestId("checkout-continue").click(); // Step 1 -> Step 4 (payment; pickup skips 2/3)
+    await customer.getByTestId("checkout-continue").click(); // Step 4 -> Step 5 (review)
     await customer.getByTestId("checkout-submit").click();
     await customer.waitForURL("**/confirmation/**");
 
@@ -72,6 +76,8 @@ test.describe("restaurant new-order alert", () => {
     await customer.getByTestId("type-pickup").click();
     await customer.getByLabel("Ism *").fill("Board Click Mijoz");
     await customer.getByLabel("Telefon *").fill("+998901112266");
+    await customer.getByTestId("checkout-continue").click(); // Step 1 -> Step 4 (payment; pickup skips 2/3)
+    await customer.getByTestId("checkout-continue").click(); // Step 4 -> Step 5 (review)
     await customer.getByTestId("checkout-submit").click();
     await customer.waitForURL("**/confirmation/**");
     const orderId = customer.url().split("/confirmation/")[1];

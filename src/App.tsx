@@ -32,9 +32,15 @@ import {
   deriveDriverOperationalState,
   featuredMenuItems,
   validateMenuImageFile,
+  simpleCartLine,
+  resolveProductCartLines,
+  resolveOrderSubmissionMode,
+  validateContact,
+  validateMapPin,
   type ActorType,
   type AddressConfidence,
   type AssignmentDeclineReason,
+  type CartItem,
   type CustomerAddress,
   type Driver,
   type DriverAvailability,
@@ -71,6 +77,7 @@ import { TurnstileWidget } from "./components/TurnstileWidget";
 import {
   addressConfidence,
   applySuggestion,
+  confirmSelection,
   haversineKm,
   initialSelection,
   materialAddressChange,
@@ -83,6 +90,7 @@ import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
 import {customerDeliveryStageEventMatchers,customerDeliveryStageIndex,customerDeliveryStages,declineReasonLabels,deliveryDispatchPhase,deliveryDispatchPhaseLabels,fulfillmentStatusLabel,fulfillmentTimeline,isNormalDeliveryStatus,isRemotePaymentMethod,orderExceptions,paymentLabel,paymentMethodsForFulfillment,pickupPaymentGuidance,remotePaymentCustomerNotice,remotePaymentStaffHint,type OrderExceptionKind} from './fulfillmentLifecycle'
 import {formatOperationalDateTime,formatOperationalHeaderDate,formatOperationalTime} from './operationalTime'
 import{requestApplicationUpdate,UPDATE_EVENT}from'./pwa'
+import{useTelegramBackButton}from'./useTelegramBackButton'
 
 const money = (n: number) => new Intl.NumberFormat("uz-UZ").format(n) + " so‘m";
 const customerCompletedStatuses: OrderStatus[] = ["DELIVERED", "COLLECTED", "DELIVERY_FAILED", "RETURNED", "CANCELLED", "REJECTED"];
@@ -244,9 +252,15 @@ function CustomerNavIcon({ kind }: { kind: "menu" | "cart" | "orders" }) {
 function Shell({
   children,
   surface = "customer",
+  hideBottomNav = false,
 }: {
   children: React.ReactNode;
   surface?: "customer" | "staff" | "driver";
+  // The 5-step checkout hides the bottom tab bar -- it consumes vertical
+  // space the map step especially needs, and a stray tap could abandon a
+  // half-completed checkout. The header/brand stays: it's the one constant
+  // orientation anchor across every step.
+  hideBottomNav?: boolean;
 }) {
   const { cart, role } = useApp();
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -259,22 +273,24 @@ function Shell({
             ZAYTUN <b>GO</b>
           </span>
         </Link>
-        <nav className={surface === "customer" ? "customer-nav" : `operational-nav${role === "OWNER" ? " owner-navigation" : ""}`} data-testid={surface === "customer" ? "customer-bottom-nav" : "operational-navigation"}>
-          {surface === "customer" ? (
-            <>
-              <NavLink to="/menu"><CustomerNavIcon kind="menu"/><span>Menyu</span></NavLink>
-              <NavLink to="/cart"><CustomerNavIcon kind="cart"/><span>Savat{cartCount > 0 ? ` · ${cartCount}` : ""}</span></NavLink>
-              <NavLink to="/orders"><CustomerNavIcon kind="orders"/><span>Buyurtmalarim</span></NavLink>
-            </>
-          ) : (
-            <>
-              <NavLink to="/menu">Buyurtma</NavLink>
-              <NavLink to="/restaurant">Restoran</NavLink>
-              <NavLink to="/driver">Haydovchi</NavLink>
-              {role === "OWNER" && <NavLink to="/owner/menu">Menu boshqaruvi</NavLink>}
-            </>
-          )}
-        </nav>
+        {!hideBottomNav && (
+          <nav className={surface === "customer" ? "customer-nav" : `operational-nav${role === "OWNER" ? " owner-navigation" : ""}`} data-testid={surface === "customer" ? "customer-bottom-nav" : "operational-navigation"}>
+            {surface === "customer" ? (
+              <>
+                <NavLink to="/menu"><CustomerNavIcon kind="menu"/><span>Menyu</span></NavLink>
+                <NavLink to="/cart"><CustomerNavIcon kind="cart"/><span>Savat{cartCount > 0 ? ` · ${cartCount}` : ""}</span></NavLink>
+                <NavLink to="/orders"><CustomerNavIcon kind="orders"/><span>Buyurtmalarim</span></NavLink>
+              </>
+            ) : (
+              <>
+                <NavLink to="/menu">Buyurtma</NavLink>
+                <NavLink to="/restaurant">Restoran</NavLink>
+                <NavLink to="/driver">Haydovchi</NavLink>
+                {role === "OWNER" && <NavLink to="/owner/menu">Menu boshqaruvi</NavLink>}
+              </>
+            )}
+          </nav>
+        )}
       </header>
       {children}
     </div>
@@ -318,7 +334,7 @@ function Menu() {
   const location = useLocation();
   const menuNavigation = location.state as { categoryId?: string; cartNotice?: string } | null;
   const [active, setActive] = useState(menuNavigation?.categoryId || "");
-  const { cart, categories, menuItems, publicDataReady, publicDataError, addToCart } = useApp();
+  const { cart, categories, menuItems, publicDataReady, publicDataError, addToCart, updateQuantity, publicConfig } = useApp();
   const menuState=publicMenuState(publicDataReady,publicDataError,categories.length,menuItems.length);
   const featured=useMemo(()=>featuredMenuItems(menuItems),[menuItems]);
   const[featuredNotice,setFeaturedNotice]=useState('');
@@ -327,6 +343,7 @@ function Menu() {
   const initialCategoryAppliedRef=useRef(false);
   const selectedCategoryRef=useRef<string|null>(null);
   const addSimpleItem=(item:MenuItem)=>{if(!item.available||item.modifiers?.length)return;addToCart({id:createUuid(),menuItemId:item.id,name:item.name,unitPrice:item.price,quantity:1,modifierIds:[],modifierNames:[],instructions:'',packagingRequired:item.packagingRequired,packagingUnitPrice:item.packagingUnitPrice,packagingCapacity:item.packagingCapacity});setFeaturedNotice(`${item.name} savatga qo‘shildi.`)};
+  const maximumItemQuantity=publicConfig?.maximumItemQuantity||50;
   useEffect(()=>{if(categories.length&&!categories.some(category=>category.id===active))setActive(categories[0].id)},[active,categories]);
   useEffect(()=>{if(!categories.length)return;let frame=0;const update=()=>{frame=0;if(selectedCategoryRef.current){setActive(selectedCategoryRef.current);return}const stickyOffset=(document.querySelector('header')?.getBoundingClientRect().height||0)+(categoryRailRef.current?.getBoundingClientRect().height||0)+8;let current=categories[0].id;for(const category of categories){const section=categorySectionsRef.current.get(category.id);if(section&&section.getBoundingClientRect().top<=stickyOffset)current=category.id}if(window.scrollY+window.innerHeight>=document.documentElement.scrollHeight-2)current=categories[categories.length-1].id;setActive(current)};const onScroll=()=>{if(!frame)frame=requestAnimationFrame(update)};const resumeTracking=()=>{selectedCategoryRef.current=null};update();window.addEventListener('scroll',onScroll,{passive:true});window.addEventListener('wheel',resumeTracking,{passive:true});window.addEventListener('touchstart',resumeTracking,{passive:true});window.addEventListener('keydown',resumeTracking);return()=>{window.removeEventListener('scroll',onScroll);window.removeEventListener('wheel',resumeTracking);window.removeEventListener('touchstart',resumeTracking);window.removeEventListener('keydown',resumeTracking);if(frame)cancelAnimationFrame(frame)}},[categories,menuItems]);
   useEffect(()=>{const target=menuNavigation?.categoryId;if(!target||initialCategoryAppliedRef.current||!categorySectionsRef.current.has(target))return;initialCategoryAppliedRef.current=true;requestAnimationFrame(()=>categorySectionsRef.current.get(target)?.scrollIntoView({block:'start'}))},[categories,menuItems,menuNavigation?.categoryId]);
@@ -344,7 +361,7 @@ function Menu() {
             Savat · {cart.reduce((s, x) => s + x.quantity, 0)}
           </Link>
         </div>
-        {featured.length>0&&<section className="bestseller-section" data-testid="bestseller-section"><div className="bestseller-heading"><div><p className="eyebrow">ZAYTUN TANLOVI</p><h2>Eng ko‘p tanlanadigan 🔥</h2><p>Oshxonamiz alohida tavsiya qiladigan taomlar</p></div></div>{featuredNotice&&<p className="bestseller-notice" role="status">{featuredNotice}</p>}<div className="bestseller-grid">{featured.map((item,index)=><article className="bestseller-card" data-testid={`bestseller-${item.id}`} key={item.id}><Link to={`/menu/${item.id}`} className="bestseller-image"><ProductImage image={item.image} name={item.name}/>{index===0&&<span className="bestseller-badge">ZAYTUN TANLOVI</span>}</Link><div className="bestseller-copy"><Link className="bestseller-name" to={`/menu/${item.id}`}><h3>{item.name}</h3></Link>{item.description&&<p>{item.description}</p>}<div className="bestseller-footer"><b>{money(item.price)}</b>{item.modifiers?.length?<Link aria-label={`${item.name} tanlash`} className="button bestseller-action" to={`/menu/${item.id}`}>+</Link>:<button aria-label={`${item.name} savatga qo‘shish`} className="button bestseller-action" type="button" onClick={()=>addSimpleItem(item)}>+</button>}</div></div></article>)}</div></section>}
+        {featured.length>0&&<section className="bestseller-section" data-testid="bestseller-section"><div className="bestseller-heading"><div><p className="eyebrow">ZAYTUN TANLOVI</p><h2>Eng ko‘p tanlanadigan 🔥</h2><p>Oshxonamiz alohida tavsiya qiladigan taomlar</p></div></div>{featuredNotice&&<p className="bestseller-notice" role="status">{featuredNotice}</p>}<div className="bestseller-grid">{featured.map((item,index)=><article className="bestseller-card" data-testid={`bestseller-${item.id}`} key={item.id}><Link to={`/menu/${item.id}`} className="bestseller-image"><ProductImage image={item.image} name={item.name}/>{index===0&&<span className="bestseller-badge">ZAYTUN TANLOVI</span>}</Link><div className="bestseller-copy"><Link className="bestseller-name" to={`/menu/${item.id}`}><h3>{item.name}</h3></Link>{item.description&&<p>{item.description}</p>}<div className="bestseller-footer"><b>{money(item.price)}</b><ProductQuantityControl item={item} cart={cart} maximumItemQuantity={maximumItemQuantity} onQuickAdd={()=>addSimpleItem(item)} updateQuantity={updateQuantity} actionClassName="button bestseller-action" stepperClassName="qty-stepper qty-stepper--bestseller"/></div></div></article>)}</div></section>}
         <div className="chips menu-category-rail" ref={categoryRailRef} data-testid="menu-category-rail">
           {categories.map((c) => (
             <button
@@ -362,13 +379,66 @@ function Menu() {
         {menuState==='UNPUBLISHED' && <div className="empty" role="status" data-testid="menu-unpublished"><b>Menyu hali e’lon qilinmagan.</b><span>Taomlar tayyor bo‘lgach shu yerda ko‘rinadi.</span></div>}
         {menuState==='ERROR' && <div className="map-error" role="alert"><b>Menyuni yuklab bo‘lmadi</b><span>{publicDataError}</span><button type="button" onClick={()=>window.location.reload()}>Qayta yuklash</button></div>}
         <div className="continuous-menu" data-testid="continuous-menu">
-          {categories.map(category=><section className="menu-category-section" data-category-id={category.id} data-testid={`menu-section-${category.id}`} key={category.id} ref={node=>{if(node)categorySectionsRef.current.set(category.id,node);else categorySectionsRef.current.delete(category.id)}}><div className="menu-section-heading"><div><p className="eyebrow">ZAYTUN MENYUSI</p><h2>{category.name}</h2></div>{category.description&&<p>{category.description}</p>}</div><div className="menu-grid">{menuItems.filter(item=>item.categoryId===category.id).map(item=><MenuCard key={item.id} item={item} onQuickAdd={addSimpleItem}/>)}</div></section>)}
+          {categories.map(category=><section className="menu-category-section" data-category-id={category.id} data-testid={`menu-section-${category.id}`} key={category.id} ref={node=>{if(node)categorySectionsRef.current.set(category.id,node);else categorySectionsRef.current.delete(category.id)}}><div className="menu-section-heading"><div><p className="eyebrow">ZAYTUN MENYUSI</p><h2>{category.name}</h2></div>{category.description&&<p>{category.description}</p>}</div><div className="menu-grid">{menuItems.filter(item=>item.categoryId===category.id).map(item=><MenuCard key={item.id} item={item} onQuickAdd={addSimpleItem} cart={cart} maximumItemQuantity={maximumItemQuantity} updateQuantity={updateQuantity}/>)}</div></section>)}
         </div>
       </main>
     </Shell>
   );
 }
-export function MenuCard({ item,onQuickAdd }: { item: MenuItem;onQuickAdd?:(item:MenuItem)=>void }) {
+// Shared by MenuCard and the bestseller card so both render the exact same
+// action for a given product's cart state -- the two markups differ
+// (round vs bestseller-action button styling) but must never drift on
+// WHEN a direct stepper appears vs a bare "+" vs a "+" plus an
+// informational badge, since that decision is what keeps the two
+// surfaces showing the same authoritative cart state.
+//
+// Simple products (no modifiers) keep using simpleCartLine exactly as
+// before -- unchanged. Products WITH modifiers use resolveProductCartLines
+// (domain.ts): zero lines keeps the plain selection "+"; exactly one
+// distinct line is unambiguous, so the card exposes a direct +/- on that
+// exact line (updateQuantity by id, so modifierIds/modifierNames/
+// instructions/unitPrice/packaging fields are never touched, only
+// quantity); two or more distinct lines is genuinely ambiguous -- the
+// card never guesses which one "−" would mean, so it keeps the plain "+"
+// (still opening product configuration) and adds an informational total
+// badge instead of a control.
+function ProductQuantityControl({ item, cart, maximumItemQuantity, onQuickAdd, updateQuantity, actionClassName, stepperClassName }: {
+  item: MenuItem;
+  cart: CartItem[];
+  maximumItemQuantity: number;
+  onQuickAdd: () => void;
+  updateQuantity: (id: string, delta: number) => void;
+  actionClassName: string;
+  stepperClassName: string;
+}) {
+  const lineStepper = (line: CartItem) => (
+    <div className={stepperClassName} role="group" aria-label={`${item.name} miqdori`} data-testid={`qty-stepper-${item.id}`}>
+      <button type="button" aria-label={`${item.name} sonini kamaytirish`} onClick={() => updateQuantity(line.id, -1)}>−</button>
+      <b aria-live="polite">{line.quantity}</b>
+      <button type="button" aria-label={`${item.name} sonini oshirish`} disabled={line.quantity >= maximumItemQuantity} onClick={() => updateQuantity(line.id, 1)}>+</button>
+    </div>
+  );
+  if (item.modifiers?.length) {
+    const resolution = resolveProductCartLines(cart, item.id);
+    if (resolution.kind === "SINGLE") return lineStepper(resolution.line);
+    return (
+      <>
+        <Link aria-label={`${item.name} tanlash`} to={`/menu/${item.id}`} className={actionClassName}>+</Link>
+        {resolution.kind === "MULTIPLE" && <span className="cart-qty-badge" data-testid={`cart-qty-badge-${item.id}`} aria-label={`Savatda ${resolution.totalQuantity} dona`}>Savatda {resolution.totalQuantity}</span>}
+      </>
+    );
+  }
+  const line = simpleCartLine(cart, item.id);
+  if (line) return lineStepper(line);
+  return <button aria-label={`${item.name} savatga qo‘shish`} type="button" className={actionClassName} onClick={onQuickAdd}>+</button>;
+}
+export function MenuCard({ item, onQuickAdd, cart = [], maximumItemQuantity = 50, updateQuantity }: {
+  item: MenuItem;
+  onQuickAdd?: (item: MenuItem) => void;
+  cart?: CartItem[];
+  maximumItemQuantity?: number;
+  updateQuantity?: (id: string, delta: number) => void;
+}) {
   return (
     <article className="menu-card">
       <Link to={`/menu/${item.id}`} className="food-img">
@@ -379,7 +449,9 @@ export function MenuCard({ item,onQuickAdd }: { item: MenuItem;onQuickAdd?:(item
         <p>{item.description}</p>
         <footer>
           <b>{money(item.price)}</b>
-          {!item.available?<span className="menu-unavailable">Sotuvda emas</span>:item.modifiers?.length?<Link aria-label={`${item.name} tanlash`} to={`/menu/${item.id}`} className="round">+</Link>:<button aria-label={`${item.name} savatga qo‘shish`} type="button" className="round" onClick={()=>onQuickAdd?.(item)}>+</button>}
+          {!item.available
+            ? <span className="menu-unavailable">Sotuvda emas</span>
+            : <ProductQuantityControl item={item} cart={cart} maximumItemQuantity={maximumItemQuantity} onQuickAdd={() => onQuickAdd?.(item)} updateQuantity={(id, delta) => updateQuantity?.(id, delta)} actionClassName="round" stepperClassName="qty-stepper" />}
         </footer>
       </div>
     </article>
@@ -699,9 +771,131 @@ function DeliveryAddressFields({
     </>
   );
 }
+type CheckoutStep = 1 | 2 | 3 | 4 | 5;
+const checkoutStepTitles: Record<CheckoutStep, string> = {
+  1: "Aloqa ma’lumotlari",
+  2: "Manzilni belgilang",
+  3: "Manzilni tasdiqlang",
+  4: "To‘lov usuli",
+  5: "Buyurtmani tekshiring",
+};
+// Pickup has no map/address concern at all -- those two steps are skipped
+// entirely rather than shown-then-disabled, per the "clear adjusted
+// progress experience" requirement (a 3-dot pickup progress, not a 5-dot
+// one with two grayed out).
+const checkoutStepSequence = (type: "DELIVERY" | "PICKUP"): CheckoutStep[] => type === "DELIVERY" ? [1, 2, 3, 4, 5] : [1, 4, 5];
+function CheckoutProgress({ step, type }: { step: CheckoutStep; type: "DELIVERY" | "PICKUP" }) {
+  const sequence = checkoutStepSequence(type);
+  const position = sequence.indexOf(step) + 1;
+  return (
+    <div className="checkout-progress" data-testid="checkout-progress">
+      <ol className="checkout-progress-dots" aria-hidden="true">
+        {sequence.map((s, i) => (
+          <li key={s} className={i + 1 < position ? "done" : i + 1 === position ? "active" : ""}>{i + 1}</li>
+        ))}
+      </ol>
+      <p className="checkout-progress-label">{position} / {sequence.length} · {checkoutStepTitles[step]}</p>
+    </div>
+  );
+}
+// Step 2's own body -- MapPicker itself is reused completely unchanged
+// (same search/geolocation/pin-drag/reverse-geocode/pin-confirm behavior
+// already covered by its own tests); only the surrounding layout is new.
+function CheckoutMapStep({ address, mapSelection, updateMapSelection, onApplySuggestion, errors }: {
+  address: CustomerAddress;
+  mapSelection: MapLocationSelection;
+  updateMapSelection: (selection: MapLocationSelection) => void;
+  onApplySuggestion: (suggestion: AddressSuggestion) => void;
+  errors: Record<string, string>;
+}) {
+  return (
+    <div className="checkout-step-map-stage" data-testid="checkout-step-map">
+      <MapPicker value={mapSelection} onChange={updateMapSelection} onApplySuggestion={onApplySuggestion} />
+      {errors.coordinates && <em className="error">{errors.coordinates}</em>}
+      {errors.pinConfirmation && <em className="error">{errors.pinConfirmation}</em>}
+      {(errors.deliveryZone || address.deliveryZoneResult === "OUTSIDE_ZONE") && (
+        <em className="error" data-testid="delivery-zone-error">{errors.deliveryZone || "Bu manzil yetkazish hududidan tashqarida."}</em>
+      )}
+    </div>
+  );
+}
+// Step 3's own body -- district/street/house + optional courier details,
+// ported from DeliveryAddressFields (left untouched above -- it still
+// serves AddressRevisionEditor's single-screen revision flow) plus a new,
+// lightweight re-confirmation control: editing district/street here can
+// invalidate the Step 2 pin confirmation (the same materialAddressChange
+// reset `set()` already applies), and unlike Step 2 there is no map canvas
+// here to show that reconfirmation checkbox -- this is its Step 3
+// equivalent, driving the exact same confirmSelection/NEEDS_RECONFIRMATION
+// state MapPicker's own checkbox drives.
+function CheckoutAddressStep({ address, mapSelection, errors, set, onReconfirmPin, autoFillNotice }: {
+  address: CustomerAddress;
+  mapSelection: MapLocationSelection;
+  errors: Record<string, string>;
+  set: (key: keyof CustomerAddress, value: string | number) => void;
+  onReconfirmPin: (confirmed: boolean) => void;
+  autoFillNotice: boolean;
+}) {
+  const [detailsOpen, setDetailsOpen] = useState(
+    () => Boolean(address.entrance || address.floor || address.apartment || address.landmark || address.deliveryNotes),
+  );
+  return (
+    <div data-testid="checkout-step-address">
+      <div className="address-pin-summary" data-testid="address-pin-summary">
+        <p className="address-pin-summary-label">Xaritada tanlangan nuqta</p>
+        {mapSelection.suggestion?.formattedAddress ? (
+          <p className="address-pin-summary-value">{mapSelection.suggestion.formattedAddress}</p>
+        ) : address.latitude !== undefined && address.longitude !== undefined ? (
+          <p className="address-pin-summary-value">{address.latitude.toFixed(5)}, {address.longitude.toFixed(5)} <small>Aniq manzil topilmadi — quyidagi maydonlarni to‘ldiring.</small></p>
+        ) : (
+          <p className="address-pin-summary-value muted">Nuqta tanlanmagan.</p>
+        )}
+        <label className="pin-confirm" data-testid="address-pin-reconfirm">
+          <input
+            type="checkbox"
+            checked={address.pinConfirmedAt !== undefined}
+            disabled={address.latitude === undefined}
+            onChange={(event) => onReconfirmPin(event.target.checked)}
+          />
+          <span><b>Kirish joyi xaritada to‘g‘ri belgilangan</b><small>Nuqtani o‘zgartirish uchun ortga qayting.</small></span>
+        </label>
+        {errors.pinConfirmation && <em className="error">{errors.pinConfirmation}</em>}
+        {errors.coordinates && <em className="error">{errors.coordinates}</em>}
+      </div>
+      {autoFillNotice && (
+        <p className="success-notice" role="status" data-testid="address-autofilled-notice">Manzil xaritadan aniqlandi</p>
+      )}
+      <Field label="Mahalla yoki tuman *" value={address.district} error={errors.district} onChange={(v) => set("district", v)} />
+      <Field label="Ko‘cha yoki joylashuv *" value={address.street} error={errors.street} onChange={(v) => set("street", v)} />
+      <Field label="Uy / bino (ixtiyoriy)" value={address.house} placeholder="Masalan: 24 yoki savdo markazi" onChange={(v) => set("house", v)} />
+      <button
+        type="button"
+        className="button text disclosure-toggle"
+        aria-expanded={detailsOpen}
+        aria-controls="address-optional-details"
+        data-testid="address-optional-toggle"
+        onClick={() => setDetailsOpen((open) => !open)}
+      >
+        Qo‘shimcha ma’lumotlar (ixtiyoriy) {detailsOpen ? "▲" : "▼"}
+      </button>
+      {detailsOpen && (
+        <div id="address-optional-details" data-testid="address-optional-details">
+          <div className="field-row">
+            <Field label="Kirish" value={address.entrance || ""} onChange={(v) => set("entrance", v)} />
+            <Field label="Qavat" value={address.floor || ""} onChange={(v) => set("floor", v)} />
+            <Field label="Xonadon" value={address.apartment || ""} onChange={(v) => set("apartment", v)} />
+          </div>
+          <Field label="Mo‘ljal (ixtiyoriy)" value={address.landmark} onChange={(v) => set("landmark", v)} />
+          <Field label="Yetkazish izohi (ixtiyoriy)" value={address.deliveryNotes} onChange={(v) => set("deliveryNotes", v)} />
+        </div>
+      )}
+    </div>
+  );
+}
 function Checkout() {
   const { cart, submitOrder, clearCart, publicConfig, authReady, session, isCustomerAuthenticated, sendCustomerOtp, verifyCustomerOtp, signOut } = useApp();
   const nav = useNavigate();
+  const [step, setStep] = useState<CheckoutStep>(1);
   const [type, setType] = useState<"DELIVERY" | "PICKUP">("DELIVERY");
   const [address, setAddress] = useState(blankAddress);
   const [payment, setPayment] = useState<PaymentMethod>("CASH");
@@ -795,8 +989,126 @@ function Checkout() {
     clearError("pinConfirmation");
     clearError("deliveryZone");
   };
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  // Step 3's own re-confirmation checkbox -- same confirmSelection /
+  // NEEDS_RECONFIRMATION semantics MapPicker's own checkbox drives on Step
+  // 2, invoked here because Step 3 has no map canvas of its own.
+  const reconfirmPin = (checked: boolean) => {
+    if (checked) {
+      if (!mapSelection.coordinate) return;
+      updateMapSelection(confirmSelection(mapSelection));
+    } else {
+      updateMapSelection({ ...mapSelection, state: "NEEDS_RECONFIRMATION", confirmedAt: undefined });
+    }
+  };
+  // Automatic map-derived autofill: lives on the always-mounted Checkout
+  // component (not inside CheckoutAddressStep, Step 3's body) so it fires
+  // the instant a suggestion resolves -- typically while the customer is
+  // still on Step 2 -- rather than when Step 3 first mounts. Firing it on
+  // Step 3's mount would call set() for an ALREADY-confirmed pin's fields,
+  // and set()'s own material-change rule would silently reset the pin
+  // confirmation the customer just gave on the previous step. Ported
+  // unchanged from the original DeliveryAddressFields otherwise.
+  const autoFilledSuggestion = useRef<AddressSuggestion | undefined>(undefined);
+  const [autoFillNotice, setAutoFillNotice] = useState(false);
+  useEffect(() => {
+    const suggestion = mapSelection.suggestion;
+    if (!suggestion || suggestion === autoFilledSuggestion.current) return;
+    autoFilledSuggestion.current = suggestion;
+    const resolved = applySuggestion({ district: address.district, street: address.street, house: address.house }, suggestion);
+    let changedAny = false;
+    (["district", "street", "house"] as const).forEach((key) => {
+      if (resolved[key] !== address[key]) {
+        set(key, resolved[key]);
+        changedAny = true;
+      }
+    });
+    if (changedAny) setAutoFillNotice(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapSelection.suggestion]);
+  const stepSequence = useMemo(() => checkoutStepSequence(type), [type]);
+  const goToStep = (target: CheckoutStep) => {
+    setStep(target);
+    window.scrollTo({ top: 0 });
+  };
+  const focusFirstError = () => {
+    document.querySelector(".error")?.closest(".field")?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+  // Step 1's "Continue" proactively runs the exact same auth-required check
+  // submitOrder itself runs (resolveOrderSubmissionMode, domain.ts -- pure,
+  // unchanged) so the OTP gate is discovered up front instead of only after
+  // the customer has filled in every later step. The reactive
+  // CustomerAuthRequiredError safety net in finishSubmit below is left
+  // fully intact as a fallback (e.g. a session expiring mid-checkout).
+  const goNext = () => {
+    if (step === 1) {
+      if (otpStep) return;
+      const found = validateContact(address);
+      if (type === "DELIVERY" && publicConfig && subtotal < publicConfig.minimumDeliverySubtotal) {
+        found.deliveryMinimum = `Yetkazib berish uchun eng kam buyurtma ${money(publicConfig.minimumDeliverySubtotal)}.`;
+      }
+      setErrors(found);
+      if (Object.keys(found).length) {
+        focusFirstError();
+        return;
+      }
+      if (!authReady) return;
+      const mode = resolveOrderSubmissionMode(Boolean(publicConfig?.customerAuthRequired), isCustomerAuthenticated);
+      if (mode === "REQUIRES_CUSTOMER_AUTH") {
+        setOtpError("");
+        setOtpPhone(address.primaryPhone || "");
+        setOtpStep("phone");
+        return;
+      }
+      goToStep(type === "DELIVERY" ? 2 : 4);
+      return;
+    }
+    if (step === 2) {
+      const found = validateMapPin(address);
+      setErrors(found);
+      if (Object.keys(found).length) {
+        focusFirstError();
+        return;
+      }
+      goToStep(3);
+      return;
+    }
+    if (step === 3) {
+      const found = validateDeliveryLocation(address);
+      setErrors(found);
+      if (Object.keys(found).length) {
+        focusFirstError();
+        return;
+      }
+      goToStep(4);
+      return;
+    }
+    if (step === 4) {
+      const found: Record<string, string> = {};
+      if (!allowedPayments.includes(payment)) found.paymentMethod = "Bu buyurtma turi uchun to‘lov usulini qayta tanlang.";
+      setErrors(found);
+      if (Object.keys(found).length) return;
+      goToStep(5);
+    }
+  };
+  const goBack = () => {
+    if (step === 1 && otpStep) {
+      setOtpStep(null);
+      setOtpError("");
+      return;
+    }
+    const idx = stepSequence.indexOf(step);
+    if (idx > 0) {
+      goToStep(stepSequence[idx - 1]);
+      return;
+    }
+    nav("/cart");
+  };
+  // Telegram's native BackButton steps backward through the wizard (and,
+  // from Step 1, back to the cart) instead of falling through to whatever
+  // Telegram's default chrome would otherwise do -- a no-op outside a
+  // genuine Telegram context.
+  useTelegramBackButton(true, goBack);
+  const submit = async () => {
     if (submittingRef.current) return;
     // A persisted Supabase session (including an expired access token with
     // a still-valid refresh token) is restored asynchronously on a cold
@@ -923,12 +1235,21 @@ function Checkout() {
       const order = pendingOrderRef.current;
       pendingOrderRef.current = null;
       if (order) {
+        // The Step 5 safety-net path: OTP was only discovered required at
+        // final submit (e.g. a session that expired mid-checkout), so a
+        // fully-built order is already waiting -- resubmit it exactly as
+        // before.
         submittingRef.current = true;
         setSubmitting(true);
         await finishSubmit({
           ...order,
           customer: { ...order.customer, primaryPhone: otpCanonicalPhone },
         });
+      } else {
+        // The proactive Step 1 gate: no order exists yet, so just carry the
+        // now-verified phone forward and continue the wizard.
+        setAddress((a) => (a.primaryPhone === otpCanonicalPhone ? a : { ...a, primaryPhone: otpCanonicalPhone }));
+        goToStep(type === "DELIVERY" ? 2 : 4);
       }
     } catch (error) {
       setOtpError(error instanceof Error ? error.message : "Xatolik yuz berdi");
@@ -936,298 +1257,324 @@ function Checkout() {
       setOtpBusy(false);
     }
   };
+  const continueLabel = step === 2 ? "Shu joyni tanlash" : step === 4 ? "Buyurtmani tekshirish" : "Davom etish";
+  const hideContinue = step === 1 && Boolean(otpStep);
   return (
-    <Shell>
-      <main className="checkout">
-        <Link to="/cart" className="back">
-          ← Savat
-        </Link>
-        <h1>Buyurtmani rasmiylashtirish</h1>
-        <form onSubmit={submit}>
-          <section className="form-card">
-            <h2>Qanday olasiz?</h2>
-            <div className="segmented">
-              <button
-                type="button"
-                data-testid="type-delivery"
-                disabled={publicConfig?.deliveryEnabled===false}
-                className={type === "DELIVERY" ? "active" : ""}
-                onClick={() => setType("DELIVERY")}
-              >
-                Yetkazib berish
-              </button>
-              <button
-                type="button"
-                data-testid="type-pickup"
-                className={type === "PICKUP" ? "active" : ""}
-                onClick={() => setType("PICKUP")}
-              >
-                Olib ketish
-              </button>
-            </div>
-            {publicConfig?.deliveryEnabled===false&&<p className="warning">Yetkazib berish vaqtincha o‘chirilgan. Olib ketishni tanlang.</p>}
-            {type === "DELIVERY" && publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && (
-              <p className="pilot-notice" data-testid="delivery-review-notice">
-                {publicConfig.deliveryReviewMessage || "Navoiy shahri bo‘ylab yetkazib berish 150.000 so‘mdan oshiq xaridlarda bepul. Undan kam buyurtmalarga 10.000 so‘m yetkazib berish narxi qo‘shiladi. Manzil operator tomonidan tasdiqlanadi."}
-              </p>
-            )}
-            {errors.deliveryMinimum && <em className="error">{errors.deliveryMinimum}</em>}
-          </section>
-          <section className="form-card">
-            <h2>Aloqa</h2>
-            {isCustomerAuthenticated && (
-              <p className="customer-session" data-testid="customer-session-badge">
-                {formatMaskedPhone(verifiedPhone)}{" "}
+    <Shell hideBottomNav>
+      <main className={`checkout checkout-v2 checkout-step-${step}${step === 2 ? " checkout-step-map-active" : ""}`} data-testid="checkout-wizard">
+        <CheckoutProgress step={step} type={type} />
+        <div className="checkout-step-body">
+          {step === 1 && (
+            <section className="form-card checkout-panel" data-testid="checkout-step-1">
+              <h1>{checkoutStepTitles[1]}</h1>
+              <div className="segmented" data-testid="fulfillment-toggle">
                 <button
                   type="button"
-                  className="button text"
-                  data-testid="customer-sign-out"
-                  onClick={() => signOut()}
+                  data-testid="type-delivery"
+                  disabled={publicConfig?.deliveryEnabled===false}
+                  className={type === "DELIVERY" ? "active" : ""}
+                  onClick={() => setType("DELIVERY")}
                 >
-                  Chiqish
+                  Yetkazib berish
                 </button>
-              </p>
-            )}
-            <Field
-              label="Ism *"
-              value={address.customerName}
-              error={errors.customerName}
-              onChange={(v) => set("customerName", v)}
-            />
-            {isCustomerAuthenticated ? (
-              <Field
-                label="Telefon *"
-                value={formatMaskedPhone(verifiedPhone)}
-                error={errors.primaryPhone}
-                onChange={() => {}}
-                readOnly
-              />
-            ) : (
-              <UzbekPhoneField
-                label="Telefon *"
-                value={address.primaryPhone}
-                error={errors.primaryPhone}
-                onChange={(v) => set("primaryPhone", v)}
-              />
-            )}
-            <Field
-              label="Qo‘shimcha telefon"
-              value={address.secondaryPhone || ""}
-              onChange={(v) => set("secondaryPhone", v)}
-            />
-          </section>
-          {type === "DELIVERY" && (
-            <section className="form-card">
-              <h2>Yetkazib berish manzilini belgilang</h2>
-              <p className="form-card-lead">Kuryer yetib boradigan aniq nuqtani xaritada ko‘rsating.</p>
-              <DeliveryAddressFields
-                address={address}
-                errors={errors}
-                set={set}
-                mapSelection={mapSelection}
-                updateMapSelection={updateMapSelection}
-                onApplySuggestion={(suggestion) => {
-                  setAddress((a) => ({
-                    ...applySuggestion(a, suggestion),
-                    providerPlaceId: suggestion.providerPlaceId,
-                    providerFormattedAddress: suggestion.formattedAddress,
-                    pinConfirmedAt: undefined,
-                    confidence: "CUSTOMER_CONFIRMATION_REQUIRED",
-                  }));
-                  setMapSelection((s) => materialAddressChange(s));
-                }}
-              />
-            </section>
-          )}
-          <section className="form-card">
-            <h2>To‘lov</h2>
-            {allowedPayments.includes('CASH')&&<label className="radio">
-              <input
-                type="radio"
-                checked={payment === "CASH"}
-                onChange={() => {
-                  setPayment("CASH");
-                  clearError("paymentMethod");
-                }}
-              />
-              Naqd pul
-            </label>}
-            {type==='PICKUP'&&allowedPayments.includes('TERMINAL')&&<label className="radio">
-              <input
-                type="radio"
-                checked={payment === "TERMINAL"}
-                onChange={() => {
-                  setPayment("TERMINAL");
-                  clearError("paymentMethod");
-                }}
-              />
-              Terminal — restoranda
-            </label>}
-            {allowedPayments.includes('CLICK')&&<label className="radio">
-              <input
-                type="radio"
-                checked={payment === "CLICK"}
-                onChange={() => {
-                  setPayment("CLICK");
-                  clearError("paymentMethod");
-                }}
-              />
-              💳 Click
-            </label>}
-            {allowedPayments.includes('PAYME')&&<label className="radio">
-              <input
-                type="radio"
-                checked={payment === "PAYME"}
-                onChange={() => {
-                  setPayment("PAYME");
-                  clearError("paymentMethod");
-                }}
-              />
-              💳 Payme
-            </label>}
-            {!allowedPayments.includes('CLICK')&&<label className="radio disabled" data-testid="click-disabled">
-              <input type="radio" disabled />
-              💳 Click — Tez orada
-            </label>}
-            {!allowedPayments.includes('PAYME')&&<label className="radio disabled" data-testid="payme-disabled">
-              <input type="radio" disabled />
-              💳 Payme — Tez orada
-            </label>}
-            {isRemotePaymentMethod(payment) && (
-              <p className="pilot-notice" data-testid="remote-payment-notice">
-                {remotePaymentCustomerNotice}
-              </p>
-            )}
-            <Field label="Buyurtma izohi" value={notes} onChange={setNotes} />
-          </section>
-          <section className="form-card review">
-            <h2>Tekshirish</h2>
-            {cart.map((i) => (
-              <div key={i.id}>
-                <span>
-                  {i.quantity} × {i.name}
-                </span>
-                <b>{money(i.quantity * i.unitPrice)}</b>
+                <button
+                  type="button"
+                  data-testid="type-pickup"
+                  className={type === "PICKUP" ? "active" : ""}
+                  onClick={() => setType("PICKUP")}
+                >
+                  Olib ketish
+                </button>
               </div>
-            ))}
-            {packagingTotal > 0 && <div data-testid="checkout-packaging-total"><span>Qadoqlash</span><b>{money(packagingTotal)}</b></div>}
-            <div>
-              <span>{fulfillment.label}</span>
-              <b>{type === "DELIVERY" ? money(estimatedFee) : fulfillment.value}</b>
-            </div>
-            <div data-testid="review-payment-method"><span>To‘lov</span><b>{paymentLabel(payment)}</b></div>
-            <div className="total" data-testid="estimated-total">
-              <span>Taxminiy jami</span>
-              <b>{money(total)}</b>
-            </div>
-            <small>{type === "DELIVERY"
-              ? "Yakuniy narx menyu va yetkazish sozlamalari asosida serverda tasdiqlanadi."
-              : "Yakuniy narx menyu narxlari asosida serverda tasdiqlanadi."}</small>
-          </section>
-          {!otpStep && (
-            <button
-              className="button primary wide"
-              type="submit"
-              data-testid="checkout-submit"
-              disabled={submitting || !authReady}
-            >
-              {submitting ? "Yuborilmoqda…" : !authReady ? "Sessiya tekshirilmoqda…" : "Buyurtmani yuborish"}
-            </button>
-          )}
-          {errors.submit && <p className="error" role="alert">{errors.submit}</p>}
-          {errors.cart && <p className="error" role="alert">{errors.cart}</p>}
-          {errors.paymentMethod && <p className="error" role="alert">{errors.paymentMethod}</p>}
-          {otpStep && (
-            <section className="form-card otp-step" data-testid="customer-otp-step">
-              <h2>Telefon raqamingizni tasdiqlang</h2>
-              {turnstileSiteKey ? (
-                <TurnstileWidget
-                  key={otpCaptchaResetKey}
-                  siteKey={turnstileSiteKey}
-                  onVerify={(token) => {
-                    setOtpCaptchaFailed(false);
-                    setOtpError("");
-                    setOtpCaptchaToken(token);
-                  }}
-                  onExpire={() => {
-                    setOtpCaptchaToken(null);
-                    setOtpError("Tasdiqlash muddati tugadi. Qaytadan urinib ko‘ring.");
-                  }}
-                  onError={() => {
-                    setOtpCaptchaToken(null);
-                    setOtpCaptchaFailed(true);
-                    setOtpError("Xavfsizlik tekshiruvi yuklanmadi");
-                  }}
-                />
-              ) : (
-                <p className="error" role="alert" data-testid="otp-captcha-unavailable">
-                  Xavfsizlik tekshiruvi sozlanmagan. Birozdan keyin qayta urinib ko‘ring.
+              {publicConfig?.deliveryEnabled===false&&<p className="warning">Yetkazib berish vaqtincha o‘chirilgan. Olib ketishni tanlang.</p>}
+              {type === "DELIVERY" && publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && (
+                <p className="pilot-notice" data-testid="delivery-review-notice">
+                  {publicConfig.deliveryReviewMessage || "Navoiy shahri bo‘ylab yetkazib berish 150.000 so‘mdan oshiq xaridlarda bepul. Undan kam buyurtmalarga 10.000 so‘m yetkazib berish narxi qo‘shiladi. Manzil operator tomonidan tasdiqlanadi."}
                 </p>
               )}
-              {turnstileSiteKey && otpCaptchaFailed && (
-                <button type="button" className="button secondary" data-testid="otp-captcha-retry" onClick={() => {
-                  setOtpCaptchaFailed(false);
-                  setOtpError("");
-                  setOtpCaptchaToken(null);
-                  setOtpCaptchaResetKey((value) => value + 1);
-                }}>Qayta urinish</button>
-              )}
-              {otpStep === "phone" && (
-                <>
-                  <Field
-                    label="Telefon"
-                    value={otpPhone}
-                    placeholder="+998 __ ___ __ __"
-                    onChange={setOtpPhone}
-                  />
-                  <button
-                    type="button"
-                    className="button primary wide"
-                    data-testid="otp-send"
-                    disabled={otpBusy || !otpCaptchaToken}
-                    onClick={handleSendOtp}
-                  >
-                    {otpBusy ? "Yuborilmoqda…" : "SMS kod yuborish"}
-                  </button>
-                </>
-              )}
-              {otpStep === "code" && (
-                <>
-                  <p>{otpCanonicalPhone} raqamiga yuborilgan kodni kiriting.</p>
-                  <Field
-                    label="Tasdiqlash kodi"
-                    value={otpCode}
-                    placeholder="123456"
-                    onChange={setOtpCode}
-                  />
-                  <button
-                    type="button"
-                    className="button primary wide"
-                    data-testid="otp-verify"
-                    disabled={otpBusy}
-                    onClick={handleVerifyOtp}
-                  >
-                    {otpBusy ? "Tekshirilmoqda…" : "Tasdiqlash"}
-                  </button>
+              {errors.deliveryMinimum && <em className="error">{errors.deliveryMinimum}</em>}
+              {isCustomerAuthenticated && (
+                <p className="customer-session" data-testid="customer-session-badge">
+                  {formatMaskedPhone(verifiedPhone)}{" "}
                   <button
                     type="button"
                     className="button text"
-                    data-testid="otp-resend"
-                    disabled={otpBusy || !otpCaptchaToken}
-                    onClick={handleSendOtp}
+                    data-testid="customer-sign-out"
+                    onClick={() => signOut()}
                   >
-                    Kodni qayta yuborish
+                    Chiqish
                   </button>
-                </>
-              )}
-              {otpError && (
-                <p className="error" role="alert" data-testid="otp-error">
-                  {otpError}
                 </p>
+              )}
+              <Field
+                label="Ism *"
+                value={address.customerName}
+                error={errors.customerName}
+                onChange={(v) => set("customerName", v)}
+              />
+              {isCustomerAuthenticated ? (
+                <Field
+                  label="Telefon *"
+                  value={formatMaskedPhone(verifiedPhone)}
+                  error={errors.primaryPhone}
+                  onChange={() => {}}
+                  readOnly
+                />
+              ) : (
+                <UzbekPhoneField
+                  label="Telefon *"
+                  value={address.primaryPhone}
+                  error={errors.primaryPhone}
+                  onChange={(v) => set("primaryPhone", v)}
+                />
+              )}
+              <Field
+                label="Qo‘shimcha telefon"
+                value={address.secondaryPhone || ""}
+                onChange={(v) => set("secondaryPhone", v)}
+              />
+              {otpStep && (
+                <section className="form-card otp-step" data-testid="customer-otp-step">
+                  <h2>Telefon raqamingizni tasdiqlang</h2>
+                  {turnstileSiteKey ? (
+                    <TurnstileWidget
+                      key={otpCaptchaResetKey}
+                      siteKey={turnstileSiteKey}
+                      onVerify={(token) => {
+                        setOtpCaptchaFailed(false);
+                        setOtpError("");
+                        setOtpCaptchaToken(token);
+                      }}
+                      onExpire={() => {
+                        setOtpCaptchaToken(null);
+                        setOtpError("Tasdiqlash muddati tugadi. Qaytadan urinib ko‘ring.");
+                      }}
+                      onError={() => {
+                        setOtpCaptchaToken(null);
+                        setOtpCaptchaFailed(true);
+                        setOtpError("Xavfsizlik tekshiruvi yuklanmadi");
+                      }}
+                    />
+                  ) : (
+                    <p className="error" role="alert" data-testid="otp-captcha-unavailable">
+                      Xavfsizlik tekshiruvi sozlanmagan. Birozdan keyin qayta urinib ko‘ring.
+                    </p>
+                  )}
+                  {turnstileSiteKey && otpCaptchaFailed && (
+                    <button type="button" className="button secondary" data-testid="otp-captcha-retry" onClick={() => {
+                      setOtpCaptchaFailed(false);
+                      setOtpError("");
+                      setOtpCaptchaToken(null);
+                      setOtpCaptchaResetKey((value) => value + 1);
+                    }}>Qayta urinish</button>
+                  )}
+                  {otpStep === "phone" && (
+                    <>
+                      <Field
+                        label="Telefon"
+                        value={otpPhone}
+                        placeholder="+998 __ ___ __ __"
+                        onChange={setOtpPhone}
+                      />
+                      <button
+                        type="button"
+                        className="button primary wide"
+                        data-testid="otp-send"
+                        disabled={otpBusy || !otpCaptchaToken}
+                        onClick={handleSendOtp}
+                      >
+                        {otpBusy ? "Yuborilmoqda…" : "SMS kod yuborish"}
+                      </button>
+                    </>
+                  )}
+                  {otpStep === "code" && (
+                    <>
+                      <p>{otpCanonicalPhone} raqamiga yuborilgan kodni kiriting.</p>
+                      <Field
+                        label="Tasdiqlash kodi"
+                        value={otpCode}
+                        placeholder="123456"
+                        onChange={setOtpCode}
+                      />
+                      <button
+                        type="button"
+                        className="button primary wide"
+                        data-testid="otp-verify"
+                        disabled={otpBusy}
+                        onClick={handleVerifyOtp}
+                      >
+                        {otpBusy ? "Tekshirilmoqda…" : "Tasdiqlash"}
+                      </button>
+                      <button
+                        type="button"
+                        className="button text"
+                        data-testid="otp-resend"
+                        disabled={otpBusy || !otpCaptchaToken}
+                        onClick={handleSendOtp}
+                      >
+                        Kodni qayta yuborish
+                      </button>
+                    </>
+                  )}
+                  {otpError && (
+                    <p className="error" role="alert" data-testid="otp-error">
+                      {otpError}
+                    </p>
+                  )}
+                </section>
               )}
             </section>
           )}
-        </form>
+          {step === 2 && (
+            <CheckoutMapStep
+              address={address}
+              mapSelection={mapSelection}
+              updateMapSelection={updateMapSelection}
+              errors={errors}
+              onApplySuggestion={(suggestion) => {
+                setAddress((a) => ({
+                  ...applySuggestion(a, suggestion),
+                  providerPlaceId: suggestion.providerPlaceId,
+                  providerFormattedAddress: suggestion.formattedAddress,
+                  pinConfirmedAt: undefined,
+                  confidence: "CUSTOMER_CONFIRMATION_REQUIRED",
+                }));
+                setMapSelection((s) => materialAddressChange(s));
+              }}
+            />
+          )}
+          {step === 3 && (
+            <section className="form-card checkout-panel">
+              <h1>{checkoutStepTitles[3]}</h1>
+              <CheckoutAddressStep address={address} mapSelection={mapSelection} errors={errors} set={set} onReconfirmPin={reconfirmPin} autoFillNotice={autoFillNotice} />
+            </section>
+          )}
+          {step === 4 && (
+            <section className="form-card checkout-panel" data-testid="checkout-step-4">
+              <h1>{checkoutStepTitles[4]}</h1>
+              <div className="payment-options" data-testid="payment-options">
+                {allowedPayments.includes('CASH')&&<label className="radio">
+                  <input
+                    type="radio"
+                    checked={payment === "CASH"}
+                    onChange={() => {
+                      setPayment("CASH");
+                      clearError("paymentMethod");
+                    }}
+                  />
+                  Naqd pul
+                </label>}
+                {type==='PICKUP'&&allowedPayments.includes('TERMINAL')&&<label className="radio">
+                  <input
+                    type="radio"
+                    checked={payment === "TERMINAL"}
+                    onChange={() => {
+                      setPayment("TERMINAL");
+                      clearError("paymentMethod");
+                    }}
+                  />
+                  Terminal — restoranda
+                </label>}
+                {allowedPayments.includes('CLICK')&&<label className="radio">
+                  <input
+                    type="radio"
+                    checked={payment === "CLICK"}
+                    onChange={() => {
+                      setPayment("CLICK");
+                      clearError("paymentMethod");
+                    }}
+                  />
+                  💳 Click
+                </label>}
+                {allowedPayments.includes('PAYME')&&<label className="radio">
+                  <input
+                    type="radio"
+                    checked={payment === "PAYME"}
+                    onChange={() => {
+                      setPayment("PAYME");
+                      clearError("paymentMethod");
+                    }}
+                  />
+                  💳 Payme
+                </label>}
+                {!allowedPayments.includes('CLICK')&&<label className="radio disabled" data-testid="click-disabled">
+                  <input type="radio" disabled />
+                  💳 Click — Tez orada
+                </label>}
+                {!allowedPayments.includes('PAYME')&&<label className="radio disabled" data-testid="payme-disabled">
+                  <input type="radio" disabled />
+                  💳 Payme — Tez orada
+                </label>}
+              </div>
+              {isRemotePaymentMethod(payment) && (
+                <p className="pilot-notice" data-testid="remote-payment-notice">
+                  {remotePaymentCustomerNotice}
+                </p>
+              )}
+              {errors.paymentMethod && <p className="error" role="alert">{errors.paymentMethod}</p>}
+              <Field label="Buyurtma izohi" value={notes} onChange={setNotes} />
+            </section>
+          )}
+          {step === 5 && (
+            <section className="form-card checkout-panel checkout-review" data-testid="checkout-step-5">
+              <h1>{checkoutStepTitles[5]}</h1>
+              <div className="review-block" data-testid="review-items">
+                {cart.map((i) => (
+                  <div key={i.id}>
+                    <span>
+                      {i.quantity} × {i.name}
+                    </span>
+                    <b>{money(i.quantity * i.unitPrice)}</b>
+                  </div>
+                ))}
+              </div>
+              <div className="review-block">
+                <div><span>Taomlar</span><b>{money(subtotal)}</b></div>
+                {packagingTotal > 0 && <div data-testid="checkout-packaging-total"><span>Qadoqlash</span><b>{money(packagingTotal)}</b></div>}
+                <div>
+                  <span>{fulfillment.label}</span>
+                  <b>{type === "DELIVERY" ? money(estimatedFee) : fulfillment.value}</b>
+                </div>
+                <div data-testid="review-payment-method"><span>To‘lov</span><b>{paymentLabel(payment)}</b></div>
+              </div>
+              <div className="review-block" data-testid="review-customer">
+                <div><span>Mijoz</span><b>{address.customerName}</b></div>
+                <div><span>Telefon</span><b>{address.primaryPhone}</b></div>
+                {type === "DELIVERY" && (
+                  <div data-testid="review-address"><span>Manzil</span><b>{[address.district, address.street, address.house].filter(Boolean).join(", ")}</b></div>
+                )}
+                {notes && <div><span>Izoh</span><b>{notes}</b></div>}
+              </div>
+              <div className="total" data-testid="estimated-total">
+                <span>Taxminiy jami</span>
+                <b>{money(total)}</b>
+              </div>
+              <small>{type === "DELIVERY"
+                ? "Yakuniy narx menyu va yetkazish sozlamalari asosida serverda tasdiqlanadi."
+                : "Yakuniy narx menyu narxlari asosida serverda tasdiqlanadi."}</small>
+            </section>
+          )}
+        </div>
+        {errors.submit && <p className="error" role="alert">{errors.submit}</p>}
+        {errors.cart && <p className="error" role="alert">{errors.cart}</p>}
+        <div className="sticky-action checkout-step-actions" data-testid="checkout-step-actions">
+          <button type="button" className="button secondary" data-testid="checkout-back" onClick={goBack}>← Orqaga</button>
+          {!hideContinue && (step !== 5 ? (
+            <button type="button" className="button primary wide" data-testid="checkout-continue" onClick={goNext}>
+              {continueLabel}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="button primary wide"
+              data-testid="checkout-submit"
+              disabled={submitting || !authReady}
+              onClick={() => void submit()}
+            >
+              {submitting ? "Yuborilmoqda…" : !authReady ? "Sessiya tekshirilmoqda…" : "Buyurtmani yuborish"}
+            </button>
+          ))}
+        </div>
       </main>
     </Shell>
   );

@@ -8,6 +8,14 @@ type TelegramThemeParams = {
   header_bg_color?: string;
 };
 
+type TelegramBackButton = {
+  isVisible?: boolean;
+  show(): void;
+  hide(): void;
+  onClick(callback: () => void): void;
+  offClick(callback: () => void): void;
+};
+
 type TelegramWebApp = {
   initData?: string;
   platform?: string;
@@ -17,6 +25,7 @@ type TelegramWebApp = {
   expand(): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
+  BackButton?: TelegramBackButton;
 };
 
 declare global {
@@ -53,5 +62,14 @@ export function initializeTelegramMiniApp(): boolean {
   webApp.expand();
   webApp.ready();
   return true;
+}
+
+// Same authenticity gate as initializeTelegramMiniApp (genuine initData
+// only) -- BackButton is UI chrome, not an identity signal, but a mocked
+// or embedded-without-initData window.Telegram object in a browser test
+// must never activate real Telegram chrome either.
+export function getTelegramBackButton(): TelegramBackButton | undefined {
+  const webApp = window.Telegram?.WebApp;
+  return webApp?.initData ? webApp.BackButton : undefined;
 }
 

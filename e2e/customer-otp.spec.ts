@@ -72,7 +72,10 @@ async function mintOtherAuthUserId(request: APIRequestContext): Promise<string> 
   return body.user.id as string;
 }
 
-const addItemToCartAndReachCheckout = async (page: import("@playwright/test").Page) => {
+// Reaches Step 1 with Pickup already selected (no map/address steps to
+// cross) -- contact fields and, if customer_auth_required, the OTP gate,
+// both live on Step 1 itself now.
+const addItemToCartAndReachContactStep = async (page: import("@playwright/test").Page) => {
   await page.goto("/menu");
   await page.getByRole("link", { name: /Zaytun tovuq grili tanlash/ }).click();
   await page.getByRole("button", { name: "+" }).click();
@@ -80,14 +83,29 @@ const addItemToCartAndReachCheckout = async (page: import("@playwright/test").Pa
   await page.getByTestId("type-pickup").click();
 };
 
+// From Step 4 (payment, already reached) through Step 5 (review) to the
+// actual order-creating submit -- the wizard's real terminal action.
+// Continue/Submit is a two-click sequence now (unlike the old one-shot
+// checkout-submit), since payment and review are separate steps.
+const continueFromPaymentToSubmit = async (page: import("@playwright/test").Page) => {
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-5")).toBeVisible();
+  await page.getByTestId("checkout-submit").click();
+};
+
 test.describe("customer_auth_required=false (production default): anonymous checkout regression", () => {
   test.beforeAll(() => setCustomerAuthRequired(false));
 
   test("anonymous browse -> cart -> checkout completes with no OTP interruption", async ({ page }) => {
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Flag Off Mijoz");
     await page.getByLabel("Telefon *").fill("+998901234599");
-    await page.getByTestId("checkout-submit").click();
+    await page.getByTestId("checkout-continue").click();
+    // Not OTP-required, pickup -- Step 1's Continue lands straight on
+    // Step 4 (payment), skipping the OTP gate entirely.
+    await expect(page.getByTestId("checkout-step-4")).toBeVisible();
+    await expect(page.getByTestId("customer-otp-step")).toHaveCount(0);
+    await continueFromPaymentToSubmit(page);
     await expect(page).toHaveURL(/\/confirmation\//);
     await expect(page.getByTestId("customer-otp-step")).toHaveCount(0);
 
@@ -121,25 +139,24 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
   test.beforeAll(() => setCustomerAuthRequired(true));
   test.afterAll(() => setCustomerAuthRequired(false));
 
-  test("checkout is intercepted by inline OTP, preserves state, verifies, and submits an authenticated order", async ({ page }) => {
+  test("Step 1's Continue is intercepted by inline OTP (proactively, before any later step), preserves state, verifies, and the wizard resumes to a submitted authenticated order", async ({ page }) => {
     let otpRequests = 0;
     page.on("request", (request) => {
       if (request.url().endsWith("/auth/v1/otp") && request.method() === "POST") otpRequests += 1;
     });
     await page.setViewportSize({ width: 390, height: 844 });
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("OTP Mijoz");
     await page.getByLabel("Telefon *").fill("+998901234588");
-    await page.getByLabel("Buyurtma izohi").fill("Pechene qo‘shmang");
     await page.screenshot({ path: "qa/screenshots/18-checkout-before-submit-390x844.png", fullPage: true });
-    await page.getByTestId("checkout-submit").click();
+    await page.getByTestId("checkout-continue").click();
 
-    // Unauthenticated + flag=true: submission is intercepted, not rejected --
-    // still on /checkout, and every already-entered field is untouched.
+    // Unauthenticated + flag=true: Continue is intercepted, not rejected --
+    // still on Step 1, and every already-entered field is untouched.
     await expect(page.getByTestId("customer-otp-step")).toBeVisible();
     await expect(page).not.toHaveURL(/\/confirmation\//);
+    await expect(page.getByTestId("checkout-step-1")).toBeVisible();
     await expect(page.getByLabel("Ism *")).toHaveValue("OTP Mijoz");
-    await expect(page.getByLabel("Buyurtma izohi")).toHaveValue("Pechene qo‘shmang");
     await expect(page.locator('[role="alert"]')).toHaveCount(0);
     await page.screenshot({ path: "qa/screenshots/19-inline-otp-390x844.png", fullPage: true });
     await page.screenshot({ path: "qa/screenshots/20-turnstile-normal-390x844.png", fullPage: true });
@@ -155,12 +172,20 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     await expect(page).not.toHaveURL(/\/confirmation\//);
     await page.screenshot({ path: "qa/screenshots/21-invalid-otp-390x844.png", fullPage: true });
 
-    // Correct fixed local OTP: verifies and resumes the same checkout
-    // automatically, without asking the user to press submit again.
+    // Correct fixed local OTP: verifies and advances the wizard past
+    // Step 1 automatically (pickup -> straight to Step 4), without any
+    // extra click needed to "resume" -- but this is a proactive Step 1
+    // gate now, not a resubmission, so an order does not exist yet: the
+    // customer still goes through Payment/Review and an explicit final
+    // submit, same as anyone who was never asked for OTP at all.
     await page.getByTestId("otp-resend").click();
     await page.getByLabel("Tasdiqlash kodi").fill("111111");
     await page.getByTestId("otp-verify").click();
+    await expect(page.getByTestId("checkout-step-4")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("customer-otp-step")).toHaveCount(0);
+    await page.getByLabel("Buyurtma izohi").fill("Pechene qo‘shmang");
 
+    await continueFromPaymentToSubmit(page);
     await expect(page).toHaveURL(/\/confirmation\//, { timeout: 15000 });
     await expect(page.getByRole("link", { name: "Menu boshqaruvi" })).toHaveCount(0);
     await page.screenshot({ path: "qa/screenshots/22-verified-auto-submit-390x844.png", fullPage: true });
@@ -177,15 +202,18 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     // on this same browser therefore submits as the same authenticated
     // owner, without another SMS request or inline OTP interruption.
     await page.reload();
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("OTP Mijoz Again");
     // Authenticated checkout derives and locks the verified session phone;
     // an arbitrary typed phone cannot replace customer identity.
     await expect(page.getByLabel("Telefon *")).toHaveAttribute("readonly", "");
     await expect(page.getByLabel("Telefon *")).toHaveValue("+998 00 *** ** 01");
-    await page.getByTestId("checkout-submit").click();
-    await expect(page).toHaveURL(/\/confirmation\//, { timeout: 15000 });
+    await page.getByTestId("checkout-continue").click();
+    // Already authenticated -- Continue goes straight to Step 4, no OTP.
+    await expect(page.getByTestId("checkout-step-4")).toBeVisible();
     await expect(page.getByTestId("customer-otp-step")).toHaveCount(0);
+    await continueFromPaymentToSubmit(page);
+    await expect(page).toHaveURL(/\/confirmation\//, { timeout: 15000 });
     expect(otpRequests).toBe(2); // initial send + explicit resend after the deliberately wrong OTP
     const repeatedOrder = queryOrder(page.url().split("/confirmation/")[1]);
     expect(repeatedOrder.customer_id).toBe(order.customer_id);
@@ -202,10 +230,10 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     const otherAuthUserId = await mintOtherAuthUserId(request);
     psql(`update customers set phone_e164='+998000000003' where auth_user_id='${otherAuthUserId}';`);
 
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Conflict Mijoz");
     await page.getByLabel("Telefon *").fill("+998901234566");
-    await page.getByTestId("checkout-submit").click();
+    await page.getByTestId("checkout-continue").click();
     await expect(page.getByTestId("customer-otp-step")).toBeVisible();
 
     await page.getByLabel("Telefon", { exact: true }).fill("000000003");
@@ -216,13 +244,15 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
 
     // Error is shown, in the clean Uzbek form, not a raw Supabase dump.
     await expect(page.getByTestId("otp-error")).toContainText("boshqa hisobga bog‘langan");
-    // Still on /checkout -- the order was never submitted.
+    // Still on Step 1 -- the order was never submitted (it does not even
+    // exist yet, this is the proactive gate, not a resubmission).
     await expect(page).not.toHaveURL(/\/confirmation\//);
+    await expect(page.getByTestId("checkout-step-1")).toBeVisible();
     // Never finalized as an authenticated customer -- no half-authenticated
     // window: the masked-phone/"Chiqish" badge never appears.
     await expect(page.getByTestId("customer-session-badge")).toHaveCount(0);
     // The OTP step is still open on its code screen, not silently advanced
-    // past the bad identity into a submitted order.
+    // past the bad identity.
     await expect(page.getByTestId("customer-otp-step")).toBeVisible();
 
     const orderCount = psql(`select count(*) from orders where primary_phone in ('+998901234566','+998000000003');`);
@@ -232,14 +262,16 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
   test("Buyurtmalarim recovers an owned order without the original tracking token, and OTP restores it after sign-out", async ({ page }) => {
     test.setTimeout(60000);
     await page.setViewportSize({ width: 390, height: 844 });
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Recovery Mijoz");
     await page.getByLabel("Telefon *").fill("+998901234577");
-    await page.getByTestId("checkout-submit").click();
+    await page.getByTestId("checkout-continue").click();
     await page.getByLabel("Telefon", { exact: true }).fill("000000002");
     await page.getByTestId("otp-send").click();
     await page.getByLabel("Tasdiqlash kodi").fill("222222");
     await page.getByTestId("otp-verify").click();
+    await expect(page.getByTestId("checkout-step-4")).toBeVisible({ timeout: 15000 });
+    await continueFromPaymentToSubmit(page);
     await expect(page).toHaveURL(/\/confirmation\//, { timeout: 15000 });
     const orderId = page.url().split("/confirmation/")[1];
 

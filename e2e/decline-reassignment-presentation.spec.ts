@@ -36,10 +36,15 @@ test.describe("P6 decline / reassignment presentation", () => {
     await customer.waitForURL("**/checkout");
     await customer.getByLabel("Ism *").fill("Decline UX Mijoz");
     await customer.getByLabel("Telefon *").fill("+998907776900");
-    await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
-    await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+    await customer.getByTestId("checkout-continue").click(); // Step 1 -> Step 2 (map)
     await customer.getByTestId("map-picker-set").click();
     await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+    await customer.getByTestId("checkout-continue").click(); // Step 2 -> Step 3 (address)
+    await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
+    await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+    await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+    await customer.getByTestId("checkout-continue").click(); // Step 3 -> Step 4 (payment)
+    await customer.getByTestId("checkout-continue").click(); // Step 4 -> Step 5 (review)
     await customer.getByTestId("checkout-submit").click();
     await customer.waitForURL("**/confirmation/**");
     const orderId = customer.url().split("/confirmation/")[1];
@@ -87,10 +92,15 @@ test.describe("P6 decline / reassignment presentation", () => {
     await customer.waitForURL("**/checkout");
     await customer.getByLabel("Ism *").fill("Accept UX Mijoz");
     await customer.getByLabel("Telefon *").fill("+998907776901");
-    await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
-    await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+    await customer.getByTestId("checkout-continue").click(); // Step 1 -> Step 2 (map)
     await customer.getByTestId("map-picker-set").click();
     await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+    await customer.getByTestId("checkout-continue").click(); // Step 2 -> Step 3 (address)
+    await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
+    await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+    await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+    await customer.getByTestId("checkout-continue").click(); // Step 3 -> Step 4 (payment)
+    await customer.getByTestId("checkout-continue").click(); // Step 4 -> Step 5 (review)
     await customer.getByTestId("checkout-submit").click();
     await customer.waitForURL("**/confirmation/**");
     const orderId = customer.url().split("/confirmation/")[1];
@@ -122,10 +132,15 @@ test.describe("P6 decline / reassignment presentation", () => {
     await customer.waitForURL("**/checkout");
     await customer.getByLabel("Ism *").fill("Reassign UX Mijoz");
     await customer.getByLabel("Telefon *").fill("+998907776902");
-    await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
-    await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+    await customer.getByTestId("checkout-continue").click(); // Step 1 -> Step 2 (map)
     await customer.getByTestId("map-picker-set").click();
     await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+    await customer.getByTestId("checkout-continue").click(); // Step 2 -> Step 3 (address)
+    await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
+    await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+    await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+    await customer.getByTestId("checkout-continue").click(); // Step 3 -> Step 4 (payment)
+    await customer.getByTestId("checkout-continue").click(); // Step 4 -> Step 5 (review)
     await customer.getByTestId("checkout-submit").click();
     await customer.waitForURL("**/confirmation/**");
     const orderId = customer.url().split("/confirmation/")[1];

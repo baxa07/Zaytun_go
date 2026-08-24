@@ -43,6 +43,39 @@ export interface CartItem {id:string;menuItemId:string;name:string;unitPrice:num
 export interface Cart {items:CartItem[]}
 export const cartLineMatches=(left:CartItem,right:CartItem)=>left.menuItemId===right.menuItemId&&left.modifierIds.slice().sort().join()===right.modifierIds.slice().sort().join()&&left.instructions.trim()===right.instructions.trim()
 export function addCartLine(items:CartItem[],incoming:CartItem,maximumQuantity:number){const existing=items.find(item=>cartLineMatches(item,incoming));if(!existing)return[...items,{...incoming,quantity:Math.min(incoming.quantity,maximumQuantity)}];return items.map(item=>item.id===existing.id?{...item,quantity:Math.min(item.quantity+incoming.quantity,maximumQuantity)}:item)}
+// Product-card quantity stepper: the card's own "+"/"−" only ever own the
+// ONE cart line a plain quick-add produces for that product -- no
+// modifiers, no note (matches addSimpleItem's exact shape). A line for the
+// same product WITH a note (added via the product detail page) is a
+// distinct variant the card must never claim, silently merge into, or let
+// a bare "−" decrement -- same "don't show a misleading shared stepper
+// across variants" rule the modifier case already needs, just triggered by
+// instructions instead of modifierIds.
+export const simpleCartLine=(cart:CartItem[],menuItemId:string):CartItem|undefined=>cart.find(item=>item.menuItemId===menuItemId&&item.modifierIds.length===0&&item.instructions.trim()==='')
+// Sum across every variant of a product (any modifiers, any note) -- used
+// only for the small badge on modifier products, which is informational
+// ("something of this is in your cart"), never a control the card mutates
+// directly.
+export const cartQuantityForItem=(cart:Pick<CartItem,'menuItemId'|'quantity'>[],menuItemId:string):number=>cart.filter(item=>item.menuItemId===menuItemId).reduce((sum,item)=>sum+item.quantity,0)
+// General card-level resolver for products WITH modifiers (Grill etc.):
+// the card must never offer a single decrement control across two
+// genuinely different configured variants (different modifiers and/or
+// different instructions are different orders), but it CAN safely expose
+// a direct +/- the moment exactly one distinct line exists for the
+// product, since there is then no ambiguity about which line "−" means.
+// Deliberately keyed on distinct-LINE count, never aggregate quantity --
+// two lines of quantity 1 each must never look decrementable as if they
+// were one line of quantity 2.
+export type ProductCartResolution=
+  |{kind:'NONE'}
+  |{kind:'SINGLE';line:CartItem}
+  |{kind:'MULTIPLE';totalQuantity:number}
+export const resolveProductCartLines=(cart:CartItem[],menuItemId:string):ProductCartResolution=>{
+  const lines=cart.filter(item=>item.menuItemId===menuItemId)
+  if(lines.length===0)return{kind:'NONE'}
+  if(lines.length===1)return{kind:'SINGLE',line:lines[0]}
+  return{kind:'MULTIPLE',totalQuantity:lines.reduce((sum,line)=>sum+line.quantity,0)}
+}
 export interface Customer {id:string;name:string;primaryPhone:string;secondaryPhone?:string}
 export interface CustomerAddress {customerName:string;primaryPhone:string;secondaryPhone?:string;district:string;street:string;house:string;entrance?:string;floor?:string;apartment?:string;landmark:string;deliveryNotes:string;latitude?:number;longitude?:number;confidence:AddressConfidence;pinConfirmedAt?:string;locationProvider?:'mock'|'yandex';providerPlaceId?:string;providerFormattedAddress?:string;deliveryDistanceKm?:number;deliveryZoneResult?:'ELIGIBLE'|'OUTSIDE_ZONE'|'DELIVERY_DISABLED'}
 export interface OrderItem extends CartItem {total:number}
@@ -169,12 +202,32 @@ export function calculateOrderTotal(items:Pick<CartItem,'unitPrice'|'quantity'|'
 // never block checkout. Mirrored exactly by create_order_internal and
 // revise_delivery_address (supabase/migrations) so frontend and backend
 // never disagree on what's required.
-export function validateDeliveryLocation(address:Pick<CustomerAddress,'district'|'street'|'house'|'landmark'|'deliveryNotes'|'latitude'|'longitude'|'pinConfirmedAt'|'deliveryZoneResult'>):Record<string,string>{const e:Record<string,string>={};if(!address.district.trim())e.district='Mahalla yoki tumanni kiriting';if(!address.street.trim())e.street='Ko‘cha yoki joylashuvni kiriting';if(address.latitude===undefined||address.longitude===undefined)e.coordinates='Xaritadan joylashuvni belgilang';else if(address.latitude<-90||address.latitude>90||address.longitude<-180||address.longitude>180||(address.latitude===0&&address.longitude===0))e.coordinates='Tanlangan koordinata noto‘g‘ri';if(!address.pinConfirmedAt)e.pinConfirmation='Pin yetkazish nuqtasida ekanini tasdiqlang';if(address.deliveryZoneResult==='OUTSIDE_ZONE')e.deliveryZone='Bu manzil yetkazish hududidan tashqarida';if(address.deliveryZoneResult==='DELIVERY_DISABLED')e.deliveryZone='Yetkazib berish vaqtincha o‘chirilgan';return e}
+// Split out of validateDeliveryLocation for the 5-step checkout: Step 2
+// (full-screen map) only ever shows a pin/zone status card, never the
+// district/street inputs, so its own "Continue" gate must only ever ask
+// about what THAT screen can affect. Step 3 (confirm address) is the one
+// screen with a district/street input, so it owns validateWrittenAddress.
+// validateDeliveryLocation composes both unchanged below so every existing
+// caller (AddressRevisionEditor, validateAddress, create_order_internal's
+// frontend mirror) keeps seeing the exact same combined result.
+export function validateMapPin(address:Pick<CustomerAddress,'latitude'|'longitude'|'pinConfirmedAt'|'deliveryZoneResult'>):Record<string,string>{const e:Record<string,string>={};if(address.latitude===undefined||address.longitude===undefined)e.coordinates='Xaritadan joylashuvni belgilang';else if(address.latitude<-90||address.latitude>90||address.longitude<-180||address.longitude>180||(address.latitude===0&&address.longitude===0))e.coordinates='Tanlangan koordinata noto‘g‘ri';if(!address.pinConfirmedAt)e.pinConfirmation='Pin yetkazish nuqtasida ekanini tasdiqlang';if(address.deliveryZoneResult==='OUTSIDE_ZONE')e.deliveryZone='Bu manzil yetkazish hududidan tashqarida';if(address.deliveryZoneResult==='DELIVERY_DISABLED')e.deliveryZone='Yetkazib berish vaqtincha o‘chirilgan';return e}
+export function validateWrittenAddress(address:Pick<CustomerAddress,'district'|'street'>):Record<string,string>{const e:Record<string,string>={};if(!address.district.trim())e.district='Mahalla yoki tumanni kiriting';if(!address.street.trim())e.street='Ko‘cha yoki joylashuvni kiriting';return e}
+// Minimum delivery-address contract: the confirmed map pin is the primary
+// geographic source. Written fields only need enough human-readable
+// context for the courier -- district/street -- everything else (house,
+// entrance/floor/apartment, landmark, delivery notes) is optional and must
+// never block checkout. Mirrored exactly by create_order_internal and
+// revise_delivery_address (supabase/migrations) so frontend and backend
+// never disagree on what's required.
+export function validateDeliveryLocation(address:Pick<CustomerAddress,'district'|'street'|'house'|'landmark'|'deliveryNotes'|'latitude'|'longitude'|'pinConfirmedAt'|'deliveryZoneResult'>):Record<string,string>{return{...validateWrittenAddress(address),...validateMapPin(address)}}
 // Uzbekistan-only checkout: the phone field only ever produces "" (empty)
 // or an exact "+998" + 9-digit canonical value (see extractUzbekNationalDigits
 // in src/phone.ts) -- so the customer-facing check can require that exact
 // shape instead of the previously loose "9+ digit-ish characters" rule.
-export function validateAddress(address:CustomerAddress):Record<string,string>{const e:Record<string,string>={};if(!address.customerName.trim())e.customerName='Ismingizni kiriting';if(!/^\+998\d{9}$/.test(address.primaryPhone))e.primaryPhone='Telefon raqamini to‘liq kiriting';return{...e,...validateDeliveryLocation(address)}}
+// Also split out (Step 1's own gate is contact-only, before any address
+// field exists in the flow) -- validateAddress composes it unchanged.
+export function validateContact(address:Pick<CustomerAddress,'customerName'|'primaryPhone'>):Record<string,string>{const e:Record<string,string>={};if(!address.customerName.trim())e.customerName='Ismingizni kiriting';if(!/^\+998\d{9}$/.test(address.primaryPhone))e.primaryPhone='Telefon raqamini to‘liq kiriting';return e}
+export function validateAddress(address:CustomerAddress):Record<string,string>{return{...validateContact(address),...validateDeliveryLocation(address)}}
 export function validateOrderInput(type:'DELIVERY'|'PICKUP',address:CustomerAddress|undefined,payment?:PaymentMethod){const e:Record<string,string>={};if(!payment)e.paymentMethod='To‘lov usulini tanlang';if(type==='DELIVERY'){if(!address)return{...e,address:'Yetkazish manzili kerak'};Object.assign(e,validateAddress(address))}return e}
 export function createIssue(orderId:string,type:DeliveryIssueType,description:string,reportedBy:string):DeliveryIssue{if(!description.trim())throw new Error('Issue description is required');return{id:createUuid(),orderId,type,description,reportedBy,createdAt:new Date().toISOString()}}
 

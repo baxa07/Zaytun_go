@@ -36,7 +36,8 @@ const readPendingCheckoutId = (page: Page) =>
     return raw ? (JSON.parse(raw) as { id: string; fingerprint: string }).id : null;
   }, PENDING_KEY);
 
-const addItemToCartAndReachCheckout = async (page: Page) => {
+// Reaches Step 1 with Pickup selected (no map/address steps).
+const addItemToCartAndReachContactStep = async (page: Page) => {
   await page.goto("/menu");
   await page.getByRole("link", { name: /Zaytun tovuq grili tanlash/ }).click();
   await page.getByRole("button", { name: "+" }).click();
@@ -44,12 +45,22 @@ const addItemToCartAndReachCheckout = async (page: Page) => {
   await page.getByTestId("type-pickup").click();
 };
 
+// Contact (Step 1) -> Payment (Step 4, default CASH) -> Review (Step 5),
+// landing where the real, order-creating submit button now lives.
+const reachReviewStep = async (page: Page) => {
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-4")).toBeVisible();
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-5")).toBeVisible();
+};
+
 test.describe("checkout idempotency (Phase 5B, launch blocker 1)", () => {
   test("Test A: two back-to-back submit clicks on the same pending checkout produce exactly one order", async ({ page }) => {
     const phone = "+998901110001";
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Ikki Marta Bosildi");
     await page.getByLabel("Telefon *").fill(phone);
+    await reachReviewStep(page);
 
     // Fire two click events back-to-back without Playwright's normal
     // actionability waiting (visible/stable/enabled) -- .click()'s own
@@ -70,12 +81,14 @@ test.describe("checkout idempotency (Phase 5B, launch blocker 1)", () => {
 
   test("Test B: reload after an uncertain network result reuses the same pending id and creates exactly one order", async ({ page }) => {
     const phone = "+998901110002";
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Qayta Urinish Mijozi");
     await page.getByLabel("Telefon *").fill(phone);
 
     const pendingIdBeforeFirstAttempt = await readPendingCheckoutId(page);
     expect(pendingIdBeforeFirstAttempt).toBeNull();
+
+    await reachReviewStep(page);
 
     // Simulate "the server received and processed the order, but the
     // browser never got to see the success response" -- the primary
@@ -103,8 +116,11 @@ test.describe("checkout idempotency (Phase 5B, launch blocker 1)", () => {
 
     // A real browser reload -- proves the pending id survives in
     // sessionStorage across a genuine navigation, not just React state.
+    // The wizard itself resets to Step 1 on reload (component remount),
+    // same as the cart being cleared below -- both are re-entered fresh.
     await page.reload();
     expect(await readPendingCheckoutId(page)).toBe(pendingIdAfterFailedAttempt);
+    await expect(page.getByTestId("checkout-step-1")).toBeVisible();
 
     // The cart itself is not persisted across a reload (by design, unrelated
     // to this fix), so the customer re-adds the identical order before
@@ -112,9 +128,10 @@ test.describe("checkout idempotency (Phase 5B, launch blocker 1)", () => {
     // fingerprint of this reconstructed checkout matches what's already
     // pending, the same id is reused rather than minting a new one.
     await page.unroute("**/rest/v1/rpc/create_public_order");
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Qayta Urinish Mijozi");
     await page.getByLabel("Telefon *").fill(phone);
+    await reachReviewStep(page);
     await page.getByTestId("checkout-submit").click();
 
     // The retry reaches the correct successful tracking state...
@@ -133,9 +150,10 @@ test.describe("checkout idempotency (Phase 5B, launch blocker 1)", () => {
 
   test("Test C: a new purchase after a completed order gets a fresh id, never the previous order's", async ({ page }) => {
     const firstPhone = "+998901110003";
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Birinchi Buyurtma");
     await page.getByLabel("Telefon *").fill(firstPhone);
+    await reachReviewStep(page);
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
     const firstOrderId = page.url().split("/confirmation/")[1];
@@ -145,12 +163,13 @@ test.describe("checkout idempotency (Phase 5B, launch blocker 1)", () => {
     expect(await readPendingCheckoutId(page)).toBeNull();
 
     const secondPhone = "+998901110004";
-    await addItemToCartAndReachCheckout(page);
+    await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Ikkinchi Buyurtma");
     await page.getByLabel("Telefon *").fill(secondPhone);
     // Before submitting the second, genuinely new order, there must be no
     // stale pending id left over from the first -- and once minted for
     // this new checkout, it must not equal the previous order's id.
+    await reachReviewStep(page);
     const submit = page.getByTestId("checkout-submit");
     await submit.click();
     await expect(page).toHaveURL(/\/confirmation\//);

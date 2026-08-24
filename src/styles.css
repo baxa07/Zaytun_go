@@ -10,6 +10,10 @@
   --gold: #d3a83f;
   --line: #dedfd9;
   --muted: #66716a;
+  /* Limited accent only -- checkout progress/step chrome, never a
+     replacement for the green/gold identity. */
+  --teal: #1f7a70;
+  --teal-soft: #e6f2f0;
 }
 * {
   box-sizing: border-box;
@@ -28,6 +32,9 @@ body {
 }
 .telegram-mini-app .customer-nav {
   padding-bottom: max(5px, var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom)));
+}
+.telegram-mini-app .checkout-step-actions {
+  padding-bottom: max(14px, var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom)));
 }
 button,
 input,
@@ -728,6 +735,10 @@ h2 {
   padding: 9px 0;
 }
 .total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
   font-size: 18px;
   border-top: 1px solid var(--line);
   margin-top: 8px;
@@ -2269,3 +2280,81 @@ h2 {
 .menu-category-rail{top:var(--app-header-height,68px);z-index:9;padding:9px 6px;background:rgba(247,246,242,.97)}.menu-category-rail button{min-height:38px;border:1px solid rgba(23,63,50,.16);border-radius:9px;background:#fffdf8;padding:8px 11px;color:#234638}.menu-category-rail button.active{border-color:#173f32;background:#173f32;color:#fffdf8}.menu-category-section{scroll-margin-top:calc(var(--app-header-height,68px) + 58px)}
 @media (max-width:760px){.menu-category-rail{padding:8px 14px}.menu-category-rail button{min-height:38px;padding:7px 10px}.menu-category-section .round,.bestseller-action{width:38px;min-width:38px;height:38px;min-height:38px}}
 @media (max-width:340px){.menu-category-section .menu-card>div,.bestseller-copy{padding-right:7px;padding-left:7px}.menu-category-section .menu-card footer,.bestseller-footer{gap:3px}.menu-category-section .menu-card footer b,.bestseller-footer>b{font-size:13px;letter-spacing:-.15px}}
+/* Product-card quantity stepper: replaces the bare "+" once an item is in
+   the cart. Footer gets flex-wrap so on the narrowest cards the stepper
+   drops to its own line under the price instead of ever being clipped. */
+.menu-category-section .menu-card footer,.bestseller-footer{flex-wrap:wrap;row-gap:6px}
+.qty-stepper{display:flex;align-items:center;gap:1px;background:var(--green);border-radius:999px;padding:2px;line-height:1}
+.qty-stepper button{width:28px;height:28px;min-width:28px;min-height:28px;border:0;border-radius:50%;background:transparent;color:#fff;font-size:17px;font-weight:800;display:grid;place-items:center;padding:0}
+.qty-stepper button:disabled{opacity:.35}
+.qty-stepper button:not(:disabled):active{background:rgba(255,255,255,.2)}
+.qty-stepper b{min-width:20px;padding:0 2px;text-align:center;color:#fff;font-size:13px;font-weight:800}
+.qty-stepper--bestseller{background:#173f32}
+.cart-qty-badge{display:inline-flex;align-items:center;justify-content:center;min-height:22px;padding:3px 10px;border-radius:999px;background:var(--teal);color:#fff;font-size:11px;font-weight:800;white-space:nowrap}
+@media (max-width:760px){.qty-stepper button{width:32px;height:32px;min-width:32px;min-height:32px;font-size:18px}}
+/* Five-step checkout wizard. Bottom customer-nav is hidden on this page
+   (Shell hideBottomNav) so the wizard owns the full bottom edge via its
+   own sticky Back/Continue bar instead. */
+.checkout-v2{padding-bottom:24px;display:flex;flex-direction:column;min-height:calc(100dvh - var(--app-header-height,68px))}
+.checkout-progress{margin-bottom:18px}
+.checkout-progress-dots{display:flex;gap:6px;list-style:none;margin:0 0 8px;padding:0}
+.checkout-progress-dots li{flex:1;height:4px;border-radius:999px;background:var(--line);position:relative;font-size:0;color:transparent}
+.checkout-progress-dots li.active,.checkout-progress-dots li.done{background:var(--teal)}
+.checkout-progress-label{margin:0;font-size:13px;font-weight:700;color:var(--green)}
+.checkout-step-body{display:flex;flex-direction:column;gap:16px;flex:1 1 auto;min-height:0}
+.checkout-panel h1{font-size:22px;margin-bottom:14px}
+.checkout-step-actions{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:14px 0 max(14px,env(safe-area-inset-bottom));background:#f7f6f2;border-top:1px solid var(--line)}
+.checkout-step-actions .button{min-height:52px}
+.checkout-step-actions [data-testid="checkout-back"]{min-width:104px}
+/* Step 2: the map fills essentially the whole remaining viewport instead
+   of sitting inside a small card -- search stays compact at the top,
+   status/pin-confirm sit as a bottom-sheet-style summary under the map,
+   MapPicker's own DOM/behavior is completely untouched. */
+.checkout-step-map-active .checkout-progress{margin-bottom:10px}
+.checkout-step-map-stage{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;position:relative}
+.checkout-step-map-stage .location-picker{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;gap:6px;margin-top:0}
+.checkout-step-map-stage .map-search{position:relative;z-index:3;margin:0;background:#fff;border-radius:14px;padding:8px 10px;box-shadow:0 8px 20px rgba(23,63,50,.14);grid-template-columns:1fr auto;align-items:center}
+.checkout-step-map-stage .map-search .field{margin:0}
+.checkout-step-map-stage .map-search .field span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.checkout-step-map-stage .map-search .field input{padding:10px 12px}
+/* Floats over the map's top-right corner instead of taking its own full
+   flex row -- reclaims vertical space for the map canvas itself. */
+.checkout-step-map-stage [data-testid="use-my-location"]{position:absolute;top:64px;right:10px;z-index:5;min-height:auto;padding:8px 12px;font-size:12px;border-radius:999px;box-shadow:0 6px 16px rgba(23,63,50,.18)}
+.checkout-step-map-stage .search-status{min-height:0}
+.checkout-step-map-stage .map-results{position:relative;z-index:4;max-height:38vh;overflow-y:auto}
+.checkout-step-map-stage .map-frame{flex:1 1 auto;min-height:220px;position:relative}
+.checkout-step-map-stage .map-canvas{position:absolute;inset:0;width:auto;height:auto}
+.checkout-step-map-stage .location-status,.checkout-step-map-stage .map-suggestion-inline,.checkout-step-map-stage .pin-confirm{margin-top:0;padding:11px}
+/* Step 3: lightweight pin re-confirmation summary (no second map canvas --
+   editing district/street here can invalidate Step 2's confirmation via
+   the same materialAddressChange reset `set()` already applies). */
+.address-pin-summary{background:var(--teal-soft);border:1px solid rgba(31,122,112,.25);border-radius:14px;padding:14px;margin-bottom:16px;display:grid;gap:10px}
+.address-pin-summary-label{margin:0;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--teal)}
+.address-pin-summary-value{margin:0;font-weight:700;color:#173f32}
+.address-pin-summary-value.muted{color:var(--muted);font-weight:600}
+.address-pin-summary-value small{display:block;margin-top:4px;color:var(--muted);font-weight:600;font-size:12px}
+.address-pin-summary .pin-confirm{background:#fff}
+/* Step 4: premium selectable payment cards -- same underlying <label
+   className="radio"> markup/behavior as before, restyled. */
+.payment-options{display:grid;gap:10px;margin-bottom:14px}
+.payment-options .radio{border-radius:16px;padding:16px 18px;font-weight:700;transition:border-color 200ms ease,box-shadow 200ms ease,background-color 200ms ease}
+.payment-options .radio input[type="radio"]{width:20px;height:20px;accent-color:var(--green)}
+.payment-options .radio:has(input:checked){border-color:var(--green);box-shadow:0 0 0 2px rgba(36,75,54,.14);background:#f4f9f5}
+.payment-options .radio.disabled{color:var(--muted);background:#fafaf8}
+@media (prefers-reduced-motion:reduce){.payment-options .radio{transition:none}}
+/* Step 5 review, grouped into blocks with a light divider instead of one
+   flat list -- products / totals / customer are visually distinct. */
+.checkout-review .review-block{display:grid}
+.checkout-review .review-block>div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 12px;padding:9px 0}
+.checkout-review .review-block>div>span{color:var(--muted)}
+.checkout-review .review-block>div>b{text-align:right;max-width:70%}
+.checkout-review .review-block+.review-block{border-top:1px solid var(--line);padding-top:6px;margin-top:2px}
+/* Subtle premium step transition -- fade + small horizontal shift, never
+   blocking input; disabled entirely under reduced motion. */
+.checkout-step-body{animation:checkout-step-in 220ms ease both}
+@keyframes checkout-step-in{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:translateX(0)}}
+@media (prefers-reduced-motion:reduce){.checkout-step-body{animation:none}}
+@media (max-width:760px){
+  .checkout-v2{padding-bottom:12px}
+  .checkout-step-map-stage .map-frame{min-height:180px}
+}
