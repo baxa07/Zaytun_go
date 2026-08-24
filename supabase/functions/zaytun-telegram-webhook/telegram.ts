@@ -7,6 +7,7 @@
 export interface InlineKeyboardButton {
   text: string;
   url?: string;
+  web_app?: { url: string };
 }
 
 export interface TelegramClient {

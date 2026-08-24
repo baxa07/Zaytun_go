@@ -30,7 +30,7 @@ const BOOKING_CHAT_URL = "https://t.me/Zaytun_kafe_navoi";
 
 const START_KEYBOARD = {
   inline_keyboard: [
-    [{ text: "🛍 Buyurtma berish", url: ORDER_URL }],
+    [{ text: "🛍 Zaytun Go’ni ochish", web_app: { url: ORDER_URL } }],
     [{ text: "🍽 Stol band qilish", url: BOOKING_CHAT_URL }],
   ],
 };

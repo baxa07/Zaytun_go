@@ -27,7 +27,7 @@ const post = (body: unknown, headers: Record<string, string> = {}) =>
     body: JSON.stringify(body),
   });
 
-Deno.test("/start -> sends welcome text with exactly the two specified URL buttons", async () => {
+Deno.test("/start -> launches ordering as a Telegram Web App and keeps booking as an ordinary URL", async () => {
   const { client, calls } = fakeTelegram();
   const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, consumeLink: noopConsumeLink };
   const res = await handleTelegramWebhook(
@@ -42,7 +42,7 @@ Deno.test("/start -> sends welcome text with exactly the two specified URL butto
   assertEquals(text, "Assalomu alaykum! 👋\nZaytun’ga xush kelibsiz.\nQanday yordam bera olamiz?");
   assertEquals(replyMarkup, {
     inline_keyboard: [
-      [{ text: "🛍 Buyurtma berish", url: "https://zaytungonavoiy.netlify.app" }],
+      [{ text: "🛍 Zaytun Go’ni ochish", web_app: { url: "https://zaytungonavoiy.netlify.app" } }],
       [{ text: "🍽 Stol band qilish", url: "https://t.me/Zaytun_kafe_navoi" }],
     ],
   });

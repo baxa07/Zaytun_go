@@ -18,6 +18,17 @@ body {
   margin: 0;
   min-width: 320px;
 }
+.telegram-mini-app body {
+  min-height: var(--tg-viewport-stable-height, 100vh);
+  background: var(--tg-theme-secondary-bg-color, #f7f6f2);
+  color: var(--tg-theme-text-color, #1d2922);
+}
+.telegram-mini-app header {
+  top: var(--tg-content-safe-area-inset-top, 0px);
+}
+.telegram-mini-app .customer-nav {
+  padding-bottom: max(5px, var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom)));
+}
 button,
 input,
 textarea,
