@@ -120,6 +120,7 @@ test.describe("customer delivery timeline: exceptional states never fake progres
 
     await page.reload();
     await expect(page.getByTestId("order-status")).toHaveText("Bekor qilindi");
+    await expect(page.locator(".tracking-terminal")).toContainText("Mijoz so‘radi");
     await expect(page.getByTestId("order-status")).not.toHaveText("Manzil tasdiqlandi");
     await expect(page.getByTestId("order-status")).not.toHaveText("Yetkazildi");
     await noHorizontalOverflow(page);

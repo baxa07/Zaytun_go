@@ -1742,10 +1742,7 @@ function Field({
         inputMode={inputMode}
         autoComplete={autoComplete}
         autoFocus={autoFocus}
-        onFocus={(event) => {
-          const field = event.currentTarget.closest(".field");
-          requestAnimationFrame(() => requestAnimationFrame(() => field?.scrollIntoView({ block: "center", behavior: "smooth" })));
-        }}
+        onFocus={(event) => revealCheckoutField(event.currentTarget)}
         onChange={(e) => !readOnly && onChange(e.target.value)}
       />
       {error && <em className="error">{error}</em>}
@@ -1786,10 +1783,7 @@ function UzbekPhoneField({
           autoComplete="tel-national"
           value={nationalDigits}
           placeholder="90 123 45 67"
-          onFocus={(event) => {
-            const field = event.currentTarget.closest(".field");
-            requestAnimationFrame(() => requestAnimationFrame(() => field?.scrollIntoView({ block: "center", behavior: "smooth" })));
-          }}
+          onFocus={(event) => revealCheckoutField(event.currentTarget)}
           onChange={(e) => {
             const digits = extractUzbekNationalDigits(e.target.value);
             onChange(digits ? `+998${digits}` : "");
@@ -1803,6 +1797,30 @@ function UzbekPhoneField({
 // +998901234567 (12 digits incl. country code) -> "+998 90 *** ** 67".
 // Display-only: the underlying address.primaryPhone keeps the full verified
 // number so validateAddress's phone regex still passes.
+function revealCheckoutField(input: HTMLElement) {
+  const reveal = () => {
+    if (!input.isConnected) return;
+    const field = input.closest<HTMLElement>(".field") || input;
+    const panel = input.closest<HTMLElement>(".checkout-panel,.checkout-sheet-scroll");
+    if (!panel) {
+      field.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
+    const fieldRect = field.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const desiredTop = panelRect.top + Math.max(10, (panel.clientHeight - fieldRect.height) / 2);
+    panel.scrollBy({ top: fieldRect.top - desiredTop, behavior: "smooth" });
+  };
+  requestAnimationFrame(() => requestAnimationFrame(reveal));
+  const viewport = window.visualViewport;
+  const afterViewportChange = () => reveal();
+  viewport?.addEventListener("resize", afterViewportChange, { once: true });
+  window.setTimeout(() => {
+    viewport?.removeEventListener("resize", afterViewportChange);
+    reveal();
+  }, 280);
+}
+
 function formatMaskedPhone(raw?: string | null): string {
   const digits = (raw || "").replace(/\D/g, "");
   if (digits.length !== 12) return raw ? `+${digits}` : "";

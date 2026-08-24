@@ -2332,13 +2332,14 @@ h2 {
   .checkout-step-map-stage [data-testid="use-my-location"]{top:78px;right:12px}
   .checkout-step-map-stage .map-frame{min-height:0;height:100%;border-radius:20px}.checkout-step-map-stage .map-canvas{border:0;border-radius:20px}
   .checkout-step-map-stage .search-status{display:none}.checkout-step-map-stage .map-results{position:absolute;z-index:8;top:70px;right:10px;left:10px;max-height:42%;border-radius:14px;box-shadow:0 14px 32px rgba(15,45,34,.18)}
-  .checkout-step-map-stage .location-status,.checkout-step-map-stage .map-suggestion-inline,.checkout-step-map-stage .pin-confirm{position:absolute;z-index:7;right:10px;bottom:10px;left:10px;margin:0;border:1px solid rgba(255,255,255,.8);border-radius:16px;background:rgba(255,255,255,.88);box-shadow:0 10px 30px rgba(15,45,34,.16);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+  .checkout-step-map-stage .location-status,.checkout-step-map-stage .map-suggestion-inline,.checkout-step-map-stage .pin-confirm{position:static;margin:0;border:1px solid rgba(255,255,255,.8);border-radius:16px;background:rgba(255,255,255,.9);box-shadow:0 10px 30px rgba(15,45,34,.16);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+  .checkout-step-map-stage .location-status--confirmed{display:none}
   .checkout-step-map-stage .pin-confirm{padding:11px}.checkout-step-map-stage .pin-confirm small{display:none}
   .checkout-step-3 .checkout-panel{padding:13px 16px}.checkout-step-3 .checkout-panel>h1{margin-bottom:9px;font-size:21px}
   .checkout-step-3 .address-pin-summary{gap:7px;padding:10px;margin-bottom:7px}.checkout-step-3 .address-pin-summary-label{font-size:9px}.checkout-step-3 .address-pin-summary-value{font-size:13px}.checkout-step-3 .address-pin-summary .pin-confirm{min-height:46px;padding:8px}.checkout-step-3 .address-pin-summary .pin-confirm input{width:19px;height:19px}.checkout-step-3 .address-pin-summary .pin-confirm small{display:none}
   .checkout-step-3 .success-notice{display:none}.checkout-step-3 .field{gap:4px;margin:6px 0}.checkout-step-3 .field input{min-height:42px;padding:8px 10px}.checkout-step-3 .disclosure-toggle{margin-top:8px}
   .checkout-sheet{max-height:calc(var(--checkout-visible-height,100dvh) - 20px)}
-  .checkout-keyboard-open .checkout-progress,.checkout-keyboard-open .checkout-panel-heading,.checkout-keyboard-open .checkout-glass-note,.checkout-keyboard-open .checkout-fulfillment{display:none}
+  .checkout-keyboard-open .checkout-progress,.checkout-keyboard-open .checkout-panel-heading,.checkout-keyboard-open .checkout-glass-note,.checkout-keyboard-open .checkout-fulfillment,.checkout-keyboard-open .saved-address-offer,.checkout-keyboard-open .saved-address-used{display:none}
   .checkout-keyboard-open .checkout-v2{padding-top:6px}.checkout-keyboard-open .checkout-panel{padding:10px 15px}.checkout-keyboard-open .checkout-step-actions{margin-top:6px;padding-top:7px;padding-bottom:7px}.checkout-keyboard-open .checkout-step-actions .button{min-height:44px}
 }
 @media (prefers-reduced-motion:reduce){.checkout-sheet{animation:none}}
@@ -2374,6 +2375,9 @@ h2 {
 .checkout-step-map-stage .map-results{position:relative;z-index:4;max-height:38vh;overflow-y:auto}
 .checkout-step-map-stage .map-frame{flex:1 1 auto;min-height:220px;position:relative}
 .checkout-step-map-stage .map-canvas{position:absolute;inset:0;width:auto;height:auto}
+.map-bottom-overlay{display:grid;gap:6px}
+.checkout-step-map-stage .map-bottom-overlay{position:absolute;z-index:20;right:10px;bottom:58px;left:10px;display:grid;gap:6px;max-height:46%;overflow-y:auto;pointer-events:none}
+.checkout-step-map-stage .map-bottom-overlay>*{pointer-events:auto}
 .checkout-step-map-stage .location-status,.checkout-step-map-stage .map-suggestion-inline,.checkout-step-map-stage .pin-confirm{margin-top:0;padding:11px}
 /* Step 3: lightweight pin re-confirmation summary (no second map canvas --
    editing district/street here can invalidate Step 2's confirmation via

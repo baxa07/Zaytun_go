@@ -167,6 +167,8 @@ const mapOrder = (r: Row): Order => {
     stopSequence: r.stop_sequence !== null && r.stop_sequence !== undefined ? Number(r.stop_sequence) : undefined,
     deliveryReviewStatus: r.delivery_review_status as Order["deliveryReviewStatus"],
     deliveryReviewReason: r.delivery_review_reason ? String(r.delivery_review_reason) : undefined,
+    rejectionReason: r.rejection_reason ? String(r.rejection_reason) : undefined,
+    cancellationReason: r.cancellation_reason ? String(r.cancellation_reason) : undefined,
     events: ((r.order_events || []) as Row[]).map((e) => ({
       id: String(e.id),
       orderId: String(e.order_id),
