@@ -60,6 +60,34 @@ async function openCheckout(page: import("@playwright/test").Page) {
 test.describe("Telegram Mini App shaped checkout", () => {
   test.use({ viewport: { width: 390, height: 700 } }); // a typical in-app browser viewport, shorter than a full-screen mobile browser
 
+  test("the basket shows a complete free-delivery goal before checkout", async ({ page }) => {
+    await installTelegramWebApp(page);
+    await page.goto("/menu/chicken");
+    await page.getByRole("button", { name: "+" }).click();
+    await page.getByTestId("add-to-cart").click();
+    await page.getByTestId("cart-pill").click();
+    await expect(page.getByTestId("cart-delivery-progress")).toContainText(/Bepul yetkazishgacha|Yetkazib berish bepul/);
+    await expect(page.getByTestId("cart-delivery-progress")).not.toHaveCSS("overflow", "hidden");
+  });
+
+  test("deliberate horizontal swipes move forward and backward through the three customer tabs", async ({ page }) => {
+    await installTelegramWebApp(page);
+    const swipe = async (fromX: number, toX: number) => {
+      const target = page.locator("main").first();
+      await target.dispatchEvent("touchstart", { touches: [{ identifier: 1, clientX: fromX, clientY: 420 }] });
+      await target.dispatchEvent("touchend", { changedTouches: [{ identifier: 1, clientX: toX, clientY: 424 }] });
+    };
+    await page.goto("/menu");
+    await swipe(340, 35);
+    await expect(page).toHaveURL(/\/cart$/);
+    await swipe(340, 35);
+    await expect(page).toHaveURL(/\/orders$/);
+    await swipe(35, 340);
+    await expect(page).toHaveURL(/\/cart$/);
+    await swipe(35, 340);
+    await expect(page).toHaveURL(/\/menu$/);
+  });
+
   test("the telegram-mini-app class activates and the Telegram BackButton steps backward through the wizard, then returns to the cart from Step 1", async ({ page }) => {
     await installTelegramWebApp(page);
     await openCheckout(page);

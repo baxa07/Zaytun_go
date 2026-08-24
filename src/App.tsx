@@ -111,6 +111,22 @@ const historyDateTime = formatOperationalDateTime;
 // match/mismatch decision itself is the pure, unit-tested
 // resolvePendingCheckoutId in domain.ts.
 const PENDING_CHECKOUT_KEY = "zgo.pendingCheckout";
+const SAVED_DELIVERY_ADDRESS_KEY = "zgo.savedDeliveryAddress.v1";
+type SavedDeliveryAddress = Omit<CustomerAddress, "customerName" | "primaryPhone" | "secondaryPhone">;
+const readSavedDeliveryAddress = (): SavedDeliveryAddress | null => {
+  try {
+    const raw = localStorage.getItem(SAVED_DELIVERY_ADDRESS_KEY);
+    return raw ? (JSON.parse(raw) as SavedDeliveryAddress) : null;
+  } catch { return null; }
+};
+const writeSavedDeliveryAddress = (address: CustomerAddress) => {
+  if (address.latitude === undefined || address.longitude === undefined || !address.pinConfirmedAt) return;
+  const saved = { ...address } as Partial<CustomerAddress>;
+  delete saved.customerName;
+  delete saved.primaryPhone;
+  delete saved.secondaryPhone;
+  try { localStorage.setItem(SAVED_DELIVERY_ADDRESS_KEY, JSON.stringify(saved)); } catch { /* checkout remains usable when storage is unavailable */ }
+};
 const readPendingCheckout = (): PendingCheckout | null => {
   try {
     const raw = sessionStorage.getItem(PENDING_CHECKOUT_KEY);
@@ -265,9 +281,41 @@ function Shell({
   checkoutMode?: boolean;
 }) {
   const { cart, role } = useApp();
+  const nav = useNavigate();
+  const location = useLocation();
+  const swipeStart = useRef<{ x: number; y: number; blocked: boolean } | null>(null);
+  const suppressSwipeClick = useRef(false);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const customerTabs = ["/menu", "/cart", "/orders"];
+  const swipeTabIndex = customerTabs.indexOf(location.pathname);
+  const swipeEnabled = surface === "customer" && !hideBottomNav && swipeTabIndex >= 0;
+  const swipeBlockedTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("input,textarea,select,button,.stepper,.qty-stepper,.menu-category-rail,.map-frame,.map-results,[data-no-tab-swipe]"));
   return (
-    <div className={`app ${surface}${checkoutMode ? " checkout-app" : ""}`}>
+    <div
+      className={`app ${surface}${checkoutMode ? " checkout-app" : ""}`}
+      onTouchStart={(event) => {
+        if (!swipeEnabled || event.touches.length !== 1) return;
+        swipeStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY, blocked: swipeBlockedTarget(event.target) };
+      }}
+      onTouchEnd={(event) => {
+        const start = swipeStart.current;
+        swipeStart.current = null;
+        if (!start || start.blocked || event.changedTouches.length !== 1) return;
+        const dx = event.changedTouches[0].clientX - start.x;
+        const dy = event.changedTouches[0].clientY - start.y;
+        if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+        const nextIndex = swipeTabIndex + (dx < 0 ? 1 : -1);
+        if (nextIndex < 0 || nextIndex >= customerTabs.length) return;
+        suppressSwipeClick.current = true;
+        nav(customerTabs[nextIndex]);
+        window.setTimeout(() => { suppressSwipeClick.current = false; }, 350);
+      }}
+      onClickCapture={(event) => {
+        if (!suppressSwipeClick.current) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
       <header>
         <Link className="brand" to="/">
           <img src="/zaytun-go-medallion.jpg" alt="" />{" "}
@@ -534,6 +582,9 @@ function Cart() {
   const { cart, updateQuantity, publicConfig } = useApp();
   const subtotal = calculateFoodSubtotal(cart);
   const packagingTotal = calculatePackagingTotal(cart);
+  const freeDeliveryThreshold = publicConfig?.freeDeliveryThreshold;
+  const freeDeliveryRemaining = freeDeliveryThreshold == null ? null : Math.max(0, freeDeliveryThreshold - subtotal);
+  const freeDeliveryProgress = freeDeliveryThreshold ? Math.min(100, Math.round((subtotal / freeDeliveryThreshold) * 100)) : 0;
   const fulfillment = fulfillmentSummary(publicConfig?.deliveryEnabled === true ? "DELIVERY" : "PICKUP");
   return (
     <Shell>
@@ -575,6 +626,20 @@ function Cart() {
               <span>{fulfillment.label}</span>
               <b>{fulfillment.value}</b>
             </div>
+            {publicConfig?.deliveryEnabled === true && freeDeliveryRemaining !== null && (
+              <section className="cart-delivery-progress" data-testid="cart-delivery-progress">
+                <div className="cart-delivery-progress-copy">
+                  <span aria-hidden="true">🚚</span>
+                  <div>
+                    <small>Yetkazib berish</small>
+                    <b>{freeDeliveryRemaining === 0 ? "Yetkazib berish bepul" : `Bepul yetkazishgacha ${money(freeDeliveryRemaining)}`}</b>
+                  </div>
+                </div>
+                <div className="cart-delivery-progress-track" aria-label={`Bepul yetkazish chegarasining ${freeDeliveryProgress} foizi`}>
+                  <i style={{ width: `${freeDeliveryProgress}%` }} />
+                </div>
+              </section>
+            )}
             <div className="sticky-action">
               <Link
                 className="button primary wide"
@@ -912,6 +977,8 @@ function Checkout() {
   const [address, setAddress] = useState(blankAddress);
   const [payment, setPayment] = useState<PaymentMethod>("CASH");
   const [notes, setNotes] = useState("");
+  const [savedAddress] = useState(readSavedDeliveryAddress);
+  const [savedAddressChoice, setSavedAddressChoice] = useState<"PENDING" | "USED" | "DISMISSED">(() => readSavedDeliveryAddress() ? "PENDING" : "DISMISSED");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [mapSelection, setMapSelection] = useState<MapLocationSelection>(() =>
@@ -974,10 +1041,6 @@ function Checkout() {
   const packagingTotal = calculatePackagingTotal(cart);
   const estimatedFee = type === "DELIVERY" && publicConfig && (publicConfig.freeDeliveryThreshold == null || subtotal < publicConfig.freeDeliveryThreshold) ? publicConfig.baseDeliveryFee : 0;
   const total = calculateOrderTotal(cart, estimatedFee);
-  const cartQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const freeDeliveryRemaining = publicConfig?.freeDeliveryThreshold == null
-    ? null
-    : Math.max(0, publicConfig.freeDeliveryThreshold - subtotal);
   const fulfillment = fulfillmentSummary(type);
   const clearError = (key: string) =>
     setErrors((er) =>
@@ -1004,6 +1067,29 @@ function Checkout() {
     clearError("coordinates");
     clearError("pinConfirmation");
     clearError("deliveryZone");
+  };
+  const useSavedAddress = () => {
+    if (!savedAddress || savedAddress.latitude === undefined || savedAddress.longitude === undefined) return;
+    const coordinate = { latitude: savedAddress.latitude, longitude: savedAddress.longitude };
+    setAddress((current) => ({ ...current, ...savedAddress, customerName: current.customerName, primaryPhone: current.primaryPhone, secondaryPhone: current.secondaryPhone }));
+    setMapSelection({
+      coordinate,
+      provider: configuredMapProvider(),
+      state: "CONFIRMED",
+      confirmedAt: savedAddress.pinConfirmedAt,
+      source: "MAP",
+      suggestion: savedAddress.providerFormattedAddress ? {
+        coordinate,
+        formattedAddress: savedAddress.providerFormattedAddress,
+        label: savedAddress.providerFormattedAddress,
+        providerPlaceId: savedAddress.providerPlaceId,
+        district: savedAddress.district,
+        street: savedAddress.street,
+        house: savedAddress.house,
+      } : undefined,
+    });
+    setSavedAddressChoice("USED");
+    setAutoFillNotice(true);
   };
   // Step 3's own re-confirmation checkbox -- same confirmSelection /
   // NEEDS_RECONFIRMATION semantics MapPicker's own checkbox drives on Step
@@ -1043,6 +1129,7 @@ function Checkout() {
   }, [mapSelection.suggestion]);
   const stepSequence = useMemo(() => checkoutStepSequence(type), [type]);
   const goToStep = (target: CheckoutStep) => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     setStep(target);
     window.scrollTo({ top: 0 });
   };
@@ -1072,6 +1159,7 @@ function Checkout() {
       if (mode === "REQUIRES_CUSTOMER_AUTH") {
         setOtpError("");
         setOtpPhone(address.primaryPhone || "");
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         setOtpStep("phone");
         return;
       }
@@ -1202,6 +1290,7 @@ function Checkout() {
       // OTP-verified resubmission) still reuses the same id instead of
       // minting a new one and risking a second order.
       clearPendingCheckout();
+      if (order.type === "DELIVERY" && order.address) writeSavedDeliveryAddress(order.address);
       clearCart();
       nav(`/confirmation/${saved.id}`);
     } catch (error) {
@@ -1229,6 +1318,7 @@ function Checkout() {
       const canonical = await sendCustomerOtp(otpPhone, captchaToken);
       setOtpCanonicalPhone(canonical);
       setOtpCode("");
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       setOtpStep("code");
     } catch (error) {
       setOtpError(error instanceof Error ? error.message : "Xatolik yuz berdi");
@@ -1301,7 +1391,7 @@ function Checkout() {
   }, []);
   return (
     <Shell hideBottomNav checkoutMode>
-      <main className={`checkout checkout-v2 checkout-step-${step}${step === 2 ? " checkout-step-map-active" : ""}`} data-testid="checkout-wizard">
+      <main className={`checkout checkout-v2 checkout-step-${step}${step === 2 ? " checkout-step-map-active" : ""}${otpStep ? " checkout-otp-active" : ""}`} data-testid="checkout-wizard">
         <CheckoutProgress step={step} type={type} />
         <div className="checkout-step-body">
           {step === 1 && (
@@ -1331,21 +1421,16 @@ function Checkout() {
                 </button>
               </div>
               {publicConfig?.deliveryEnabled===false&&<p className="warning">Yetkazib berish vaqtincha o‘chirilgan. Olib ketishni tanlang.</p>}
-              {type === "DELIVERY" && publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && (
-                <div className="checkout-glass-note" data-testid="delivery-review-notice">
-                  <span className="sr-only">Manzil operator tomonidan tasdiqlanadi.</span>
-                  <span aria-hidden="true">🛍</span>
-                  <div>
-                    <small>Savat · {cartQuantity} ta mahsulot</small>
-                    <b>{freeDeliveryRemaining === 0
-                      ? "Yetkazib berish bepul"
-                      : freeDeliveryRemaining == null
-                        ? "Yetkazish manzilga qarab aniqlanadi"
-                        : `Bepul yetkazishgacha ${money(freeDeliveryRemaining)}`}</b>
-                  </div>
-                  <strong>{money(subtotal)}</strong>
-                </div>
+              {type === "DELIVERY" && publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && <p className="sr-only" data-testid="delivery-review-notice">Manzil operator tomonidan tasdiqlanadi.</p>}
+              {type === "DELIVERY" && savedAddress && savedAddressChoice === "PENDING" && (
+                <section className="saved-address-offer" data-testid="saved-address-offer">
+                  <span aria-hidden="true">📍</span>
+                  <div><small>Oxirgi manzil</small><b>{savedAddress.providerFormattedAddress || [savedAddress.district, savedAddress.street, savedAddress.house].filter(Boolean).join(", ")}</b></div>
+                  <button type="button" className="button primary" onClick={useSavedAddress}>Shu manzilga</button>
+                  <button type="button" className="button text" onClick={() => setSavedAddressChoice("DISMISSED")}>Boshqa manzil</button>
+                </section>
               )}
+              {type === "DELIVERY" && savedAddressChoice === "USED" && <p className="saved-address-used" data-testid="saved-address-used">✓ Oxirgi manzil tanlandi. Keyingi bosqichda xaritada tekshirishingiz mumkin.</p>}
               {errors.deliveryMinimum && <em className="error">{errors.deliveryMinimum}</em>}
               {isCustomerAuthenticated && (
                 <p className="customer-session" data-testid="customer-session-badge">
@@ -1438,6 +1523,9 @@ function Checkout() {
                         label="Tasdiqlash kodi"
                         value={otpCode}
                         placeholder="123456"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        autoFocus
                         onChange={setOtpCode}
                       />
                       <button
@@ -1630,6 +1718,9 @@ function Field({
   error,
   placeholder,
   readOnly,
+  inputMode,
+  autoComplete,
+  autoFocus,
 }: {
   label: string;
   value: string;
@@ -1637,6 +1728,9 @@ function Field({
   error?: string;
   placeholder?: string;
   readOnly?: boolean;
+  inputMode?: "text" | "numeric" | "tel" | "email" | "search";
+  autoComplete?: string;
+  autoFocus?: boolean;
 }) {
   return (
     <label className="field">
@@ -1645,6 +1739,13 @@ function Field({
         value={value}
         placeholder={placeholder}
         readOnly={readOnly}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
+        autoFocus={autoFocus}
+        onFocus={(event) => {
+          const field = event.currentTarget.closest(".field");
+          requestAnimationFrame(() => requestAnimationFrame(() => field?.scrollIntoView({ block: "center", behavior: "smooth" })));
+        }}
         onChange={(e) => !readOnly && onChange(e.target.value)}
       />
       {error && <em className="error">{error}</em>}
@@ -1685,6 +1786,10 @@ function UzbekPhoneField({
           autoComplete="tel-national"
           value={nationalDigits}
           placeholder="90 123 45 67"
+          onFocus={(event) => {
+            const field = event.currentTarget.closest(".field");
+            requestAnimationFrame(() => requestAnimationFrame(() => field?.scrollIntoView({ block: "center", behavior: "smooth" })));
+          }}
           onChange={(e) => {
             const digits = extractUzbekNationalDigits(e.target.value);
             onChange(digits ? `+998${digits}` : "");
@@ -1827,6 +1932,7 @@ function Track() {
     ? fulfillmentTimeline("PICKUP").findIndex((stage) => stage.status === order.status)
     : customerDeliveryStageIndex(order);
   const normalDeliveryProgress = isNormalDeliveryStatus(order);
+  const stoppedOrder = ["REJECTED", "CANCELLED", "RETURNED", "DELIVERY_FAILED"].includes(order.status);
   return (
     <Shell>
       <main className="track">
@@ -1866,14 +1972,20 @@ function Track() {
         {order.deliveryReviewStatus === "REJECTED" && <p className="warning" role="alert">Yetkazish tasdiqlanmadi. {order.deliveryReviewReason || "Restoran bilan bog‘laning."}</p>}
         {order.type==='PICKUP'&&order.status==='READY'&&<p className="success-notice" data-testid="pickup-ready-message">Buyurtmangiz tayyor. Zaytun Kafedan olib ketishingiz mumkin.</p>}
         {order.type==='DELIVERY'&&order.status==='ARRIVED'&&<p className="success-notice" data-testid="driver-arrived-message">Kuryer yetib keldi. Buyurtmangizni qabul qilishga tayyor bo‘ling.</p>}
-        <div className="eta">
+        {stoppedOrder && (
+          <section className="tracking-terminal" data-testid="tracking-terminal">
+            <span aria-hidden="true">×</span>
+            <div><b>{order.status === "CANCELLED" ? "Buyurtma bekor qilindi" : order.status === "RETURNED" ? "Buyurtma qaytarildi" : order.status === "DELIVERY_FAILED" ? "Yetkazib bo‘lmadi" : "Buyurtma rad etildi"}</b><p>{order.rejectionReason || order.cancellationReason || order.deliveryReviewReason || "Bu buyurtma bo‘yicha tayyorlash va yetkazish jarayoni to‘xtatildi."}</p></div>
+          </section>
+        )}
+        {!stoppedOrder && <div className="eta">
           <b>
             {order.estimatedMinutes || 35}–{(order.estimatedMinutes || 35) + 10}{" "}
             min
           </b>
           <span>Taxminiy vaqt</span>
-        </div>
-        <section className="timeline">
+        </div>}
+        {!stoppedOrder && <section className="timeline">
           {displayStages.map((stage, i) => {
             const reachedAt = order.events.filter(stage.matchesEvent).sort((a, b) => a.timestamp.localeCompare(b.timestamp))[0];
             return (
@@ -1886,7 +1998,7 @@ function Track() {
               </div>
             );
           })}
-        </section>
+        </section>}
         {order.type==='PICKUP'&&<section className="form-card pickup-facts" data-testid="pickup-tracking-details"><h2>Olib ketish ma’lumotlari</h2><p><b>{publicConfig?.restaurantName||'Zaytun Kafe'}</b></p><p>{publicConfig?.restaurantAddress}</p><a href={`tel:${publicConfig?.restaurantPhone}`}>{publicConfig?.restaurantPhone}</a><p><b>To‘lov:</b> {paymentLabel(order.paymentMethod)}</p><p>{pickupPaymentGuidance(order.paymentMethod)}</p></section>}
         <section className="form-card">
           <h2>Buyurtma</h2>

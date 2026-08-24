@@ -154,7 +154,11 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
     <button type="button" className="button secondary" data-testid="use-my-location" disabled={locating} onClick={useMyLocation}>{locating ? "Aniqlanmoqda…" : "📍 Joylashuvimni aniqlash"}</button>
     <div aria-live="polite" className="search-status">{searching ? "Manzil qidirilmoqda…" : searchMessage}</div>
     {results.length > 0 && <ul className="map-results">{results.map((result) => <li key={result.providerPlaceId || result.label}><button type="button" onClick={() => { controller.current?.setCoordinate(result.coordinate); controller.current?.recenter(result.coordinate, defaultMapLocation().zoom); setQuery(result.label || result.formattedAddress); setResults([]); void choose(result.coordinate, "SEARCH", result); }}><b>{result.label}</b><small>{result.formattedAddress}</small></button></li>)}</ul>}
-    <div className="map-frame"><div ref={container} className="map-canvas" role="application" aria-label="Pin qo‘yish uchun interaktiv xarita"></div>{mapState === "LOADING" && <div className="map-loading" role="status">Xarita yuklanmoqda…</div>}</div>
+    <div className="map-frame">
+      <div ref={container} className="map-canvas" role="application" aria-label="Xaritani pin ostida harakatlantiring"></div>
+      {mapState === "READY" && <span className="map-center-pin" data-testid="map-center-pin" aria-hidden="true">📍</span>}
+      {mapState === "LOADING" && <div className="map-loading" role="status">Xarita yuklanmoqda…</div>}
+    </div>
     {mapState === "ERROR" && <div className="map-error" role="alert"><b>Xarita ishga tushmadi</b><span>{mapError}</span><button type="button" onClick={() => { setMapState("LOADING"); setMapError(""); setRetry((value) => value + 1); }}>Qayta urinish</button></div>}
     <div className={`location-status location-status--${statusVariant}`} data-testid={statusTestId}>
       {statusVariant === "empty" && <span>Xaritadan nuqta tanlang yoki manzilni qidiring.</span>}

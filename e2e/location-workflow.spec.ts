@@ -95,8 +95,12 @@ test.describe("precise delivery location", () => {
     await expect(page.getByTestId("checkout-step-5")).toBeVisible();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("zgo.savedDeliveryAddress.v1"))).not.toBeNull();
 
     await openCheckout(page);
+    await expect(page.getByTestId("saved-address-offer")).toContainText("Amir Temur");
+    await page.getByRole("button", { name: "Boshqa manzil" }).click();
+    await expect(page.getByTestId("saved-address-offer")).toHaveCount(0);
     // deliveryPolicyMode "MANUAL_CITY_REVIEW" is a static per-restaurant
     // setting, not tied to any particular pin -- the notice renders on
     // Step 1 (contact) for every delivery order under that policy, so it

@@ -2311,7 +2311,7 @@ h2 {
 @keyframes checkout-sheet-in{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 
 @media (max-width:760px){
-  html:has(.checkout-app),html:has(.checkout-app) body{height:100%;overflow:hidden;overscroll-behavior:none}
+  html:has(.checkout-app),html:has(.checkout-app) body,html:has(.checkout-app) #root{height:100%;overflow:hidden;overscroll-behavior:none}
   .checkout-app{height:var(--checkout-visible-height,100dvh);overflow:hidden;background:radial-gradient(circle at 100% 0,rgba(211,168,63,.12),transparent 32%),linear-gradient(180deg,#f4f6f3 0,#eef2ef 100%)}
   .checkout-app>header{display:none}
   .checkout-v2{position:relative;width:100%;max-width:none;height:var(--checkout-visible-height,100dvh);min-height:0;margin:0;padding:12px 14px 0;overflow:hidden}
@@ -2407,4 +2407,25 @@ h2 {
 @media (max-width:760px){
   .checkout-v2{padding-bottom:12px}
   .checkout-step-map-stage .map-frame{min-height:180px}
+}
+
+/* Cart delivery goal: shown where the customer makes the basket decision,
+   not later inside the contact form. */
+.cart-delivery-progress{display:grid;gap:11px;margin:14px 0 4px;padding:15px;border:1px solid rgba(255,255,255,.78);border-radius:19px;background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(226,241,233,.72));box-shadow:0 12px 34px rgba(23,63,50,.09);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.cart-delivery-progress-copy{display:flex;align-items:center;gap:11px}.cart-delivery-progress-copy>span{display:grid;width:42px;height:42px;border-radius:13px;background:rgba(36,75,54,.1);place-items:center}.cart-delivery-progress-copy>div{display:grid;min-width:0;gap:2px}.cart-delivery-progress-copy small{color:var(--muted);font-size:11px;font-weight:700}.cart-delivery-progress-copy b{color:var(--green);font-size:14px;white-space:normal}
+.cart-delivery-progress-track{height:6px;overflow:hidden;border-radius:999px;background:rgba(36,75,54,.12)}.cart-delivery-progress-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--teal),var(--gold));transition:width .25s ease}
+.saved-address-offer{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;margin:12px 0;padding:13px;border:1px solid rgba(31,122,112,.2);border-radius:16px;background:var(--teal-soft)}.saved-address-offer>span{font-size:22px}.saved-address-offer>div{display:grid;min-width:0}.saved-address-offer small{color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase}.saved-address-offer b{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.saved-address-offer .button{min-height:38px;padding:8px 11px;font-size:11px}.saved-address-offer .button.text{grid-column:2/4;justify-self:start;min-height:auto;padding:2px 0}
+.saved-address-used{margin:10px 0;padding:10px 12px;border-radius:12px;background:var(--teal-soft);color:var(--green);font-size:12px;font-weight:700}
+.map-center-pin{position:absolute;z-index:5;left:50%;top:50%;pointer-events:none;font-size:42px;filter:drop-shadow(0 4px 4px #0005);transform:translate(-50%,-100%)}
+.tracking-terminal{display:flex;align-items:flex-start;gap:14px;padding:20px;border:1px solid #eed6a2;border-radius:20px;background:#fff6de}.tracking-terminal>span{display:grid;width:42px;height:42px;flex:0 0 auto;border-radius:50%;background:#a66714;color:#fff;font-size:28px;line-height:1;place-items:center}.tracking-terminal b{font-size:19px}.tracking-terminal p{margin:5px 0 0;color:#76500f}
+
+@media (max-width:760px){
+  /* OTP is a compact sub-step by design, so it does not need the wizard's
+     second progress header. This is stable during taps (unlike focus-based
+     layout switching) and leaves room for Turnstile + the numeric keypad. */
+  .checkout-otp-active .checkout-progress{display:none}
+  .checkout-otp-active .checkout-v2{padding-top:6px}
+  .checkout-otp-active .checkout-panel{padding:12px 15px;scroll-padding-block:18px}
+  .checkout-otp-focus .field input{font-size:22px;letter-spacing:.16em}
+  .saved-address-offer{grid-template-columns:auto 1fr}.saved-address-offer .button.primary{grid-column:1/3;width:100%}.saved-address-offer .button.text{grid-column:1/3}
 }

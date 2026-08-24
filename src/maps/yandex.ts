@@ -248,19 +248,34 @@ export class YandexMapAdapter implements MapAdapter {
     let map: { addChild(value: unknown): void; destroy(): void; setLocation?(location: { center: [number, number]; zoom?: number; duration?: number }): unknown } | undefined;
     try {
       container.replaceChildren();
-      map = new yandex.YMap(container, { location: { center: [options.center.longitude, options.center.latitude], zoom: options.zoom }, behaviors: ["drag", "scrollZoom", "pinchZoom", "dblClick"] });
+      map = new yandex.YMap(container, { location: { center: [options.selected?.longitude ?? options.center.longitude, options.selected?.latitude ?? options.center.latitude], zoom: options.zoom }, behaviors: ["drag", "scrollZoom", "pinchZoom", "dblClick"], suppressMapOpenBlock: true });
       map.addChild(new yandex.YMapDefaultSchemeLayer({}));
       map.addChild(new yandex.YMapDefaultFeaturesLayer({}));
-      const element = document.createElement("div");
-      element.className = "yandex-pin";
-      element.textContent = "📍";
-      const start = options.selected || options.center;
-      const marker = new yandex.YMapMarker({ coordinates: [start.longitude, start.latitude], draggable: true, onDragEnd: (coordinates: [number, number]) => options.onSelect({ longitude: coordinates[0], latitude: coordinates[1] }) }, element);
-      map.addChild(marker);
-      map.addChild(new yandex.YMapListener({ layer: "any", onClick: (_layer: unknown, coordinates: [number, number]) => options.onSelect({ longitude: coordinates[0], latitude: coordinates[1] }) }));
+      let ignoreCameraUpdates = false;
+      let userMovingMap = false;
+      let selectionTimer: number | undefined;
+      const markUserMovement = () => { userMovingMap = true; };
+      container.addEventListener("pointerdown", markUserMovement, { passive: true });
+      container.addEventListener("touchstart", markUserMovement, { passive: true });
+      map.addChild(new yandex.YMapListener({
+        layer: "any",
+        onUpdate: (state: { location?: { center?: [number, number] } }) => {
+          const center = state.location?.center;
+          if (!center || ignoreCameraUpdates || !userMovingMap) return;
+          window.clearTimeout(selectionTimer);
+          selectionTimer = window.setTimeout(() => {
+            userMovingMap = false;
+            options.onSelect({ longitude: center[0], latitude: center[1] });
+          }, 320);
+        },
+      }));
       diagnostic("map initialization succeeded");
       return {
-        setCoordinate: (coordinate) => marker.update({ coordinates: [coordinate.longitude, coordinate.latitude] }),
+        setCoordinate: (coordinate) => {
+          ignoreCameraUpdates = true;
+          map?.setLocation?.({ center: [coordinate.longitude, coordinate.latitude] });
+          window.setTimeout(() => { ignoreCameraUpdates = false; }, 380);
+        },
         // Camera move is a best-effort enhancement layered on top of
         // already-correct pin placement/address resolution -- if the SDK
         // doesn't expose setLocation() (or it throws), the pin and address
@@ -268,12 +283,19 @@ export class YandexMapAdapter implements MapAdapter {
         // manually to see it, so this never breaks the rest of the flow.
         recenter: (coordinate, zoom) => {
           try {
+            ignoreCameraUpdates = true;
             map?.setLocation?.({ center: [coordinate.longitude, coordinate.latitude], zoom });
+            window.setTimeout(() => { ignoreCameraUpdates = false; }, 380);
           } catch (error) {
             diagnostic("map recenter failed", errorDetails(error));
           }
         },
-        dispose: () => map?.destroy(),
+        dispose: () => {
+          window.clearTimeout(selectionTimer);
+          container.removeEventListener("pointerdown", markUserMovement);
+          container.removeEventListener("touchstart", markUserMovement);
+          map?.destroy();
+        },
       };
     } catch (error) {
       map?.destroy();
