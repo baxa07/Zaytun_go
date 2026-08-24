@@ -253,6 +253,7 @@ function Shell({
   children,
   surface = "customer",
   hideBottomNav = false,
+  checkoutMode = false,
 }: {
   children: React.ReactNode;
   surface?: "customer" | "staff" | "driver";
@@ -261,11 +262,12 @@ function Shell({
   // half-completed checkout. The header/brand stays: it's the one constant
   // orientation anchor across every step.
   hideBottomNav?: boolean;
+  checkoutMode?: boolean;
 }) {
   const { cart, role } = useApp();
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   return (
-    <div className={`app ${surface}`}>
+    <div className={`app ${surface}${checkoutMode ? " checkout-app" : ""}`}>
       <header>
         <Link className="brand" to="/">
           <img src="/zaytun-go-medallion.jpg" alt="" />{" "}
@@ -876,17 +878,27 @@ function CheckoutAddressStep({ address, mapSelection, errors, set, onReconfirmPi
         data-testid="address-optional-toggle"
         onClick={() => setDetailsOpen((open) => !open)}
       >
-        Qo‘shimcha ma’lumotlar (ixtiyoriy) {detailsOpen ? "▲" : "▼"}
+        <span><small>Ixtiyoriy</small> Kirish, qavat, xonadon va mo‘ljal</span>
+        <b>{detailsOpen ? "Yopish" : "Qo‘shish"}</b>
       </button>
       {detailsOpen && (
-        <div id="address-optional-details" data-testid="address-optional-details">
-          <div className="field-row">
-            <Field label="Kirish" value={address.entrance || ""} onChange={(v) => set("entrance", v)} />
-            <Field label="Qavat" value={address.floor || ""} onChange={(v) => set("floor", v)} />
-            <Field label="Xonadon" value={address.apartment || ""} onChange={(v) => set("apartment", v)} />
+        <div className="checkout-sheet-backdrop" role="presentation">
+          <div id="address-optional-details" className="checkout-sheet" role="dialog" aria-modal="true" aria-labelledby="optional-details-title" data-testid="address-optional-details">
+            <div className="checkout-sheet-heading">
+              <div><small>Yetkazish uchun</small><h2 id="optional-details-title">Qo‘shimcha ma’lumot</h2></div>
+              <button type="button" className="checkout-sheet-close" aria-label="Yopish" onClick={() => setDetailsOpen(false)}>×</button>
+            </div>
+            <div className="checkout-sheet-scroll">
+              <div className="field-row">
+                <Field label="Kirish" value={address.entrance || ""} onChange={(v) => set("entrance", v)} />
+                <Field label="Qavat" value={address.floor || ""} onChange={(v) => set("floor", v)} />
+                <Field label="Xonadon" value={address.apartment || ""} onChange={(v) => set("apartment", v)} />
+              </div>
+              <Field label="Mo‘ljal (ixtiyoriy)" value={address.landmark} onChange={(v) => set("landmark", v)} />
+              <Field label="Yetkazish izohi (ixtiyoriy)" value={address.deliveryNotes} onChange={(v) => set("deliveryNotes", v)} />
+            </div>
+            <button type="button" className="button primary wide" onClick={() => setDetailsOpen(false)}>Tayyor</button>
           </div>
-          <Field label="Mo‘ljal (ixtiyoriy)" value={address.landmark} onChange={(v) => set("landmark", v)} />
-          <Field label="Yetkazish izohi (ixtiyoriy)" value={address.deliveryNotes} onChange={(v) => set("deliveryNotes", v)} />
         </div>
       )}
     </div>
@@ -962,6 +974,10 @@ function Checkout() {
   const packagingTotal = calculatePackagingTotal(cart);
   const estimatedFee = type === "DELIVERY" && publicConfig && (publicConfig.freeDeliveryThreshold == null || subtotal < publicConfig.freeDeliveryThreshold) ? publicConfig.baseDeliveryFee : 0;
   const total = calculateOrderTotal(cart, estimatedFee);
+  const cartQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const freeDeliveryRemaining = publicConfig?.freeDeliveryThreshold == null
+    ? null
+    : Math.max(0, publicConfig.freeDeliveryThreshold - subtotal);
   const fulfillment = fulfillmentSummary(type);
   const clearError = (key: string) =>
     setErrors((er) =>
@@ -1259,15 +1275,43 @@ function Checkout() {
   };
   const continueLabel = step === 2 ? "Shu joyni tanlash" : step === 4 ? "Buyurtmani tekshirish" : "Davom etish";
   const hideContinue = step === 1 && Boolean(otpStep);
+  useEffect(() => {
+    const updateViewport = () => {
+      const viewport = window.visualViewport;
+      const visibleHeight = viewport?.height ?? window.innerHeight;
+      const keyboardInset = viewport
+        ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+        : 0;
+      document.documentElement.style.setProperty("--checkout-visible-height", `${visibleHeight}px`);
+      document.documentElement.style.setProperty("--checkout-keyboard-inset", `${keyboardInset}px`);
+      document.documentElement.classList.toggle("checkout-keyboard-open", keyboardInset > 120 || visibleHeight < window.innerHeight * 0.72);
+    };
+    updateViewport();
+    window.visualViewport?.addEventListener("resize", updateViewport);
+    window.visualViewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateViewport);
+      window.visualViewport?.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+      document.documentElement.style.removeProperty("--checkout-visible-height");
+      document.documentElement.style.removeProperty("--checkout-keyboard-inset");
+      document.documentElement.classList.remove("checkout-keyboard-open");
+    };
+  }, []);
   return (
-    <Shell hideBottomNav>
+    <Shell hideBottomNav checkoutMode>
       <main className={`checkout checkout-v2 checkout-step-${step}${step === 2 ? " checkout-step-map-active" : ""}`} data-testid="checkout-wizard">
         <CheckoutProgress step={step} type={type} />
         <div className="checkout-step-body">
           {step === 1 && (
             <section className="form-card checkout-panel" data-testid="checkout-step-1">
-              <h1>{checkoutStepTitles[1]}</h1>
-              <div className="segmented" data-testid="fulfillment-toggle">
+              <div className="checkout-panel-heading">
+                <small>{otpStep ? "Xavfsiz tasdiqlash" : "Buyurtmani kim oladi?"}</small>
+                <h1>{otpStep ? "Telefonni tasdiqlang" : checkoutStepTitles[1]}</h1>
+              </div>
+              {!otpStep && <>
+              <div className="segmented checkout-fulfillment" data-testid="fulfillment-toggle">
                 <button
                   type="button"
                   data-testid="type-delivery"
@@ -1288,9 +1332,19 @@ function Checkout() {
               </div>
               {publicConfig?.deliveryEnabled===false&&<p className="warning">Yetkazib berish vaqtincha o‘chirilgan. Olib ketishni tanlang.</p>}
               {type === "DELIVERY" && publicConfig?.deliveryPolicyMode === "MANUAL_CITY_REVIEW" && (
-                <p className="pilot-notice" data-testid="delivery-review-notice">
-                  {publicConfig.deliveryReviewMessage || "Navoiy shahri bo‘ylab yetkazib berish 150.000 so‘mdan oshiq xaridlarda bepul. Undan kam buyurtmalarga 10.000 so‘m yetkazib berish narxi qo‘shiladi. Manzil operator tomonidan tasdiqlanadi."}
-                </p>
+                <div className="checkout-glass-note" data-testid="delivery-review-notice">
+                  <span className="sr-only">Manzil operator tomonidan tasdiqlanadi.</span>
+                  <span aria-hidden="true">🛍</span>
+                  <div>
+                    <small>Savat · {cartQuantity} ta mahsulot</small>
+                    <b>{freeDeliveryRemaining === 0
+                      ? "Yetkazib berish bepul"
+                      : freeDeliveryRemaining == null
+                        ? "Yetkazish manzilga qarab aniqlanadi"
+                        : `Bepul yetkazishgacha ${money(freeDeliveryRemaining)}`}</b>
+                  </div>
+                  <strong>{money(subtotal)}</strong>
+                </div>
               )}
               {errors.deliveryMinimum && <em className="error">{errors.deliveryMinimum}</em>}
               {isCustomerAuthenticated && (
@@ -1328,14 +1382,10 @@ function Checkout() {
                   onChange={(v) => set("primaryPhone", v)}
                 />
               )}
-              <Field
-                label="Qo‘shimcha telefon"
-                value={address.secondaryPhone || ""}
-                onChange={(v) => set("secondaryPhone", v)}
-              />
+              </>}
               {otpStep && (
-                <section className="form-card otp-step" data-testid="customer-otp-step">
-                  <h2>Telefon raqamingizni tasdiqlang</h2>
+                <section className="otp-step checkout-otp-focus" data-testid="customer-otp-step">
+                  <div className="otp-phone-chip"><small>Telefon raqami</small><b>{otpStep === "code" ? otpCanonicalPhone : address.primaryPhone}</b></div>
                   {turnstileSiteKey ? (
                     <TurnstileWidget
                       key={otpCaptchaResetKey}
@@ -1370,12 +1420,6 @@ function Checkout() {
                   )}
                   {otpStep === "phone" && (
                     <>
-                      <Field
-                        label="Telefon"
-                        value={otpPhone}
-                        placeholder="+998 __ ___ __ __"
-                        onChange={setOtpPhone}
-                      />
                       <button
                         type="button"
                         className="button primary wide"

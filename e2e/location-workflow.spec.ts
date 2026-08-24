@@ -209,7 +209,7 @@ test.describe("minimum delivery-address contract (Pin Workflow Refinement)", () 
     await page.getByLabel("Kirish", { exact: true }).fill("7");
     await page.getByLabel("Xonadon").fill("12");
 
-    await toggle.click();
+    await page.getByRole("button", { name: "Tayyor" }).click();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByTestId("address-optional-details")).toHaveCount(0);
 

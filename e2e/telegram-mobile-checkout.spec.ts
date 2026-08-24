@@ -89,13 +89,16 @@ test.describe("Telegram Mini App shaped checkout", () => {
     await installTelegramWebApp(page);
     await openCheckout(page);
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const documentScroll = () => page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
     expect(await overflow()).toBe(0);
+    expect(await documentScroll()).toBeLessThanOrEqual(0);
 
     await page.getByLabel("Ism *").fill("Telegram Mijoz");
     await page.getByLabel("Telefon *").fill("+998901112233");
     await page.getByTestId("checkout-continue").click();
     await expect(page.getByTestId("checkout-step-map")).toBeVisible();
     expect(await overflow()).toBe(0);
+    expect(await documentScroll()).toBeLessThanOrEqual(0);
   });
 
   test("a shrunk viewport (simulating the iOS keyboard covering part of the screen) still keeps the focused field and the Continue action reachable", async ({ page }) => {

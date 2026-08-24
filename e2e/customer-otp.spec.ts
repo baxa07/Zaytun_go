@@ -147,7 +147,7 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     await page.setViewportSize({ width: 390, height: 844 });
     await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("OTP Mijoz");
-    await page.getByLabel("Telefon *").fill("+998901234588");
+    await page.getByLabel("Telefon *").fill("000000001");
     await page.screenshot({ path: "qa/screenshots/18-checkout-before-submit-390x844.png", fullPage: true });
     await page.getByTestId("checkout-continue").click();
 
@@ -156,12 +156,11 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     await expect(page.getByTestId("customer-otp-step")).toBeVisible();
     await expect(page).not.toHaveURL(/\/confirmation\//);
     await expect(page.getByTestId("checkout-step-1")).toBeVisible();
-    await expect(page.getByLabel("Ism *")).toHaveValue("OTP Mijoz");
+    await expect(page.getByTestId("customer-otp-step")).toContainText("+998000000001");
     await expect(page.locator('[role="alert"]')).toHaveCount(0);
     await page.screenshot({ path: "qa/screenshots/19-inline-otp-390x844.png", fullPage: true });
     await page.screenshot({ path: "qa/screenshots/20-turnstile-normal-390x844.png", fullPage: true });
 
-    await page.getByLabel("Telefon", { exact: true }).fill("000000001");
     await page.getByTestId("otp-send").click();
     await expect(page.getByLabel("Tasdiqlash kodi")).toBeVisible();
 
@@ -232,11 +231,10 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
 
     await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Conflict Mijoz");
-    await page.getByLabel("Telefon *").fill("+998901234566");
+    await page.getByLabel("Telefon *").fill("000000003");
     await page.getByTestId("checkout-continue").click();
     await expect(page.getByTestId("customer-otp-step")).toBeVisible();
 
-    await page.getByLabel("Telefon", { exact: true }).fill("000000003");
     await page.getByTestId("otp-send").click();
     await expect(page.getByLabel("Tasdiqlash kodi")).toBeVisible();
     await page.getByLabel("Tasdiqlash kodi").fill("333333");
@@ -264,9 +262,8 @@ test.describe("customer_auth_required=true: full customer phone-OTP checkout flo
     await page.setViewportSize({ width: 390, height: 844 });
     await addItemToCartAndReachContactStep(page);
     await page.getByLabel("Ism *").fill("Recovery Mijoz");
-    await page.getByLabel("Telefon *").fill("+998901234577");
+    await page.getByLabel("Telefon *").fill("000000002");
     await page.getByTestId("checkout-continue").click();
-    await page.getByLabel("Telefon", { exact: true }).fill("000000002");
     await page.getByTestId("otp-send").click();
     await page.getByLabel("Tasdiqlash kodi").fill("222222");
     await page.getByTestId("otp-verify").click();
