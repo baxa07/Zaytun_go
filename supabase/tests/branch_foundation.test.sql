@@ -35,7 +35,7 @@ select is((select branch_id from public.orders where id='95000000-0000-4000-8000
 
 -- RLS: readable by anon/authenticated (menu-adjacent, customer-safe), not
 -- writable by anyone through the client roles.
-select ok(has_table_privilege('anon','public.branches','SELECT'),'anon can read branches');
+select ok(has_column_privilege('anon','public.branches','id','SELECT'),'anon can read customer-safe branch metadata');
 select ok(not has_table_privilege('authenticated','public.branches','INSERT'),'authenticated cannot write branches');
 
 select * from finish();
