@@ -831,7 +831,11 @@ describe("isVerifiedCustomerSession (frontend customer-session predicate)", () =
     expect(isVerifiedCustomerSession(sessionWith("not-a-phone", "2026-08-10T00:00:00.000Z"), null)).toBe(false);
   });
 
-  it.each(["RESTAURANT", "DISPATCHER", "DRIVER"] as const)("%s session -> never customer, even with a confirmed valid Uzbek phone", (role) => {
+  it("a DRIVER with a confirmed Uzbek phone can also order as a customer", () => {
+    expect(isVerifiedCustomerSession(sessionWith("998901234567", "2026-08-10T00:00:00.000Z"), "DRIVER")).toBe(true);
+  });
+
+  it.each(["OWNER", "RESTAURANT", "DISPATCHER"] as const)("%s session -> never customer, even with a confirmed valid Uzbek phone", (role) => {
     expect(isVerifiedCustomerSession(sessionWith("998901234567", "2026-08-10T00:00:00.000Z"), role)).toBe(false);
   });
 

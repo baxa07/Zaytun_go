@@ -6,7 +6,7 @@ import type { AddressSuggestion, LocationSource, MapController, MapCoordinate, M
 
 const NO_RESULTS_MESSAGE = "Manzil topilmadi. Boshqacha yozib ko‘ring yoki xaritada belgilang.";
 
-export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapLocationSelection; onChange: (value: MapLocationSelection) => void; onApplySuggestion: (suggestion: AddressSuggestion) => void }) {
+export function MapPicker({ value, onChange, onApplySuggestion, minimalControls = false }: { value?: MapLocationSelection; onChange: (value: MapLocationSelection) => void; onApplySuggestion: (suggestion: AddressSuggestion) => void; minimalControls?: boolean }) {
   const adapter = useMemo(() => { try { return createMapAdapter(); } catch (error) { return error as Error; } }, []);
   const container = useRef<HTMLDivElement>(null);
   const controller = useRef<MapController | undefined>(undefined);
@@ -161,13 +161,13 @@ export function MapPicker({ value, onChange, onApplySuggestion }: { value?: MapL
     </div>
     {mapState === "ERROR" && <div className="map-error" role="alert"><b>Xarita ishga tushmadi</b><span>{mapError}</span><button type="button" onClick={() => { setMapState("LOADING"); setMapError(""); setRetry((value) => value + 1); }}>Qayta urinish</button></div>}
     <div className="map-bottom-overlay">
-    <div className={`location-status location-status--${statusVariant}`} data-testid={statusTestId}>
+    <div className={`location-status location-status--${statusVariant}${minimalControls ? " map-a11y-status" : ""}`} data-testid={statusTestId}>
       {statusVariant === "empty" && <span>Xaritadan nuqta tanlang yoki manzilni qidiring.</span>}
       {statusVariant === "error" && <><b>Manzil avtomatik aniqlanmadi</b><span>Manzilni qo‘lda yozing yoki pinni qayta belgilang.</span><button type="button" disabled={!selection.coordinate} onClick={() => selection.coordinate && void choose(selection.coordinate, selection.source || "MAP")}>Qayta urinish</button></>}
       {statusVariant === "attention" && <><b>Manzilni tekshirib chiqing</b><span>Pin kirish joyiga yaqin ekanini tasdiqlang.</span></>}
       {statusVariant === "confirmed" && <><span>✓ Pin belgilandi</span><small>Kuryer boradigan nuqta tanlandi.</small></>}
     </div>
-    {selection.suggestion && <div className="map-suggestion-inline" data-testid="map-suggestion"><span>Taklif: {selection.suggestion.formattedAddress}</span><button type="button" onClick={() => onApplySuggestion(selection.suggestion!)}>Manzilni qo‘llash</button></div>}
+    {selection.suggestion && <div className={`map-suggestion-inline${minimalControls ? " map-a11y-status" : ""}`} data-testid="map-suggestion"><span>Taklif: {selection.suggestion.formattedAddress}</span>{!minimalControls && <button type="button" onClick={() => onApplySuggestion(selection.suggestion!)}>Manzilni qo‘llash</button>}</div>}
     <label className="pin-confirm"><input type="checkbox" checked={selection.state === "CONFIRMED"} disabled={!selection.coordinate} onChange={(event) => { explicitlyConfirmed.current = event.target.checked; confirmedCoordinate.current = event.target.checked ? selection.coordinate : undefined; emit(event.target.checked ? confirmSelection(selection) : { ...selection, state: "NEEDS_RECONFIRMATION", confirmedAt: undefined }); }} /><span><b>Kirish joyi xaritada to‘g‘ri belgilangan</b><small>Bu — kuryer yetib boradigan aniq nuqta, yozma manzil emas.</small></span></label>
     </div>
   </section>;

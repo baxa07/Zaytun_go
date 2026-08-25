@@ -55,16 +55,18 @@ export const roleCanAccess = (role: AppRole | null, surface: OperationalSurface)
     ? role === "OWNER" || role === "RESTAURANT" || role === "DISPATCHER"
     : role === "DRIVER";
 
-// A profile-less authenticated Supabase session must NOT automatically
-// count as a valid Zaytun CUSTOMER in frontend state -- only a session that
-// is provably (a) not staff/driver, and (b) backed by a confirmed, genuinely
-// Uzbek mobile phone counts. This is a frontend-correctness predicate, not
+// A profile-less authenticated Supabase session normally represents a
+// customer. A DRIVER may also order food from the customer surface using
+// the same verified phone account: operational authorization still comes
+// from profiles.role, while customer identity is independently derived by
+// ensure_current_customer(). Restaurant/dispatcher/owner sessions stay out
+// of the customer checkout path. This is a frontend-correctness predicate, not
 // the security boundary: the backend (create_customer_order,
 // ensure_current_customer) independently re-derives and re-verifies
 // everything from auth.uid()/auth.users itself and never trusts this.
 type SessionPhoneInfo = { user: { phone?: string; phone_confirmed_at?: string } };
 export const isVerifiedCustomerSession = (session: SessionPhoneInfo | null, role: AppRole | null): boolean => {
-  if (!session || role !== null) return false;
+  if (!session || (role !== null && role !== "DRIVER")) return false;
   const { phone, phone_confirmed_at } = session.user;
   if (!phone || !phone_confirmed_at) return false;
   return normalizeUzbekPhone(phone) !== null;

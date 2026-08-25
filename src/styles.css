@@ -2340,7 +2340,7 @@ h2 {
   .checkout-step-3 .success-notice{display:none}.checkout-step-3 .field{gap:4px;margin:6px 0}.checkout-step-3 .field input{min-height:42px;padding:8px 10px}.checkout-step-3 .disclosure-toggle{margin-top:8px}
   .checkout-sheet{max-height:calc(var(--checkout-visible-height,100dvh) - 20px)}
   .checkout-keyboard-open .checkout-progress,.checkout-keyboard-open .checkout-panel-heading,.checkout-keyboard-open .checkout-glass-note,.checkout-keyboard-open .checkout-fulfillment,.checkout-keyboard-open .saved-address-offer,.checkout-keyboard-open .saved-address-used{display:none}
-  .checkout-keyboard-open .checkout-v2{padding-top:6px}.checkout-keyboard-open .checkout-panel{padding:10px 15px}.checkout-keyboard-open .checkout-step-actions{margin-top:6px;padding-top:7px;padding-bottom:7px}.checkout-keyboard-open .checkout-step-actions .button{min-height:44px}
+  .checkout-keyboard-open .checkout-v2{padding-top:6px}.checkout-keyboard-open .checkout-panel{padding:10px 15px}.checkout-keyboard-open .checkout-step-actions{display:none}
 }
 @media (prefers-reduced-motion:reduce){.checkout-sheet{animation:none}}
 /* Five-step checkout wizard. Bottom customer-nav is hidden on this page
@@ -2357,6 +2357,7 @@ h2 {
 .checkout-step-actions{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:14px 0 max(14px,env(safe-area-inset-bottom));background:#f7f6f2;border-top:1px solid var(--line)}
 .checkout-step-actions .button{min-height:52px}
 .checkout-step-actions [data-testid="checkout-back"]{min-width:104px}
+.checkout-submit-error{grid-column:1/-1;margin:0;padding:9px 12px;border:1px solid #e5b8ae;border-radius:12px;background:#fff1ed;color:#8d2d20;font-size:12px;font-weight:700}
 /* Step 2: the map fills essentially the whole remaining viewport instead
    of sitting inside a small card -- search stays compact at the top,
    status/pin-confirm sit as a bottom-sheet-style summary under the map,
@@ -2376,8 +2377,9 @@ h2 {
 .checkout-step-map-stage .map-frame{flex:1 1 auto;min-height:220px;position:relative}
 .checkout-step-map-stage .map-canvas{position:absolute;inset:0;width:auto;height:auto}
 .map-bottom-overlay{display:grid;gap:6px}
-.checkout-step-map-stage .map-bottom-overlay{position:absolute;z-index:20;right:10px;bottom:58px;left:10px;display:grid;gap:6px;max-height:46%;overflow-y:auto;pointer-events:none}
+.checkout-step-map-stage .map-bottom-overlay{position:absolute;z-index:20;right:10px;bottom:58px;left:10px;display:grid;gap:6px;pointer-events:none}
 .checkout-step-map-stage .map-bottom-overlay>*{pointer-events:auto}
+.checkout-step-map-stage .map-a11y-status{position:absolute!important;width:1px!important;height:1px!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;box-shadow:none!important}
 .checkout-step-map-stage .location-status,.checkout-step-map-stage .map-suggestion-inline,.checkout-step-map-stage .pin-confirm{margin-top:0;padding:11px}
 /* Step 3: lightweight pin re-confirmation summary (no second map canvas --
    editing district/street here can invalidate Step 2's confirmation via

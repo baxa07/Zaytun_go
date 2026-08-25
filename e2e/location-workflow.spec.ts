@@ -32,7 +32,7 @@ test.describe("precise delivery location", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openCheckout(page);
     await fillRequiredContactAndReachMap(page);
-    await expect(page.getByTestId("map-empty")).toBeVisible();
+    await expect(page.getByTestId("map-empty")).toHaveClass(/map-a11y-status/);
     await page.screenshot({ path: evidence("01-empty-map-selection") });
 
     await page.getByLabel("Ko‘cha, joy yoki mo‘ljal qidirish").fill("Amir Temur");
@@ -74,7 +74,7 @@ test.describe("precise delivery location", () => {
     await context.setGeolocation({ latitude: 40.1039, longitude: 65.3688 });
     await openCheckout(page);
     await fillRequiredContactAndReachMap(page);
-    await expect(page.getByTestId("map-empty")).toBeVisible();
+    await expect(page.getByTestId("map-empty")).toHaveClass(/map-a11y-status/);
 
     await page.getByTestId("use-my-location").click();
     await expect(page.getByTestId("coordinate-summary")).toContainText("Pin belgilandi");

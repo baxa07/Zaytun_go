@@ -134,3 +134,23 @@ test("driver signs in with a phone number and is gated correctly across surfaces
   await page.goto("/driver");
   await expect(page.getByRole("heading", { name: "Ruxsat yo‘q" })).toBeVisible();
 });
+
+test("a verified DRIVER account can also place a customer pickup order", async ({ page }) => {
+  await page.goto("/driver");
+  await signIn(page, "998900000099");
+  await expect(page.getByTestId("driver-no-active")).toBeVisible();
+
+  await page.goto("/menu/chicken");
+  await page.getByRole("button", { name: "+" }).click();
+  await page.getByTestId("buy-now").click();
+  await page.getByTestId("type-pickup").click();
+  await expect(page.getByTestId("customer-session-badge")).toBeVisible();
+  await expect(page.getByLabel("Telefon *")).toHaveAttribute("readonly", "");
+  await page.getByLabel("Ism *").fill("Haydovchi Mijoz");
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-4")).toBeVisible();
+  await page.getByTestId("checkout-continue").click();
+  await expect(page.getByTestId("checkout-step-5")).toBeVisible();
+  await page.getByTestId("checkout-submit").click();
+  await expect(page).toHaveURL(/\/confirmation\//);
+});

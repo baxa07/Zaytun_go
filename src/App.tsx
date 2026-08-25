@@ -877,7 +877,7 @@ function CheckoutMapStep({ address, mapSelection, updateMapSelection, onApplySug
 }) {
   return (
     <div className="checkout-step-map-stage" data-testid="checkout-step-map">
-      <MapPicker value={mapSelection} onChange={updateMapSelection} onApplySuggestion={onApplySuggestion} />
+      <MapPicker value={mapSelection} onChange={updateMapSelection} onApplySuggestion={onApplySuggestion} minimalControls />
       {errors.coordinates && <em className="error">{errors.coordinates}</em>}
       {errors.pinConfirmation && <em className="error">{errors.pinConfirmation}</em>}
       {(errors.deliveryZone || address.deliveryZoneResult === "OUTSIDE_ZONE") && (
@@ -1687,9 +1687,9 @@ function Checkout() {
             </section>
           )}
         </div>
-        {errors.submit && <p className="error" role="alert">{errors.submit}</p>}
         {errors.cart && <p className="error" role="alert">{errors.cart}</p>}
         <div className="sticky-action checkout-step-actions" data-testid="checkout-step-actions">
+          {errors.submit && <p className="error checkout-submit-error" role="alert">{errors.submit}</p>}
           <button type="button" className="button secondary" data-testid="checkout-back" onClick={goBack}>← Orqaga</button>
           {!hideContinue && (step !== 5 ? (
             <button type="button" className="button primary wide" data-testid="checkout-continue" onClick={goNext}>
