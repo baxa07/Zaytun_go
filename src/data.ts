@@ -620,6 +620,9 @@ class LocalStore
       transitionOrder(order, to, actor, actor.toLowerCase(), reason),
     );
   }
+  async acceptAndStart(id:string){const order=await this.get(id);if(!order)throw new Error("Order not found");await this.transition(id,"CONFIRMED","RESTAURANT");if(!(['CLICK','PAYME'].includes(order.paymentMethod)&&order.paymentStatus!=="CONFIRMED"))await this.transition(id,"PREPARING","RESTAURANT")}
+  async pickupAndDepart(id:string){await this.transition(id,"PICKED_UP","DRIVER");await this.transition(id,"ON_THE_WAY","DRIVER")}
+  async completeDelivery(id:string){const order=await this.get(id);if(!order)throw new Error("Order not found");if(order.status==='PICKED_UP')await this.transition(id,"ON_THE_WAY","DRIVER");const current=await this.get(id);if(current?.status==='ON_THE_WAY')await this.transition(id,"ARRIVED","DRIVER");await this.transition(id,"DELIVERED","DRIVER")}
   async confirmManualPayment(id:string){const order=await this.get(id);if(!order)throw new Error('Order not found');if(!['CLICK','PAYME'].includes(order.paymentMethod))throw new Error('Bu buyurtma Click/Payme emas');if(order.paymentStatus==='CONFIRMED')return;await this.save({...order,paymentStatus:'CONFIRMED',events:[...order.events,createEvent(id,order.status,order.status,'RESTAURANT','restaurant',undefined,'MANUAL_PAYMENT_CONFIRMED')]})}
   async acceptAssignment(id: string) {
     const order = await this.get(id);

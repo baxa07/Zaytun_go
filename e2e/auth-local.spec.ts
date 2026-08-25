@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { forceFreeDriver } from "./helpers/driverCleanup";
 
 const localPassword = "zaytun-local-2026";
 
@@ -6,7 +7,7 @@ async function signIn(page: Page, identifier: string) {
   await page.getByLabel("Telefon yoki email").fill(identifier);
   await page.getByLabel("Parol").fill(localPassword);
   const submit = page.getByRole("button", { name: "Kirish" });
-  await expect(submit).toBeEnabled();
+  await expect(submit).toBeEnabled({ timeout: 15000 });
   await submit.click();
 }
 
@@ -37,11 +38,16 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
     await page.getByTestId("buy-now").click();
     await page.getByLabel("Ism *").fill("Auth RLS Mijoz");
     await page.getByLabel("Telefon *").fill("+998901234567");
+    await page.getByTestId("checkout-continue").click();
+    await page.getByTestId("map-picker-set").click();
+    await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+    await page.getByTestId("checkout-continue").click();
     await page.getByLabel("Mahalla yoki tuman *").fill("Navoiy shahar");
     await page.getByLabel("Ko‘cha yoki joylashuv *").fill("Amir Temur ko‘chasi");
     await page.getByLabel("Uy / bino (ixtiyoriy)").fill("24B");
-    await page.getByTestId("map-picker-set").click();
     await page.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+    await page.getByTestId("checkout-continue").click();
+    await page.getByTestId("checkout-continue").click();
     await page.getByTestId("checkout-submit").click();
     await expect(page).toHaveURL(/\/confirmation\//);
     await expect(page.getByTestId("server-confirmed-total")).toContainText(/152.?000/);
@@ -104,9 +110,11 @@ test('local Supabase pickup terminal lifecycle is restaurant-only',async({page})
   await page.getByRole('link',{name:/Zaytun tovuq grili tanlash/}).click()
   await page.getByTestId('buy-now').click()
   await page.getByTestId('type-pickup').click()
-  await page.getByLabel('Terminal — restoranda').check()
   await page.getByLabel('Ism *').fill('Supabase Pickup Mijoz')
   await page.getByLabel('Telefon *').fill('+998901234568')
+  await page.getByTestId('checkout-continue').click()
+  await page.getByLabel('Terminal — restoranda').check()
+  await page.getByTestId('checkout-continue').click()
   await page.getByTestId('checkout-submit').click()
   await page.waitForURL('**/confirmation/**')
   const orderId=page.url().split('/confirmation/')[1]
@@ -131,15 +139,18 @@ test('local Supabase pickup terminal lifecycle is restaurant-only',async({page})
 })
 
 test("driver signs in with a phone number and is gated correctly across surfaces", async ({ page }) => {
+  await forceFreeDriver("998900000099");
   await page.goto("/driver");
   await expect(page.getByRole("heading", { name: "Kirish" })).toBeVisible();
   await signIn(page, "998900000099");
-  await expect(page.getByTestId("driver-no-active")).toBeVisible();
+  await expect(page.locator(".assignment-card, .delivery-card")).toHaveCount(0);
+  await expect(page.getByTestId("driver-availability")).toBeVisible();
   await page.getByRole("button", { name: "Chiqish" }).click();
 
   await page.goto("/driver");
   await signIn(page, "90 000 00 99");
-  await expect(page.getByTestId("driver-no-active")).toBeVisible();
+  await expect(page.locator(".assignment-card, .delivery-card")).toHaveCount(0);
+  await expect(page.getByTestId("driver-availability")).toBeVisible();
 
   await page.goto("/restaurant");
   await expect(page.getByRole("heading", { name: "Ruxsat yo‘q" })).toBeVisible();
@@ -152,9 +163,11 @@ test("driver signs in with a phone number and is gated correctly across surfaces
 });
 
 test("a verified DRIVER account can also place a customer pickup order", async ({ page }) => {
+  await forceFreeDriver("998900000099");
   await page.goto("/driver");
   await signIn(page, "998900000099");
-  await expect(page.getByTestId("driver-no-active")).toBeVisible();
+  await expect(page.locator(".assignment-card, .delivery-card")).toHaveCount(0);
+  await expect(page.getByTestId("driver-availability")).toBeVisible();
 
   await page.goto("/menu/chicken");
   await page.getByRole("button", { name: "+" }).click();

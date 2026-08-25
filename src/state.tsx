@@ -204,6 +204,9 @@ type State = {
   ownerRemoveMenuImage:(path:string)=>Promise<void>;
   submitOrder: (order: Order) => Promise<Order>;
   transition: (id: string, to: OrderStatus, actor: ActorType, reason?: string) => Promise<void>;
+  acceptAndStart: (id: string) => Promise<void>;
+  pickupAndDepart: (id: string) => Promise<void>;
+  completeDelivery: (id: string) => Promise<void>;
   transitionPending: (id: string) => boolean;
   // H0: the shared `orders` list is now filtered (live restaurant board
   // only, when surface==='restaurant') -- an individual order detail page
@@ -689,6 +692,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (driver) await store.saveDriver({ ...driver, availability: "AVAILABLE" });
       }
     }),
+    acceptAndStart: (id) => withOrderLock(id, () => store.acceptAndStart(id)),
+    pickupAndDepart: (id) => withOrderLock(id, () => store.pickupAndDepart(id)),
+    completeDelivery: (id) => withOrderLock(id, () => store.completeDelivery(id)),
     transitionPending: (id) => Boolean(pendingTransitionState[id]),
     getOrder: (id) => store.get(id),
     fetchOrderHistory: (filters) => store.fetchOrderHistory(filters),

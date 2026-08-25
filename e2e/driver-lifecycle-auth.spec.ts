@@ -82,10 +82,15 @@ test("P4 driver work surface (real Supabase): auto-dispatch assignment, accept, 
   await customer.waitForURL("**/checkout");
   await customer.getByLabel("Ism *").fill("Driver P4 Mijoz");
   await customer.getByLabel("Telefon *").fill("+998907776600");
-  await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
-  await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+  await customer.getByTestId("checkout-continue").click();
   await customer.getByTestId("map-picker-set").click();
   await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+  await customer.getByTestId("checkout-continue").click();
+  await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
+  await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+  await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+  await customer.getByTestId("checkout-continue").click();
+  await customer.getByTestId("checkout-continue").click();
   await customer.getByTestId("checkout-submit").click();
   await customer.waitForURL("**/confirmation/**");
   const orderId = customer.url().split("/confirmation/")[1];

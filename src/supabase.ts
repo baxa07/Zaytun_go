@@ -548,6 +548,9 @@ export class SupabaseStore {
     });
     fail(error);
   }
+  async acceptAndStart(id:string){const{error}=await supabase!.rpc("restaurant_accept_and_start",{p_order_id:id});fail(error)}
+  async pickupAndDepart(id:string){const{error}=await supabase!.rpc("driver_pickup_and_depart",{p_order_id:id});fail(error)}
+  async completeDelivery(id:string){const{error}=await supabase!.rpc("driver_complete_delivery",{p_order_id:id});fail(error)}
   async acceptAssignment(id: string) {
     const { error } = await supabase!.rpc("accept_assignment", {
       p_order_id: id,

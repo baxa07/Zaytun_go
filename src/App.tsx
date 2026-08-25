@@ -2672,6 +2672,7 @@ function SoundStatusControl({
 }
 function Restaurant() {
   const { orders, loaded, operationalError } = useApp();
+  const [mobileGroup, setMobileGroup] = useState(groups[0].title);
   const [operationalNow, setOperationalNow] = useState(() => new Date());
   useEffect(() => {
     const timer = window.setInterval(() => setOperationalNow(new Date()), 30_000);
@@ -2861,10 +2862,27 @@ function Restaurant() {
             Kechikkan
           </span>
         </div>
+        <div className="mobile-board-tabs" role="tablist" aria-label="Buyurtma bosqichlari">
+          {groups.map((group) => {
+            const count = orders.filter((order) => group.statuses.includes(order.status)).length;
+            return (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mobileGroup === group.title}
+                className={mobileGroup === group.title ? "active" : ""}
+                onClick={() => setMobileGroup(group.title)}
+                key={group.title}
+              >
+                <span>{group.title}</span><b>{count}</b>
+              </button>
+            );
+          })}
+        </div>
         <div className={`board-wrap${scrollable ? " scrollable" : ""}`}>
           <div className="board" ref={boardRef}>
             {groups.map((g) => (
-              <section className="column" key={g.title}>
+              <section className={`column${mobileGroup === g.title ? " mobile-active" : ""}`} key={g.title}>
                 <h2>
                   {g.title}
                   <span>
@@ -2876,6 +2894,9 @@ function Restaurant() {
                   .map((o) => (
                     <OrderCard order={o} key={o.id} onOpen={acknowledgeOrder} />
                   ))}
+                {orders.filter((o) => g.statuses.includes(o.status)).length === 0 && (
+                  <div className="mobile-column-empty">Bu bosqichda buyurtma yo‘q</div>
+                )}
               </section>
             ))}
           </div>
@@ -3433,6 +3454,7 @@ function History() {
   );
 }
 function OrderDetail() {
+  const compactOperatorFlow = document.documentElement.classList.contains("telegram-staff-mini-app");
   const { id } = useParams();
   const {
     orders,
@@ -3447,6 +3469,7 @@ function OrderDetail() {
     reviewDelivery,
     requestClarification,
     confirmManualPayment,
+    acceptAndStart,
     transitionPending,
     getOrder,
   } = useApp();
@@ -3765,9 +3788,11 @@ function OrderDetail() {
                   className="button primary"
                   data-testid="action-confirm"
                   disabled={transitionPending(order.id) || (order.type === "DELIVERY" && order.deliveryReviewStatus !== "APPROVED")}
-                  onClick={() => void action("CONFIRMED")}
+                  onClick={() => void (compactOperatorFlow ? acceptAndStart(order.id) : action("CONFIRMED"))}
                 >
-                  {order.type==='PICKUP'?'Buyurtmani tasdiqlash':'Qabul qilish'}
+                  {compactOperatorFlow
+                    ? (isRemotePaymentMethod(order.paymentMethod)&&order.paymentStatus!=='CONFIRMED'?'Buyurtmani qabul qilish':'Qabul qilish va tayyorlashni boshlash')
+                    : (order.type==='PICKUP'?'Buyurtmani tasdiqlash':'Qabul qilish')}
                 </button>
                 <input
                   value={reason}
@@ -4963,7 +4988,8 @@ function DriverPreReadyCard({ order }: { order: Order }) {
   );
 }
 function DriverDelivery({ order }: { order: Order }) {
-  const { transition, reportIssue, transitionPending } = useApp();
+  const { transition, reportIssue, transitionPending, pickupAndDepart, completeDelivery } = useApp();
+  const compactDriverFlow = document.documentElement.classList.contains("telegram-driver-mini-app");
   const [issueOpen, setIssueOpen] = useState(false);
   const [issue, setIssue] = useState("");
   if (order.status === "CONFIRMED" || order.status === "PREPARING") {
@@ -4975,12 +5001,12 @@ function DriverDelivery({ order }: { order: Order }) {
     ARRIVED: "DELIVERED",
   };
   const labels: Partial<Record<OrderStatus, string>> = {
-    DRIVER_ASSIGNED: "Buyurtmani oldim",
-    PICKED_UP: "Yo‘lga chiqdim",
-    ON_THE_WAY: "Yetib keldim",
+    DRIVER_ASSIGNED: compactDriverFlow ? "Buyurtmani oldim — yo‘lga chiqaman" : "Buyurtmani oldim",
+    PICKED_UP: compactDriverFlow ? "Yetkazildi" : "Yo‘lga chiqdim",
+    ON_THE_WAY: compactDriverFlow ? "Yetkazildi" : "Yetib keldim",
     ARRIVED: "Yetkazildi",
   };
-  const target = order.status === "DRIVER_ASSIGNED" ? "PICKED_UP" : next[order.status];
+  const hasPrimaryAction = ["DRIVER_ASSIGNED","PICKED_UP","ON_THE_WAY","ARRIVED"].includes(order.status);
   const coordinate = order.address?.latitude !== undefined && order.address.longitude !== undefined ? {latitude:order.address.latitude,longitude:order.address.longitude} : undefined;
   const payment = driverPaymentSummary(order);
   return (
@@ -4996,12 +5022,16 @@ function DriverDelivery({ order }: { order: Order }) {
             customer contact, then delivery notes, then payment, then
             order contents last -- the courier does not need
             restaurant-admin-weight detail on every field. */}
-        {target && (
+        {hasPrimaryAction && (
           <button
             className="button primary wide big"
             data-testid="driver-primary-action"
             disabled={transitionPending(order.id)}
-            onClick={() => void transition(order.id, target, "DRIVER")}
+            onClick={() => void (
+              compactDriverFlow
+                ? (order.status === "DRIVER_ASSIGNED" ? pickupAndDepart(order.id) : completeDelivery(order.id))
+                : transition(order.id, order.status === "DRIVER_ASSIGNED" ? "PICKED_UP" : next[order.status]!, "DRIVER")
+            )}
           >
             {labels[order.status]}
           </button>

@@ -962,6 +962,15 @@ h2 {
   overflow-x: auto;
   padding-bottom: 15px;
 }
+.mobile-board-tabs { display: none; }
+.mobile-column-empty {
+  padding: 24px 14px;
+  border: 1px dashed #cfd7d1;
+  border-radius: 14px;
+  color: var(--muted);
+  text-align: center;
+  background: rgb(255 255 255 / 55%);
+}
 .column h2 {
   display: flex;
   justify-content: space-between;
@@ -2168,6 +2177,97 @@ h2 {
     border-color: #c9ded1;
   }
   .staff-nav-icon { display: block; }
+  .staff-app-header .operational-nav a { color: #526159; }
+  .staff-app-header .operational-nav a.active { color: var(--green); }
+  .telegram-staff-mini-app .staff-app-header {
+    justify-content: center;
+    padding-inline: 110px;
+  }
+  .telegram-staff-mini-app .staff-brand img { display: none; }
+  .telegram-staff-mini-app .staff-brand span {
+    white-space: nowrap;
+    font-size: 14px;
+  }
+  .staff .auth-signout {
+    position: static;
+    display: flex;
+    width: calc(100% - 32px);
+    margin: 18px auto calc(86px + env(safe-area-inset-bottom));
+    justify-content: center;
+    min-height: 48px;
+    box-shadow: none;
+  }
+  .ops {
+    padding: 20px 16px calc(88px + env(safe-area-inset-bottom));
+    overflow: visible;
+  }
+  .ops-head { align-items: flex-start; }
+  .ops-head h1 { font-size: 32px; margin-bottom: 0; }
+  .ops-head .notice { font-size: 12px; padding: 9px 12px; }
+  .sound-control { width: 100%; }
+  .sound-control .sound-status { font-size: 12px; }
+  .metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin: 16px 0;
+  }
+  .metrics span {
+    min-width: 0;
+    padding: 10px 5px;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+  .metrics b { display: block; margin: 0 0 2px; font-size: 21px; }
+  .mobile-board-tabs {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    margin: 4px -16px 14px;
+    padding: 0 16px 4px;
+    scrollbar-width: none;
+  }
+  .mobile-board-tabs::-webkit-scrollbar { display: none; }
+  .mobile-board-tabs button {
+    flex: 0 0 auto;
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid #ced7d0;
+    border-radius: 999px;
+    color: #526159;
+    background: #fff;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 750;
+  }
+  .mobile-board-tabs button b {
+    min-width: 23px;
+    min-height: 23px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #eef2ef;
+  }
+  .mobile-board-tabs button.active { color: #fff; background: var(--green); border-color: var(--green); }
+  .mobile-board-tabs button.active b { color: var(--green); background: #fff; }
+  .board-wrap.scrollable:after { display: none; }
+  .board {
+    display: block;
+    overflow: visible;
+    padding: 0;
+  }
+  .board .column { display: none; }
+  .board .column.mobile-active { display: grid; gap: 10px; }
+  .board .column h2 { display: none; }
+  .order-card {
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 8px 24px rgb(29 41 34 / 6%);
+  }
   .operational-nav.owner-navigation a {
     min-width: 0;
     line-height: 1.15;
@@ -2641,4 +2741,96 @@ h2 {
   .checkout-otp-active .checkout-panel{padding:12px 15px;scroll-padding-block:18px}
   .checkout-otp-focus .field input{font-size:22px;letter-spacing:.16em}
   .saved-address-offer{grid-template-columns:auto 1fr}.saved-address-offer .button.primary{grid-column:1/3;width:100%}.saved-address-offer .button.text{grid-column:1/3}
+}
+
+/* Restaurant/owner Telegram Mini App: phone-first operational density.
+   The desktop information remains available, but the next decision is
+   always presented before the long order/address record. */
+@media (max-width:760px){
+  .telegram-staff-mini-app .detail{
+    padding:16px 14px calc(90px + env(safe-area-inset-bottom));
+  }
+  .telegram-staff-mini-app .detail>.back{
+    display:inline-flex;
+    min-height:36px;
+    align-items:center;
+    margin-bottom:10px;
+    font-size:13px;
+  }
+  .telegram-staff-mini-app .detail-head{
+    align-items:center;
+    gap:10px;
+    margin-bottom:8px;
+  }
+  .telegram-staff-mini-app .detail-head h1{
+    margin:2px 0 0;
+    font-size:28px;
+    line-height:1.05;
+  }
+  .telegram-staff-mini-app .detail-head .badge{flex:0 0 auto}
+  .telegram-staff-mini-app .detail-grid{gap:10px}
+  .telegram-staff-mini-app .detail-grid>.action-panel{order:-1}
+  .telegram-staff-mini-app .detail .panel{
+    padding:16px;
+    border-radius:16px;
+  }
+  .telegram-staff-mini-app .detail .panel h2{
+    margin:0 0 12px;
+    font-size:20px;
+  }
+  .telegram-staff-mini-app .action-panel{
+    gap:9px;
+    border-color:rgba(31,122,112,.28);
+    box-shadow:0 10px 28px rgba(23,63,50,.09);
+  }
+  .telegram-staff-mini-app .action-panel .button{
+    width:100%;
+    min-height:48px;
+  }
+  .telegram-staff-mini-app .prep-time-hint{
+    margin-bottom:4px;
+    padding:9px 11px;
+    font-size:12px;
+  }
+  .telegram-staff-mini-app .detail .row{
+    gap:10px;
+    padding:8px 0;
+    font-size:14px;
+  }
+  .telegram-staff-mini-app .detail .row b{text-align:right}
+  .telegram-staff-mini-app .location-actions{display:grid;grid-template-columns:1fr 1fr}
+  .telegram-staff-mini-app .location-actions .button{min-width:0;padding-inline:8px}
+  .telegram-staff-mini-app .location-facts{grid-template-columns:1fr 1fr}
+  .telegram-staff-mini-app .assigned-driver .button{width:100%}
+  .telegram-staff-mini-app .exception-banner{margin:8px 0}
+
+  .telegram-staff-mini-app .history-filters{
+    gap:9px;
+    margin:12px 0;
+  }
+  .telegram-staff-mini-app .history-filters>.segmented{
+    display:flex;
+    overflow-x:auto;
+    flex-wrap:nowrap;
+    margin-inline:-16px;
+    padding:0 16px 4px;
+    scrollbar-width:none;
+  }
+  .telegram-staff-mini-app .history-filters>.segmented::-webkit-scrollbar{display:none}
+  .telegram-staff-mini-app .history-filters>.segmented button{
+    flex:0 0 auto;
+    min-height:40px;
+    border-radius:999px;
+  }
+  .telegram-staff-mini-app .history-filter-row{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+  }
+  .telegram-staff-mini-app .history-filter-row select,
+  .telegram-staff-mini-app .history-filter-row input{width:100%;min-width:0}
+  .telegram-staff-mini-app .history-filter-row input[type="search"]{grid-column:1/-1}
+  .telegram-staff-mini-app .history-summary{gap:7px}
+  .telegram-staff-mini-app .history-summary span{min-height:72px}
+  .telegram-staff-mini-app .history-card{border-radius:16px;padding:14px}
+  .telegram-staff-mini-app .driver-ledger-row{border-radius:16px;padding:14px}
 }
