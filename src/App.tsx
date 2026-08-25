@@ -265,6 +265,16 @@ function CustomerNavIcon({ kind }: { kind: "menu" | "cart" | "orders" }) {
       : <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h4"/></>;
   return <svg className="customer-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{path}</svg>;
 }
+function StaffNavIcon({ kind }: { kind: "orders" | "history" | "drivers" | "menu" }) {
+  const path = kind === "orders"
+    ? <><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></>
+    : kind === "history"
+      ? <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>
+      : kind === "drivers"
+        ? <><path d="M3 15h18l-2-7H7l-4 7Z"/><path d="M7 8l2-3h6l2 3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></>
+        : <><path d="M4 5h16v14H4z"/><path d="M4 10h16M9 5v14"/></>;
+  return <svg className="staff-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{path}</svg>;
+}
 function Shell({
   children,
   surface = "customer",
@@ -291,6 +301,7 @@ function Shell({
   const swipeEnabled = surface === "customer" && !hideBottomNav && swipeTabIndex >= 0;
   const swipeBlockedTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("input,textarea,select,button,.stepper,.qty-stepper,.menu-category-rail,.map-frame,.map-results,[data-no-tab-swipe]"));
   const driverSurface = surface === "driver";
+  const staffSurface = surface === "staff";
   return (
     <div
       className={`app ${surface}${checkoutMode ? " checkout-app" : ""}`}
@@ -317,11 +328,11 @@ function Shell({
         event.stopPropagation();
       }}
     >
-      <header className={driverSurface ? "driver-app-header" : undefined}>
-        <Link className={`brand${driverSurface ? " driver-brand" : ""}`} to={driverSurface ? "/driver" : "/"}>
+      <header className={driverSurface ? "driver-app-header" : staffSurface ? "staff-app-header" : undefined}>
+        <Link className={`brand${driverSurface ? " driver-brand" : staffSurface ? " staff-brand" : ""}`} to={driverSurface ? "/driver" : staffSurface ? "/restaurant" : "/"}>
           <img src="/zaytun-go-medallion.jpg" alt="" />{" "}
           <span>
-            ZAYTUN <b>{driverSurface ? "DRIVER" : "GO"}</b>
+            ZAYTUN <b>{driverSurface ? "DRIVER" : staffSurface ? "OSHXONA" : "GO"}</b>
           </span>
         </Link>
         {!hideBottomNav && !driverSurface && (
@@ -334,10 +345,10 @@ function Shell({
               </>
             ) : (
               <>
-                <NavLink to="/menu">Buyurtma</NavLink>
-                <NavLink to="/restaurant">Restoran</NavLink>
-                <NavLink to="/driver">Haydovchi</NavLink>
-                {role === "OWNER" && <NavLink to="/owner/menu">Menu boshqaruvi</NavLink>}
+                <NavLink to="/restaurant" end><StaffNavIcon kind="orders"/><span>Buyurtmalar</span></NavLink>
+                <NavLink to="/restaurant/history"><StaffNavIcon kind="history"/><span>Tarix</span></NavLink>
+                <NavLink to="/restaurant/drivers/history"><StaffNavIcon kind="drivers"/><span>Haydovchilar</span></NavLink>
+                {role === "OWNER" && <NavLink to="/owner/menu"><StaffNavIcon kind="menu"/><span>Menu boshqaruvi</span></NavLink>}
               </>
             )}
           </nav>
@@ -2776,7 +2787,6 @@ function Restaurant() {
   }, [orders]);
   return (
     <Shell surface="staff">
-      <RestaurantSubNav active="board" />
       <main className="ops">
         {!loaded && <div className="empty" role="status">Buyurtmalar yuklanmoqda…</div>}
         {operationalError && <p className="error" role="alert">{operationalError}</p>}
@@ -2926,21 +2936,6 @@ function OrderCard({ order, onOpen }: { order: Order; onOpen?: (id: string) => v
 // H1: compact secondary nav scoped to restaurant-authenticated pages only
 // -- Shell's own top nav is shared by every staff/driver/login-gate page
 // and deliberately stays untouched (generic Buyurtma/Restoran/Haydovchi).
-function RestaurantSubNav({ active }: { active: "board" | "history" | "drivers" }) {
-  return (
-    <div className="restaurant-subnav">
-      <Link to="/restaurant" className={active === "board" ? "active" : ""}>
-        Buyurtmalar
-      </Link>
-      <Link to="/restaurant/history" className={active === "history" ? "active" : ""}>
-        Tarix
-      </Link>
-      <Link to="/restaurant/drivers/history" className={active === "drivers" ? "active" : ""}>
-        Haydovchilar
-      </Link>
-    </div>
-  );
-}
 const assignmentStatusLabels: Record<DriverLedgerEntry["status"], string> = {
   ASSIGNED: "Biriktirilgan",
   ACCEPTED: "Qabul qilingan",
@@ -3085,7 +3080,6 @@ function DriverLedger() {
   }, [filters, customRangeIncomplete, fetchDriverLedgerSummary]);
   return (
     <Shell surface="staff">
-      <RestaurantSubNav active="drivers" />
       <main className="ops history">
         <div className="ops-head">
           <div>
@@ -3256,7 +3250,6 @@ function History() {
   const totalPages = Math.max(1, Math.ceil(totalCount / HISTORY_PAGE_SIZE));
   return (
     <Shell surface="staff">
-      <RestaurantSubNav active="history" />
       <main className="ops history">
         <div className="ops-head">
           <div>

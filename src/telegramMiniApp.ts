@@ -61,16 +61,18 @@ export function initializeTelegramMiniApp(): boolean {
   }
 
   const driverApp = window.location.pathname.startsWith("/driver");
+  const staffApp = window.location.pathname.startsWith("/restaurant") || window.location.pathname.startsWith("/owner");
   if (driverApp) document.documentElement.classList.add("telegram-driver-mini-app");
+  if (staffApp) document.documentElement.classList.add("telegram-staff-mini-app");
 
-  webApp.setHeaderColor?.(driverApp ? "#244b36" : "#ffffff");
-  webApp.setBackgroundColor?.(driverApp ? "#f1f3f1" : "#f7f6f2");
-  webApp.setBottomBarColor?.(driverApp ? "#244b36" : "#f7f6f2");
-  if (driverApp) {
-    // The driver mission surface is map-first. Telegram's vertical swipe
-    // gesture otherwise competes with map panning and can minimize the
-    // app mid-delivery. The Telegram header still remains available for
-    // minimizing/closing the Mini App.
+  const operationalApp = driverApp || staffApp;
+  webApp.setHeaderColor?.(operationalApp ? "#244b36" : "#ffffff");
+  webApp.setBackgroundColor?.(operationalApp ? "#f1f3f1" : "#f7f6f2");
+  webApp.setBottomBarColor?.(operationalApp ? "#244b36" : "#f7f6f2");
+  if (operationalApp) {
+    // Operational screens use their own board/list scrolling and fixed
+    // action bars. Telegram's collapse gesture can otherwise dismiss the
+    // app while staff are handling an order or a driver is moving a map.
     webApp.disableVerticalSwipes?.();
     webApp.requestFullscreen?.();
   }

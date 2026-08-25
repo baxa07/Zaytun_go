@@ -361,6 +361,13 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# Shared Restaurant + Owner Mini App entry bot. Telegram only opens the
+# staff surface; authoritative Supabase Auth roles still decide whether the
+# signed-in account sees Restaurant operations or Owner menu management.
+[functions.zaytun-staff-telegram-webhook]
+enabled = true
+verify_jwt = false
+
 # Outbound restaurant new-order notifications. Invoked by our own database
 # (a notification_outbox row + pg_net trigger), never by an end user, so
 # there is no Supabase-issued JWT to verify either -- same "do our own

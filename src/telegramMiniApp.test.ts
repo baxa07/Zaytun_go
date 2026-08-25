@@ -73,4 +73,26 @@ describe("Telegram Mini App bridge", () => {
     expect(disableVerticalSwipes).toHaveBeenCalledOnce();
     expect(requestFullscreen).toHaveBeenCalledOnce();
   });
+
+  it("uses the focused operational treatment for Restaurant and Owner Mini App routes", () => {
+    window.history.replaceState({}, "", "/restaurant");
+    const disableVerticalSwipes = vi.fn();
+    const requestFullscreen = vi.fn();
+    const setHeaderColor = vi.fn();
+    window.Telegram = { WebApp: {
+      initData: "auth_date=1&hash=signed",
+      ready: vi.fn(),
+      expand: vi.fn(),
+      disableVerticalSwipes,
+      requestFullscreen,
+      setHeaderColor,
+    } };
+
+    expect(initializeTelegramMiniApp()).toBe(true);
+    expect(document.documentElement.classList.contains("telegram-staff-mini-app")).toBe(true);
+    expect(document.documentElement.classList.contains("telegram-driver-mini-app")).toBe(false);
+    expect(setHeaderColor).toHaveBeenCalledWith("#244b36");
+    expect(disableVerticalSwipes).toHaveBeenCalledOnce();
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+  });
 });
