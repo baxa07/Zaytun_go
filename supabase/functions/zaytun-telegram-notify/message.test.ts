@@ -128,10 +128,10 @@ Deno.test("driver assignment message never includes any customer information -- 
   assertEquals(message.toLowerCase().includes("tel:"), false, "no phone label");
 });
 
-Deno.test("driver assignment keyboard has exactly one button pointing at the production driver panel", () => {
+Deno.test("driver assignment keyboard opens the production Driver Mini App", () => {
   const keyboard = newAssignmentKeyboard();
   assertEquals(keyboard.inline_keyboard.length, 1);
   assertEquals(keyboard.inline_keyboard[0].length, 1);
-  assertEquals(keyboard.inline_keyboard[0][0].text, "Haydovchi panelini ochish");
-  assertStringIncludes(keyboard.inline_keyboard[0][0].url ?? "", "/driver");
+  assertEquals(keyboard.inline_keyboard[0][0].text, "Haydovchi ilovasini ochish");
+  assertStringIncludes(keyboard.inline_keyboard[0][0].web_app?.url ?? "", "/driver");
 });

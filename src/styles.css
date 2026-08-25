@@ -37,6 +37,17 @@ body {
 .telegram-mini-app .checkout-step-actions {
   padding-bottom: max(14px, var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom)));
 }
+.telegram-driver-mini-app body {
+  background: #f1f3f1;
+  overscroll-behavior: none;
+}
+.telegram-driver-mini-app .driver-app-header {
+  padding-top: var(--tg-content-safe-area-inset-top, 0px);
+}
+.telegram-driver-mini-app .driver-page {
+  min-height: var(--tg-viewport-stable-height, 100dvh);
+  padding-bottom: max(24px, var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom)));
+}
 button,
 input,
 textarea,

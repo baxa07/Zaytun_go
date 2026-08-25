@@ -4,9 +4,10 @@
 // (TELEGRAM_NOTIFY_SECRET), the same "do our own auth check since
 // platform JWT verification doesn't apply" pattern zaytun-telegram-webhook
 // and send-sms-hook already use, just via a Bearer header instead of
-// Telegram's own signature header. Reuses the existing bot
-// (@ZaytunKafeNavoiy_bot) and its TELEGRAM_BOT_TOKEN secret -- no second
-// bot, no change to the webhook's /start behavior.
+// Telegram's own signature header. Customer/restaurant messages continue
+// through the existing bot. Driver-assignment messages prefer the
+// dedicated Driver bot when DRIVER_TELEGRAM_BOT_TOKEN is configured, with
+// the existing bot retained as a rollout-safe fallback.
 //
 // Deliberately decoupled from order creation: this function is only ever
 // called AFTER an order (and its durable outbox row) already exist. A
@@ -42,6 +43,7 @@ export type OutboundNotification =
 export interface HandlerDeps {
   env: { get(key: string): string | undefined };
   telegram: TelegramClient | null;
+  driverTelegram?: TelegramClient | null;
   // Returns null when there is nothing left to do (already sent, the
   // outbox row / order genuinely doesn't exist, or -- for
   // TELEGRAM_CUSTOMER_ARRIVED specifically -- the order has no linked
@@ -109,9 +111,12 @@ export async function handleTelegramNotify(req: Request, deps: HandlerDeps): Pro
       : notification.channel === "TELEGRAM_CUSTOMER_ON_THE_WAY"
       ? { text: formatOnTheWayMessage(notification.data), keyboard: arrivalKeyboard(notification.data), chatId: notification.data.chatId }
       : { text: formatArrivalMessage(notification.data), keyboard: arrivalKeyboard(notification.data), chatId: notification.data.chatId };
+  const outboundTelegram = notification.channel === "TELEGRAM_DRIVER_NEW_ASSIGNMENT"
+    ? deps.driverTelegram ?? telegram
+    : telegram;
 
   try {
-    await telegram.sendMessage(chatId, text, keyboard);
+    await outboundTelegram.sendMessage(chatId, text, keyboard);
     await deps.markSent(outboxId);
     logOutcome("sent");
   } catch {
@@ -134,9 +139,11 @@ if (import.meta.main) {
 
   Deno.serve(async (req) => {
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    const driverBotToken = Deno.env.get("DRIVER_TELEGRAM_BOT_TOKEN");
     return handleTelegramNotify(req, {
       env: Deno.env,
       telegram: botToken ? createTelegramClient(botToken) : null,
+      driverTelegram: driverBotToken ? createTelegramClient(driverBotToken) : null,
       fetchNotification: async (outboxId) => {
         const { data: outboxRow } = await admin
           .from("notification_outbox")

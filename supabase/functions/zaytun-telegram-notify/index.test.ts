@@ -192,10 +192,12 @@ const sampleAssignment: AssignmentNotificationData = {
 
 Deno.test("TELEGRAM_DRIVER_NEW_ASSIGNMENT channel -> sends the assignment message to the assigned driver's own chat id, marks SENT", async () => {
   const { client, calls } = fakeTelegram();
+  const { client: driverClient, calls: driverCalls } = fakeTelegram();
   const sentIds: string[] = [];
   const deps: HandlerDeps = {
     env: envFrom(VALID_ENV),
     telegram: client,
+    driverTelegram: driverClient,
     fetchNotification: async () => ({ channel: "TELEGRAM_DRIVER_NEW_ASSIGNMENT", data: sampleAssignment }),
     markSent: async (id) => { sentIds.push(id); },
     markFailed: async () => {},
@@ -203,8 +205,9 @@ Deno.test("TELEGRAM_DRIVER_NEW_ASSIGNMENT channel -> sends the assignment messag
   const res = await handleTelegramNotify(post({ outboxId: "outbox-assignment-1" }), deps);
   assertEquals(res.status, 200);
   assertEquals(sentIds, ["outbox-assignment-1"]);
-  assertEquals(calls.length, 1);
-  const [chatId, text] = calls[0].args as [number, string];
+  assertEquals(calls.length, 0);
+  assertEquals(driverCalls.length, 1);
+  const [chatId, text] = driverCalls[0].args as [number, string];
   assertEquals(chatId, 777222);
   assertEquals(text.includes("ZG-1073"), true);
   assertEquals(text.includes("Zaytun Kafe"), true);

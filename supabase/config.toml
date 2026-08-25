@@ -354,6 +354,13 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# Dedicated Driver Mini App entry bot. It authenticates Telegram webhook
+# calls with DRIVER_TELEGRAM_WEBHOOK_SECRET and never grants a driver role;
+# the app's existing Supabase driver login/RLS remains authoritative.
+[functions.zaytun-driver-telegram-webhook]
+enabled = true
+verify_jwt = false
+
 # Outbound restaurant new-order notifications. Invoked by our own database
 # (a notification_outbox row + pg_net trigger), never by an end user, so
 # there is no Supabase-issued JWT to verify either -- same "do our own

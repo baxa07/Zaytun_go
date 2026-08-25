@@ -25,6 +25,9 @@ type TelegramWebApp = {
   expand(): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
+  setBottomBarColor?(color: string): void;
+  disableVerticalSwipes?(): void;
+  requestFullscreen?(): void;
   BackButton?: TelegramBackButton;
 };
 
@@ -57,8 +60,20 @@ export function initializeTelegramMiniApp(): boolean {
     if (value) document.documentElement.style.setProperty(target, value);
   }
 
-  webApp.setHeaderColor?.("#ffffff");
-  webApp.setBackgroundColor?.("#f7f6f2");
+  const driverApp = window.location.pathname.startsWith("/driver");
+  if (driverApp) document.documentElement.classList.add("telegram-driver-mini-app");
+
+  webApp.setHeaderColor?.(driverApp ? "#244b36" : "#ffffff");
+  webApp.setBackgroundColor?.(driverApp ? "#f1f3f1" : "#f7f6f2");
+  webApp.setBottomBarColor?.(driverApp ? "#244b36" : "#f7f6f2");
+  if (driverApp) {
+    // The driver mission surface is map-first. Telegram's vertical swipe
+    // gesture otherwise competes with map panning and can minimize the
+    // app mid-delivery. The Telegram header still remains available for
+    // minimizing/closing the Mini App.
+    webApp.disableVerticalSwipes?.();
+    webApp.requestFullscreen?.();
+  }
   webApp.expand();
   webApp.ready();
   return true;
@@ -72,4 +87,3 @@ export function getTelegramBackButton(): TelegramBackButton | undefined {
   const webApp = window.Telegram?.WebApp;
   return webApp?.initData ? webApp.BackButton : undefined;
 }
-

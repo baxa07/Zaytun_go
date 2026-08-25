@@ -7,6 +7,7 @@ afterEach(() => {
   document.documentElement.removeAttribute("data-telegram-platform");
   document.documentElement.removeAttribute("data-telegram-color-scheme");
   document.documentElement.removeAttribute("style");
+  window.history.replaceState({}, "", "/");
 });
 
 describe("Telegram Mini App bridge", () => {
@@ -45,5 +46,31 @@ describe("Telegram Mini App bridge", () => {
     window.Telegram = { WebApp: { initData: "", ready: vi.fn(), expand: vi.fn() } };
     expect(initializeTelegramMiniApp()).toBe(false);
   });
-});
 
+  it("uses the full-screen map-safe Telegram treatment for the Driver Mini App", () => {
+    window.history.replaceState({}, "", "/driver");
+    const disableVerticalSwipes = vi.fn();
+    const requestFullscreen = vi.fn();
+    const setHeaderColor = vi.fn();
+    const setBackgroundColor = vi.fn();
+    const setBottomBarColor = vi.fn();
+    window.Telegram = { WebApp: {
+      initData: "auth_date=1&hash=signed",
+      ready: vi.fn(),
+      expand: vi.fn(),
+      disableVerticalSwipes,
+      requestFullscreen,
+      setHeaderColor,
+      setBackgroundColor,
+      setBottomBarColor,
+    } };
+
+    expect(initializeTelegramMiniApp()).toBe(true);
+    expect(document.documentElement.classList.contains("telegram-driver-mini-app")).toBe(true);
+    expect(setHeaderColor).toHaveBeenCalledWith("#244b36");
+    expect(setBackgroundColor).toHaveBeenCalledWith("#f1f3f1");
+    expect(setBottomBarColor).toHaveBeenCalledWith("#244b36");
+    expect(disableVerticalSwipes).toHaveBeenCalledOnce();
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+  });
+});

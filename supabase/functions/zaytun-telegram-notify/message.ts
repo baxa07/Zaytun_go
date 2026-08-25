@@ -133,5 +133,5 @@ export function formatNewAssignmentMessage(data: AssignmentNotificationData): st
 }
 
 export function newAssignmentKeyboard() {
-  return { inline_keyboard: [[{ text: "Haydovchi panelini ochish", url: DRIVER_URL }]] };
+  return { inline_keyboard: [[{ text: "Haydovchi ilovasini ochish", web_app: { url: DRIVER_URL } }]] };
 }
