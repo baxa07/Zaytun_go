@@ -2716,12 +2716,13 @@ function Restaurant() {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     try {
+      if (typeof navigator.vibrate === "function") navigator.vibrate([250, 100, 250, 100, 450]);
       const playNote = (frequency: number, startOffset: number, duration: number) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = "square";
         osc.frequency.value = frequency;
-        gain.gain.value = 0.6;
+        gain.gain.value = 0.85;
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(ctx.currentTime + startOffset);
@@ -2731,6 +2732,8 @@ function Restaurant() {
       playNote(1318, 0.18, 0.16);
       playNote(1046, 0.36, 0.16);
       playNote(1318, 0.54, 0.22);
+      playNote(1568, 0.8, 0.18);
+      playNote(1318, 1.0, 0.3);
     } catch {
       /* visible alert remains the source of truth -- never block on audio */
     }
@@ -4234,9 +4237,11 @@ function DriverApp() {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     try {
+      if (typeof navigator.vibrate === "function") navigator.vibrate([220, 90, 220, 90, 380]);
       for (const [frequency, startOffset, duration] of notes) {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
+        osc.type = "square";
         osc.frequency.value = frequency;
         gain.gain.value = gainLevel;
         osc.connect(gain);
@@ -4274,9 +4279,9 @@ function DriverApp() {
     previousAssignmentIds.current = currentIds;
     if (newIds.length === 0) return;
     if (current && newIds.includes(current.id)) {
-      playChime([[660, 0, 0.16], [880, 0.2, 0.22]], 0.2); // 🚗 Yangi buyurtma sizga biriktirildi
+      playChime([[660, 0, 0.18], [880, 0.2, 0.18], [1046, 0.4, 0.28]], 0.75); // 🚗 Yangi buyurtma sizga biriktirildi
     } else {
-      playChime([[587, 0, 0.14], [784, 0.16, 0.14], [880, 0.32, 0.2]], 0.18); // 📦 Yana bitta buyurtma qo‘shildi
+      playChime([[587, 0, 0.16], [784, 0.18, 0.16], [988, 0.36, 0.28]], 0.7); // 📦 Yana bitta buyurtma qo‘shildi
     }
   }, [activeAssignments, loaded, current, playChime]);
   // Business-critical repeat, same reasoning as the restaurant alert:
@@ -4299,7 +4304,7 @@ function DriverApp() {
     const interval = window.setInterval(
       () => {
         if (hasUnansweredAssignmentRef.current) {
-          playChime([[660, 0, 0.16], [880, 0.2, 0.22]], 0.2);
+          playChime([[660, 0, 0.18], [880, 0.2, 0.18], [1046, 0.4, 0.28]], 0.75);
         }
       },
       soundRepeatMs(),
@@ -4323,9 +4328,9 @@ function DriverApp() {
     const batchMates = current?.pickupBatchId ? activeAssignments.filter((o) => o.pickupBatchId === current.pickupBatchId) : [];
     const allReady = batchMates.length >= 2 && batchMates.every((o) => o.status === "DRIVER_ASSIGNED");
     if (allReady) {
-      playChime([[784, 0, 0.14], [988, 0.14, 0.14], [1175, 0.28, 0.26]], 0.22); // ✅ 2 ta buyurtma tayyor
+      playChime([[784, 0, 0.16], [988, 0.18, 0.16], [1175, 0.36, 0.3]], 0.72); // ✅ 2 ta buyurtma tayyor
     } else {
-      playChime([[784, 0, 0.18], [988, 0.18, 0.24]], 0.2); // ✅ Buyurtma tayyor
+      playChime([[784, 0, 0.2], [988, 0.22, 0.28]], 0.7); // ✅ Buyurtma tayyor
     }
   }, [activeAssignments, current, playChime]);
   // Driver UI Phase: a distinctly different, softer chime for a genuinely
@@ -4343,11 +4348,13 @@ function DriverApp() {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     try {
+      if (typeof navigator.vibrate === "function") navigator.vibrate([160, 80, 260]);
       const playNote = (frequency: number, startOffset: number, duration: number) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
+        osc.type = "square";
         osc.frequency.value = frequency;
-        gain.gain.value = 0.15;
+        gain.gain.value = 0.5;
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(ctx.currentTime + startOffset);

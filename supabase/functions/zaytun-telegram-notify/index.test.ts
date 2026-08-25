@@ -60,6 +60,27 @@ Deno.test("valid request -> sends the formatted message and marks the outbox row
   assertEquals(sentIds, ["outbox-1"]);
 });
 
+Deno.test("restaurant new-order notifications prefer the dedicated Oshxona bot", async () => {
+  const { client, calls } = fakeTelegram();
+  const { client: staffClient, calls: staffCalls } = fakeTelegram();
+  const { deps, sentIds } = baseDeps({ telegram: client, staffTelegram: staffClient });
+  const res = await handleTelegramNotify(post({ outboxId: "outbox-staff-1" }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(sentIds, ["outbox-staff-1"]);
+  assertEquals(calls.length, 0);
+  assertEquals(staffCalls.length, 1);
+  assertEquals(staffCalls[0].args[0], sampleData.chatId);
+});
+
+Deno.test("the dedicated Oshxona bot can deliver restaurant alerts without depending on the customer bot", async () => {
+  const { client: staffClient, calls: staffCalls } = fakeTelegram();
+  const { deps, sentIds } = baseDeps({ telegram: null, staffTelegram: staffClient });
+  const res = await handleTelegramNotify(post({ outboxId: "outbox-staff-only" }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(sentIds, ["outbox-staff-only"]);
+  assertEquals(staffCalls.length, 1);
+});
+
 Deno.test("missing Authorization -> 401, nothing sent", async () => {
   const { client, calls } = fakeTelegram();
   const deps: HandlerDeps = { env: envFrom(VALID_ENV), telegram: client, fetchNotification: async () => ({ channel: "TELEGRAM_RESTAURANT_NEW_ORDER", data: sampleData }), markSent: async () => {}, markFailed: async () => {} };

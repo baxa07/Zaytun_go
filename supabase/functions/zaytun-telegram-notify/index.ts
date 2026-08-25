@@ -44,6 +44,7 @@ export interface HandlerDeps {
   env: { get(key: string): string | undefined };
   telegram: TelegramClient | null;
   driverTelegram?: TelegramClient | null;
+  staffTelegram?: TelegramClient | null;
   // Returns null when there is nothing left to do (already sent, the
   // outbox row / order genuinely doesn't exist, or -- for
   // TELEGRAM_CUSTOMER_ARRIVED specifically -- the order has no linked
@@ -79,12 +80,6 @@ export async function handleTelegramNotify(req: Request, deps: HandlerDeps): Pro
     return textResponse(401, "Unauthorized");
   }
 
-  if (!deps.telegram) {
-    logOutcome("rejected_config");
-    return textResponse(500, "Server misconfigured");
-  }
-  const telegram = deps.telegram;
-
   let body: { outboxId?: string };
   try {
     body = await req.json();
@@ -103,6 +98,7 @@ export async function handleTelegramNotify(req: Request, deps: HandlerDeps): Pro
     logOutcome("nothing_to_send");
     return textResponse(200, "ok");
   }
+  const telegram = deps.telegram;
   const { text, keyboard, chatId } =
     notification.channel === "TELEGRAM_RESTAURANT_NEW_ORDER"
       ? { text: formatNewOrderMessage(notification.data), keyboard: newOrderKeyboard(), chatId: notification.data.chatId }
@@ -113,7 +109,13 @@ export async function handleTelegramNotify(req: Request, deps: HandlerDeps): Pro
       : { text: formatArrivalMessage(notification.data), keyboard: arrivalKeyboard(notification.data), chatId: notification.data.chatId };
   const outboundTelegram = notification.channel === "TELEGRAM_DRIVER_NEW_ASSIGNMENT"
     ? deps.driverTelegram ?? telegram
+    : notification.channel === "TELEGRAM_RESTAURANT_NEW_ORDER"
+    ? deps.staffTelegram ?? telegram
     : telegram;
+  if (!outboundTelegram) {
+    logOutcome("rejected_config");
+    return textResponse(500, "Server misconfigured");
+  }
 
   try {
     await outboundTelegram.sendMessage(chatId, text, keyboard);
@@ -140,10 +142,12 @@ if (import.meta.main) {
   Deno.serve(async (req) => {
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
     const driverBotToken = Deno.env.get("DRIVER_TELEGRAM_BOT_TOKEN");
+    const staffBotToken = Deno.env.get("STAFF_TELEGRAM_BOT_TOKEN");
     return handleTelegramNotify(req, {
       env: Deno.env,
       telegram: botToken ? createTelegramClient(botToken) : null,
       driverTelegram: driverBotToken ? createTelegramClient(driverBotToken) : null,
+      staffTelegram: staffBotToken ? createTelegramClient(staffBotToken) : null,
       fetchNotification: async (outboxId) => {
         const { data: outboxRow } = await admin
           .from("notification_outbox")

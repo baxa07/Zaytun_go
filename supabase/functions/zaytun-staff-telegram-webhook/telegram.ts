@@ -20,5 +20,10 @@ export interface TelegramUpdate {
   message?: {
     text?: string;
     chat: { id: number; type?: string };
+    from?: { id: number };
+    contact?: {
+      phone_number: string;
+      user_id?: number;
+    };
   };
 }
