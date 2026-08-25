@@ -131,6 +131,7 @@ test("scenario A: one normal order end to end -- capacity, early check-in, no ba
   await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
   await expect(driver.getByTestId("driver-mission-map")).toBeVisible();
   await expect(driver.getByTestId("driver-map-navigation")).toHaveAttribute("href", /yandex\.com\/maps/);
+  await expect(driver.getByTestId("driver-mission-map")).toContainText("KURYER → RESTORAN");
   await expect(driver.getByTestId("driver-primary-action")).toHaveText("Qabul qilish");
   await driver.getByTestId("driver-primary-action").click(); // accept
 
@@ -154,6 +155,7 @@ test("scenario A: one normal order end to end -- capacity, early check-in, no ba
   await expect(driver.getByTestId("driver-both-ready")).toHaveCount(0);
   await expect(driver.getByTestId("driver-primary-action")).toHaveText("Buyurtmani oldim");
   await driver.getByTestId("driver-primary-action").click(); // PICKED_UP
+  await expect(driver.getByTestId("driver-mission-map")).toContainText("RESTORAN → MIJOZ");
 
   // A single order never gets the multi-stop route wrapper.
   await expect(driver.getByTestId("driver-route-current-stop")).toHaveCount(0);

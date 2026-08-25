@@ -83,7 +83,7 @@ import {
   materialAddressChange,
 } from "./maps/core";
 import { configuredMapProvider } from "./maps/factory";
-import { navigationUrl } from "./maps/navigation";
+import { navigationUrl, yandexRouteUrl } from "./maps/navigation";
 import type { AddressSuggestion, MapLocationSelection } from "./maps/types";
 import { createUuid } from "./uuid";
 import { fulfillmentSummary, homeFulfillmentCopy } from "./fulfillment";
@@ -4063,33 +4063,62 @@ const driverMissionMapUrl = (latitude: number, longitude: number) => {
   return `https://yandex.com/map-widget/v1/?ll=${ll}&z=16&pt=${ll},pm2rdm`;
 };
 function DriverMissionMap({ order, restaurant }: { order: Order; restaurant: RestaurantConfig | null }) {
+  const [courierLocation, setCourierLocation] = useState<{ latitude: number; longitude: number }>();
+  const [locationState, setLocationState] = useState<"LOCATING" | "READY" | "DENIED" | "UNAVAILABLE">("LOCATING");
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationState("UNAVAILABLE");
+      return;
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setCourierLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setLocationState("READY");
+      },
+      (failure) => setLocationState(failure.code === failure.PERMISSION_DENIED ? "DENIED" : "UNAVAILABLE"),
+      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
   const headingToCustomer = order.status === "PICKED_UP" || order.status === "ON_THE_WAY" || order.status === "ARRIVED";
-  const coordinate = headingToCustomer && order.address?.latitude !== undefined && order.address.longitude !== undefined
+  const restaurantCoordinate = restaurant
+    ? { latitude: restaurant.restaurantLatitude, longitude: restaurant.restaurantLongitude }
+    : undefined;
+  const customerCoordinate = order.address?.latitude !== undefined && order.address.longitude !== undefined
     ? { latitude: order.address.latitude, longitude: order.address.longitude }
-    : restaurant
-      ? { latitude: restaurant.restaurantLatitude, longitude: restaurant.restaurantLongitude }
-      : undefined;
+    : undefined;
+  const coordinate = headingToCustomer ? customerCoordinate : restaurantCoordinate;
   if (!coordinate) return null;
   const destination = headingToCustomer ? "Mijoz manzili" : restaurant?.restaurantName || "Zaytun Kafe";
+  const routeStart = headingToCustomer ? restaurantCoordinate ?? courierLocation : courierLocation;
+  const mapUrl = routeStart
+    ? yandexRouteUrl(routeStart, coordinate, true)
+    : driverMissionMapUrl(coordinate.latitude, coordinate.longitude);
+  const navigationHref = courierLocation
+    ? yandexRouteUrl(courierLocation, coordinate)
+    : navigationUrl("yandex", coordinate);
   return (
     <section className="driver-mission-map" data-testid="driver-mission-map">
       <iframe
         title={`${destination} xaritasi`}
-        src={driverMissionMapUrl(coordinate.latitude, coordinate.longitude)}
+        src={mapUrl}
         loading="lazy"
         referrerPolicy="no-referrer-when-downgrade"
       />
       <div className="driver-map-destination">
-        <small>{headingToCustomer ? "HOZIRGI MANZIL" : "OLIB KETISH NUQTASI"}</small>
+        <small>{headingToCustomer ? "2-BOSQICH · RESTORAN → MIJOZ" : "1-BOSQICH · KURYER → RESTORAN"}</small>
         <b>{destination}</b>
         <a
-          href={navigationUrl("yandex", coordinate)}
+          href={navigationHref}
           target="_blank"
           rel="noopener noreferrer"
           data-testid="driver-map-navigation"
         >
-          Yo‘nalish ↗
+          Navigatsiya ↗
         </a>
+      </div>
+      <div className={`driver-location-state is-${locationState.toLowerCase()}`} data-testid="driver-location-state">
+        {locationState === "READY" ? "● Jonli joylashuv" : locationState === "LOCATING" ? "Joylashuv aniqlanmoqda…" : "Yandex joriy joylashuvdan boshlaydi"}
       </div>
     </section>
   );
