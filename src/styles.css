@@ -95,6 +95,26 @@ header {
   line-height: 1;
   text-shadow: 0 1px 0 rgb(255 255 255 / 80%);
 }
+.driver-app-header {
+  justify-content: center;
+  background: color-mix(in srgb, var(--green) 96%, #000);
+  border-bottom-color: rgb(211 168 63 / 42%);
+}
+.driver-brand span {
+  color: #f8f3e6;
+}
+.driver-brand b {
+  margin-left: 7px;
+  padding: 5px 8px;
+  border: 1px solid rgb(211 168 63 / 55%);
+  border-radius: 999px;
+  color: #f0c760;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 0.58em;
+  font-style: normal;
+  letter-spacing: 0.12em;
+  transform: none;
+}
 nav {
   display: flex;
   gap: 8px;
@@ -1171,11 +1191,78 @@ h2 {
   display: block;
 }
 .driver {
-  background: #f1f3f1;
+  background:
+    radial-gradient(circle at 50% -8%, rgb(211 168 63 / 13%), transparent 32%),
+    #f1f3f1;
   min-height: 100vh;
 }
 .driver-page {
   max-width: 620px;
+}
+.driver-page--mission {
+  max-width: 760px;
+}
+.driver-mission-map {
+  position: relative;
+  height: clamp(330px, 52vh, 540px);
+  overflow: hidden;
+  border: 1px solid rgb(36 75 54 / 18%);
+  border-radius: 24px;
+  background: #e8eee9;
+  box-shadow: 0 18px 48px rgb(24 52 40 / 14%);
+}
+.driver-mission-map iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.driver-map-destination {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 3px 14px;
+  padding: 13px 15px;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 10px 30px rgb(24 52 40 / 15%);
+  backdrop-filter: blur(16px);
+}
+.driver-map-destination small {
+  color: var(--teal);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
+}
+.driver-map-destination b {
+  grid-column: 1;
+  font-size: 17px;
+}
+.driver-map-destination a {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--green);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.driver-mission-sheet {
+  position: relative;
+  z-index: 2;
+  margin: -34px 18px 0;
+}
+.driver-mission-sheet > .assignment-card,
+.driver-mission-sheet > .delivery-card,
+.driver-mission-sheet > .driver-route,
+.driver-mission-sheet > .batch-mission-card {
+  border-radius: 24px;
+  box-shadow: 0 18px 48px rgb(24 52 40 / 15%);
 }
 .online {
   color: #2d704b;
@@ -2190,6 +2277,41 @@ h2 {
   }
   .driver-page h1 {
     font-size: 28px;
+  }
+  .driver-page--mission {
+    width: 100%;
+    padding-top: 14px;
+  }
+  .driver-page--mission .driver-head,
+  .driver-page--mission .driver-availability {
+    margin-left: 14px;
+    margin-right: 14px;
+  }
+  .driver-page--mission .driver-head h1 {
+    font-size: 22px;
+  }
+  .driver-page--mission .driver-availability {
+    padding: 10px 12px;
+  }
+  .driver-page--mission .driver-availability button {
+    min-height: 40px;
+    padding: 8px 11px;
+    font-size: 12px;
+  }
+  .driver-mission-map {
+    height: min(51vh, 460px);
+    min-height: 330px;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+  .driver-map-destination {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+  }
+  .driver-mission-sheet {
+    margin: -28px 12px 0;
   }
   .delivery-card {
     padding: 17px;

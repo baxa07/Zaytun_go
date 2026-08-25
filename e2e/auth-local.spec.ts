@@ -10,6 +10,17 @@ async function signIn(page: Page, identifier: string) {
   await submit.click();
 }
 
+test("driver mini app uses a dedicated shell and loads the authenticated driver dashboard", async ({ page }) => {
+  await page.goto("/driver");
+  await expect(page.getByRole("link", { name: "ZAYTUN DRIVER" })).toHaveAttribute("href", "/driver");
+  await expect(page.getByTestId("operational-navigation")).toHaveCount(0);
+  await signIn(page, "driver@zaytun.local");
+  await expect(page.getByRole("heading", { name: "Bugungi yetkazish" })).toBeVisible();
+  await expect(page.getByTestId("driver-availability")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Buyurtma" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Restoran" })).toHaveCount(0);
+});
+
 test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }) => {
   const anonymousOperationalFailures: string[] = [];
   page.on("response", (response) => {
@@ -67,8 +78,13 @@ test("local customer, restaurant, and driver auth/RLS workflow", async ({ page }
 
   await test.step("driver is gated, signs in, and performs permitted actions", async () => {
     await page.goto("/driver");
+    await expect(page.getByRole("link", { name: "ZAYTUN DRIVER" })).toBeVisible();
+    await expect(page.getByTestId("operational-navigation")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Kirish" })).toBeVisible();
     await signIn(page, "driver@zaytun.local");
+    await expect(page.getByRole("link", { name: "ZAYTUN DRIVER" })).toHaveAttribute("href", "/driver");
+    await expect(page.getByRole("link", { name: "Buyurtma" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Restoran" })).toHaveCount(0);
     await expect(page.locator(".assignment-card")).toContainText(orderNumber);
     await expect(page.getByTestId("driver-primary-action")).toHaveText("Qabul qilish");
     await page.getByTestId("driver-primary-action").click();

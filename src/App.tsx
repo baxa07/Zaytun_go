@@ -290,6 +290,7 @@ function Shell({
   const swipeTabIndex = customerTabs.indexOf(location.pathname);
   const swipeEnabled = surface === "customer" && !hideBottomNav && swipeTabIndex >= 0;
   const swipeBlockedTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("input,textarea,select,button,.stepper,.qty-stepper,.menu-category-rail,.map-frame,.map-results,[data-no-tab-swipe]"));
+  const driverSurface = surface === "driver";
   return (
     <div
       className={`app ${surface}${checkoutMode ? " checkout-app" : ""}`}
@@ -316,14 +317,14 @@ function Shell({
         event.stopPropagation();
       }}
     >
-      <header>
-        <Link className="brand" to="/">
+      <header className={driverSurface ? "driver-app-header" : undefined}>
+        <Link className={`brand${driverSurface ? " driver-brand" : ""}`} to={driverSurface ? "/driver" : "/"}>
           <img src="/zaytun-go-medallion.jpg" alt="" />{" "}
           <span>
-            ZAYTUN <b>GO</b>
+            ZAYTUN <b>{driverSurface ? "DRIVER" : "GO"}</b>
           </span>
         </Link>
-        {!hideBottomNav && (
+        {!hideBottomNav && !driverSurface && (
           <nav className={surface === "customer" ? "customer-nav" : `operational-nav${role === "OWNER" ? " owner-navigation" : ""}`} data-testid={surface === "customer" ? "customer-bottom-nav" : "operational-navigation"}>
             {surface === "customer" ? (
               <>
@@ -4057,8 +4058,44 @@ function DriverAvailabilityToggle({
     </div>
   );
 }
+const driverMissionMapUrl = (latitude: number, longitude: number) => {
+  const ll = `${longitude.toFixed(6)}%2C${latitude.toFixed(6)}`;
+  return `https://yandex.com/map-widget/v1/?ll=${ll}&z=16&pt=${ll},pm2rdm`;
+};
+function DriverMissionMap({ order, restaurant }: { order: Order; restaurant: RestaurantConfig | null }) {
+  const headingToCustomer = order.status === "PICKED_UP" || order.status === "ON_THE_WAY" || order.status === "ARRIVED";
+  const coordinate = headingToCustomer && order.address?.latitude !== undefined && order.address.longitude !== undefined
+    ? { latitude: order.address.latitude, longitude: order.address.longitude }
+    : restaurant
+      ? { latitude: restaurant.restaurantLatitude, longitude: restaurant.restaurantLongitude }
+      : undefined;
+  if (!coordinate) return null;
+  const destination = headingToCustomer ? "Mijoz manzili" : restaurant?.restaurantName || "Zaytun Kafe";
+  return (
+    <section className="driver-mission-map" data-testid="driver-mission-map">
+      <iframe
+        title={`${destination} xaritasi`}
+        src={driverMissionMapUrl(coordinate.latitude, coordinate.longitude)}
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+      />
+      <div className="driver-map-destination">
+        <small>{headingToCustomer ? "HOZIRGI MANZIL" : "OLIB KETISH NUQTASI"}</small>
+        <b>{destination}</b>
+        <a
+          href={navigationUrl("yandex", coordinate)}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="driver-map-navigation"
+        >
+          Yo‘nalish ↗
+        </a>
+      </div>
+    </section>
+  );
+}
 function DriverApp() {
-  const { orders, drivers, loaded, operationalError, profileDisplayName, startShift, endShift, listMyStandbyNotices, listMyBranchIds, listMyPickupBatchContext, transitionPending } = useApp();
+  const { orders, drivers, loaded, operationalError, profileDisplayName, publicConfig, startShift, endShift, listMyStandbyNotices, listMyBranchIds, listMyPickupBatchContext, transitionPending } = useApp();
   const greetingName = driverGreetingName(profileDisplayName);
   // driver_read's own RLS policy restricts a non-staff caller to id=auth.uid()
   // only, so this array holds exactly the current driver's own row.
@@ -4320,7 +4357,7 @@ function DriverApp() {
   const otherActiveOrders = queued.filter((o) => o.id !== batchSibling?.id);
   return (
     <Shell surface="driver">
-      <main className="driver-page">
+      <main className={`driver-page${current ? " driver-page--mission" : ""}`}>
         {!loaded && <div className="empty" role="status">Yuklanmoqda…</div>}
         {operationalError && <p className="error" role="alert">{operationalError}</p>}
         <div className="driver-head">
@@ -4347,6 +4384,7 @@ function DriverApp() {
         {showAllDone && (
           <p className="all-done-banner" data-testid="driver-all-stops-complete">✅ Barcha yetkazib berishlar yakunlandi</p>
         )}
+        {current && <DriverMissionMap order={current} restaurant={publicConfig} />}
         {operationalState === "OFF_SHIFT" ? (
           <div className="empty" data-testid="driver-off-duty">
             <p>Hozir ishlamayapsiz.</p>
@@ -4360,7 +4398,7 @@ function DriverApp() {
             <p>Yangi buyurtma kelganda shu yerda ko‘rinadi.</p>
           </div>
         ) : (
-          <>
+          <div className="driver-mission-sheet">
             {current && <DriverMainPanel state={operationalState} order={current} sibling={batchSibling} batchContext={batchContext} />}
             {otherActiveOrders.map((o) => (
               <DriverMainPanel
@@ -4371,7 +4409,7 @@ function DriverApp() {
                 batchContext={batchContext}
               />
             ))}
-          </>
+          </div>
         )}
       </main>
     </Shell>

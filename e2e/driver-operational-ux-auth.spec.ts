@@ -75,10 +75,16 @@ async function placeDeliveryOrder(customer: import("@playwright/test").Page, nam
   await customer.waitForURL("**/checkout");
   await customer.getByLabel("Ism *").fill(name);
   await customer.getByLabel("Telefon *").fill(phone);
-  await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
-  await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+  await customer.getByTestId("checkout-continue").click(); // Step 1 -> Step 2 (map)
   await customer.getByTestId("map-picker-set").click();
   await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+  await customer.getByTestId("checkout-continue").click(); // Step 2 -> Step 3 (address)
+  await customer.getByLabel("Mahalla yoki tuman *").fill("Guliston tumani");
+  await customer.getByLabel("Ko‘cha yoki joylashuv *").fill("Test ko‘chasi");
+  // Written-address edits invalidate the Step 2 confirmation.
+  await customer.getByLabel("Kirish joyi xaritada to‘g‘ri belgilangan").check();
+  await customer.getByTestId("checkout-continue").click(); // Step 3 -> Step 4 (payment)
+  await customer.getByTestId("checkout-continue").click(); // Step 4 -> Step 5 (review)
   await customer.getByTestId("checkout-submit").click();
   await customer.waitForURL("**/confirmation/**");
   return customer.url().split("/confirmation/")[1];
@@ -123,6 +129,8 @@ test("scenario A: one normal order end to end -- capacity, early check-in, no ba
   // New real assignment: prominent card, not standby, with a prep-time
   // estimate and delivery area -- no customer address/phone exposed yet.
   await expect(driver.locator(".assignment-card")).toBeVisible({ timeout: 15000 });
+  await expect(driver.getByTestId("driver-mission-map")).toBeVisible();
+  await expect(driver.getByTestId("driver-map-navigation")).toHaveAttribute("href", /yandex\.com\/maps/);
   await expect(driver.getByTestId("driver-primary-action")).toHaveText("Qabul qilish");
   await driver.getByTestId("driver-primary-action").click(); // accept
 
