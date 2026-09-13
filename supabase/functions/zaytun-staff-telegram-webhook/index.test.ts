@@ -206,6 +206,14 @@ Deno.test("authorized café account can bind the orders group and gets a test co
   assertEquals(result.status, 200);
   assertEquals(binds, [[-100123, 77, "1234567890.signed-proof"]]);
   assertEquals(String(calls[0][1]).includes("sinov xabari"), true);
+  const markup = calls[0][2] as {
+    inline_keyboard: Array<Array<Record<string, unknown>>>;
+  };
+  assertEquals(markup.inline_keyboard[0][0].web_app, undefined);
+  assertEquals(
+    markup.inline_keyboard[0][0].url,
+    "https://zaytungonavoiy.netlify.app/restaurant",
+  );
 });
 
 Deno.test("an unverified Telegram account cannot bind an orders group", async () => {
@@ -226,7 +234,7 @@ Deno.test("an unverified Telegram account cannot bind an orders group", async ()
     { env, telegram, bindCafeGroup: async () => "unauthorized" },
   );
   assertEquals(
-    String(calls[0][1]).includes("avval botning shaxsiy chatida"),
+    String(calls[0][1]).includes("Ulash buyrug‘i eskirgan"),
     true,
   );
 });

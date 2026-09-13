@@ -178,7 +178,7 @@ export async function handleStaffTelegramWebhook(
           {
             inline_keyboard: [[{
               text: "🍽 Oshxona ilovasini ochish",
-              web_app: { url: STAFF_APP_URL },
+              url: STAFF_APP_URL,
             }]],
           },
         );
@@ -186,7 +186,7 @@ export async function handleStaffTelegramWebhook(
       } else if (result === "unauthorized") {
         await deps.telegram.sendMessage(
           message.chat.id,
-          "Bu guruhni ulash uchun avval botning shaxsiy chatida rasmiy Zaytun Kafe telefonini ulang.",
+          "Ulash buyrug‘i eskirgan yoki boshqa hisobga tegishli. Avval botning shaxsiy chatida rasmiy Zaytun Kafe telefonini qayta yuboring. Yangi buyruqni aynan shu hisobdan 15 daqiqa ichida guruhga yuboring.",
         );
         log("group_bind_unauthorized");
       } else {
@@ -233,7 +233,7 @@ export async function handleStaffTelegramWebhook(
           ? await deps.createGroupBindToken(senderId)
           : "";
         const groupInstruction = token
-          ? `\n\nGuruhda 15 daqiqa ichida shu to‘liq buyruqni yuboring:\n/buyurtmalar ${token}`
+          ? `\n\nGuruhda 15 daqiqa ichida shu to‘liq buyruqni yuboring:\n/buyurtmalar@ZaytunGoOshxona_bot ${token}`
           : "";
         await deps.telegram.sendMessage(
           message.chat.id,
